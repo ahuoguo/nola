@@ -8,7 +8,7 @@ Implicit Type PROP : bi.
 
 (** ** Lemmas on [internal_eq] *)
 Section internal_ne.
-  Context `{!BiInternalEq PROP}.
+  Context `{!Sbi PROP}.
 
   (** Variants of [f_equivI] *)
   Lemma f_equivI_exist {A PROP'} {Φ Ψ : A → PROP'} :
@@ -21,7 +21,7 @@ End internal_ne.
 
 (** ** [internal_ne] Non-expansiveness inside [PROP] *)
 Section internal_ne.
-  Context `{!BiInternalEq PROP, !BiPlainly PROP}.
+  Context `{!Sbi PROP}.
   Implicit Type A B : ofe.
 
   Definition internal_ne {A B} (f : A -d> B) : PROP :=

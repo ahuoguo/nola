@@ -346,11 +346,12 @@ Section ty_op.
       iMod (sty_proph with "κ T") as (??) "($ & $ & cl)". iIntros "!> ξl".
       by iApply "cl".
     - iIntros "[$ α] b".
-      iMod (bord_open (M:=borrowM) with "α b") as "/=[o (% & >↦ & #T)]".
+      iMod (bord_open (Dsem0:=cif_dsem) (M:=borrowM) with "α b")
+        as "/=[o (% & >↦ & #T)]".
       iFrame "T".
-      iMod (obord_subdiv (FML:=cifOF _) (M:=borrowM) [▷ _]%cif
-        with "[] o [$↦ //] []") as "(α & _ & [b _])"=>/=.
-      { iApply lft_sincl_refl. } { by iIntros "_ [$ _]". }
+      iMod (obord_subdiv (Dsem0:=cif_dsem) (M:=borrowM) [▷ _]%cif
+        with "[] o [$↦] []") as "(α & _ & [b _])"=>/=.
+      { iApply lft_sincl_refl. } { done. } { by iIntros "_ [$ _]". }
       by iMod (spointsto_vec_alloc with "α b") as "[$$]".
   Qed.
 

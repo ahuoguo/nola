@@ -84,11 +84,11 @@ Section ty_prod.
       iIntros "ξηl". iDestruct ("→ξηl" with "ξηl") as "[ξl ηl]".
       iMod ("→κα" with "ξl") as "$". iApply ("→κα'" with "ηl").
     - iIntros (?????) "[κ α] b".
-      iMod (bord_open (M:=borrowM) with "α b")
+      iMod (bord_open (Dsem0:=cif_dsem) (M:=borrowM) with "α b")
         as "/=[o (% & ↦ & % & % & -> & T & U)]".
       iDestruct (ty_own_size with "T") as %eq. rewrite heap_pointsto_vec_app.
       iDestruct "↦" as "[↦ ↦']". rewrite eq.
-      iMod (obord_subdiv (M:=borrowM)
+      iMod (obord_subdiv (Dsem0:=cif_dsem) (M:=borrowM)
         [cif_pointsto_ty T _ _ _ _; cif_pointsto_ty U _ _ _ _]
         with "[] o [↦ ↦' T U] []") as "(α & _ & b & b' & _)"=>/=.
       { iApply lft_sincl_refl. } { iFrame. }

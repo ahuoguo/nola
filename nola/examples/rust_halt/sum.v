@@ -106,13 +106,14 @@ Section ty_sum.
         iDestruct "big" as (???) "[$$]"; iPureIntro;
         (eapply proph_dep_proper; [exact: eq|done|exact: proph_dep_f]).
     - iIntros (?????) "[κ α] b".
-      iMod (bord_open (M:=borrowM) with "α b") as "/=[o (% & ↦ & %b & big)]".
+      iMod (bord_open (Dsem0:=cif_dsem) (M:=borrowM) with "α b")
+        as "/=[o (% & ↦ & %b & big)]".
       case b=>/=; iDestruct "big" as (?? -> ? eq ?) "S";
         rewrite heap_pointsto_vec_cons heap_pointsto_vec_app;
         [iDestruct (ty_own_size with "S") as %->|
           iDestruct (ty_own_size with "S") as %->];
         iDestruct "↦" as "(↦ & ↦S & ↦r)".
-      + iMod (obord_subdiv (FML:=cifOF _) (M:=borrowM)
+      + iMod (obord_subdiv (Dsem0:=cif_dsem) (FML:=cifOF _) (M:=borrowM)
           [▷ _ ↦ _; cif_pointsto_ty _ (_ +ₗ 1) _ _ _; ▷ (_ +ₗ _ +ₗ _) ↦∗ _]%cif
           with "[] o [↦ ↦S S ↦r] []") as "(α & _ & b & bS & br & _)"=>/=.
         { iApply lft_sincl_refl. } { iFrame. }
@@ -124,7 +125,7 @@ Section ty_sum.
         iMod (spointsto_vec_alloc with "α br") as "[α ↦r]". rewrite bor_tok_bor.
         iMod (ty_share (T:=U) with "[$κ $α //] bS") as "[$ S]". iModIntro.
         iExists true=>/=. by iFrame.
-      + iMod (obord_subdiv (FML:=cifOF _) (M:=borrowM)
+      + iMod (obord_subdiv (Dsem0:=cif_dsem) (FML:=cifOF _) (M:=borrowM)
           [▷ _ ↦ _; cif_pointsto_ty _ (_ +ₗ 1) _ _ _; ▷ (_ +ₗ _ +ₗ _) ↦∗ _]%cif
           with "[] o [↦ ↦S S ↦r] []") as "(α & _ & b & bS & br & _)"=>/=.
         { iApply lft_sincl_refl. } { iFrame. }

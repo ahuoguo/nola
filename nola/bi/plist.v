@@ -8,9 +8,9 @@ Import ProdNotation.
 Implicit Type PROP : bi.
 
 (** Iteration over [plist] *)
-Definition big_opPL {M : ofe} (o : M → M → M) `{!Monoid o}
+Definition big_opPL {M : ofe} (o : M → M → M) `{!MonoidOps o u}
   {A F} (f : ∀ a, F a → M) {al} : plist (A:=A) F al → M :=
-  plist_foldmap monoid_unit o f.
+  plist_foldmap u o f.
 Definition big_sepPL {PROP A F} (f : ∀ a, F a → PROP) {al}
   : plist F al → PROP :=
   big_opPL bi_sep f (A:=A) (al:=al).

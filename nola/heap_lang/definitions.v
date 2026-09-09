@@ -22,7 +22,7 @@ Section steps.
   Context `{!heapGS_gen hlc Σ}.
 
   Local Definition steps_auth (n : nat) : iProp Σ :=
-    mono_nat_auth_own heapGS_step_name 1 n.
+    mono_nat_auth_own_frac heapGS_step_name 1 n.
 
   Definition steps_lb (n : nat) : iProp Σ :=
     mono_nat_lb_own heapGS_step_name n.
@@ -35,7 +35,7 @@ Section steps.
     steps_auth n -∗ steps_lb m -∗ ⌜m ≤ n⌝.
   Proof.
     iIntros "Hauth Hlb".
-    by iDestruct (mono_nat_lb_own_valid with "Hauth Hlb") as %[_ Hle].
+    by iDestruct (mono_nat_auth_lb_own_valid with "Hauth Hlb") as %[_ Hle].
   Qed.
 
   Lemma steps_lb_get n :

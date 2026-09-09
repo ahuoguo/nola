@@ -78,7 +78,7 @@ End Mod.
 Proof. split; exact _. Qed.
 #[export] Instance pers_mod {PROP} : @Mod PROP bi_persistently.
 Proof. split; exact _. Qed.
-#[export] Instance plainly_mod `{!BiPlainly PROP} : @Mod PROP plainly.
+#[export] Instance plainly_mod `{!Sbi PROP} : @Mod PROP plainly.
 Proof. split; exact _. Qed.
 #[export] Instance except_0_mod {PROP} : @Mod PROP bi_except_0.
 Proof. split; exact _. Qed.
@@ -330,7 +330,7 @@ End program.
 
   Analogous to [BiFupdPlainly] *)
 
-Class ModPlain `{!BiPlainly PROP} M : Prop := GEN_UPD_PLAIN {
+Class ModPlain `{!Sbi PROP} M : Prop := GEN_UPD_PLAIN {
   (** Eliminate the modality over a plain proposition, keeping the premise *)
   mod_plain_keep_l `{!Plain P} {R} : (R -∗ M P) ∗ R ⊢ M (P ∗ R);
   (** Eliminating a universal quantifier over the modality over plain
@@ -341,13 +341,13 @@ Class ModPlain `{!BiPlainly PROP} M : Prop := GEN_UPD_PLAIN {
 Hint Mode ModPlain + - ! : typeclass_instances.
 
 (** Instances of [ModPlain] *)
-#[export] Instance id_mod_plain `{!BiPlainly PROP, !BiAffine PROP} :
+#[export] Instance id_mod_plain `{!Sbi PROP, !BiAffine PROP} :
   ModPlain (PROP:=PROP) id.
 Proof.
   split=>/=; [|done]. move=> >. iIntros "[→P R]".
   iDestruct ("→P" with "R") as "#?". by iFrame.
 Qed.
-#[export] Instance except_0_mod_plain `{!BiPlainly PROP, !BiAffine PROP} :
+#[export] Instance except_0_mod_plain `{!Sbi PROP, !BiAffine PROP} :
   ModPlain (PROP:=PROP) bi_except_0.
 Proof.
   split.
@@ -355,7 +355,7 @@ Proof.
   { move=> >. by iIntros "? %". }
 Qed.
 #[export] Instance bupd_mod_plain
-  `{!BiBUpd PROP, !BiPlainly PROP, !BiBUpdPlainly PROP, !BiAffine PROP} :
+  `{!BiBUpd PROP, !Sbi PROP, !BiBUpdSbi PROP, !BiAffine PROP} :
   ModPlain (PROP:=PROP) bupd.
 Proof.
   split.
@@ -365,13 +365,13 @@ Proof.
     f_equiv=> ?. by rewrite bupd_elim.
 Qed.
 #[export] Instance fupd_mod_plain
-  `{!BiFUpd PROP, !BiPlainly PROP, !BiFUpdPlainly PROP} {E} :
+  `{!BiFUpd PROP, !Sbi PROP, !BiFUpdSbi PROP, !BiAffine PROP} {E} :
   ModPlain (PROP:=PROP) (fupd E E).
 Proof.
   split=> >. { apply fupd_plain_keep_l, _. } { apply fupd_plain_forall_2, _. }
 Qed.
 #[export] Instance relax_0_mod_plain
-  `{!BiPlainly PROP, !@Mod PROP M, !ModPlain M} :
+  `{!Sbi PROP, !@Mod PROP M, !ModPlain M} :
   ModPlain (relax_0 M).
 Proof.
   unfold relax_0. split.
@@ -380,7 +380,7 @@ Proof.
 Qed.
 
 Section mod_plain.
-  Context `{!BiPlainly PROP, !@Mod PROP M, !ModPlain M}.
+  Context `{!Sbi PROP, !@Mod PROP M, !ModPlain M}.
 
   (** Variant of [mod_plain_keep_l] *)
   Lemma mod_plain_keep_r `{!Plain P} {R} : R ∗ (R -∗ M P) ⊢ M (R ∗ P).
@@ -442,7 +442,7 @@ Section bupd_0.
   Proof. exact _. Qed.
 
   (** Eliminate [bupd_0] over a plain proposition *)
-  Lemma bupd_0_elim `{!BiPlainly PROP, !BiBUpdPlainly PROP, !Plain P} :
+  Lemma bupd_0_elim `{!Sbi PROP, !BiBUpdSbi PROP, !Plain P, !Absorbing P} :
     (|==>◇ P) ⊢ ◇ P.
   Proof. by rewrite /bupd_0 bupd_elim. Qed.
 End bupd_0.

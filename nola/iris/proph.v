@@ -449,7 +449,7 @@ Section lemmas.
     - move=> [L[el /list_elem_of_fmap[[i it][? /elem_of_map_to_list eq]]]].
       subst. move: el eq. case: it=> [?|ai|]/=; try by move=>/elem_of_nil.
       move=> /list_elem_of_singleton. unfold proph_aitem_log_item=> ??.
-      simplify_eq=>/=. by exists ai.
+      simplify_eq=>/=. apply (inj (existT _)) in H as ->. by exists ai.
     - move=> [ai[/elem_of_map_to_list ? eq]]. exists [.{ξ := xπ}].
       split; [by apply list_elem_of_singleton|].
       apply list_elem_of_fmap. exists (aprvar_id ξ, Cinr ai)=>/=.
@@ -610,7 +610,7 @@ Section lemmas.
         move=> eqi. move: eq. rewrite eqi lookup_op lookup_singleton_eq.
         move=> /aitem_eq_agree. move: eqi. clear.
         move: ξ ζ xπ yπ=> [?[h ?]][?[h' ?]]/= ??. left. simplify_eq.
-        by rewrite (proof_irrel h h').
+        apply (inj (existT _)) in H as ->. by rewrite (proof_irrel h h').
     - apply (proph_sim_op_l val) in sim. apply cmra_valid_op_l in val.
       split; [|split; [|done]].
       { apply (proph_sim_op_l val) in sim. apply sim. exists 1%Qp.

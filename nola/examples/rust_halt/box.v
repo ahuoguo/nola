@@ -71,12 +71,13 @@ Section ty_box.
       iSplit. { iPureIntro. by eapply proph_dep_proper. }
       iIntros "ξl". iMod ("→κα'" with "ξl") as "κα'". iApply ("→κα" with "κα'").
     - iIntros "[κ α] b".
-      iMod (bord_open (M:=borrowM) with "α b") as "/=[o (% & ↦ & big)]".
+      iMod (bord_open (Dsem0:=cif_dsem) (M:=borrowM) with "α b")
+        as "/=[o (% & ↦ & big)]".
       iDestruct "big" as (???? -> ? eq) "(↦' & † & T)". rewrite sem_cif_in /=.
       iMod (stored_acc with "T") as "T".
       iDestruct (ty_own_size with "T") as %->.
       rewrite heap_pointsto_vec_singleton.
-      iMod (obord_subdiv (FML:=cifOF _) (M:=borrowM)
+      iMod (obord_subdiv (Dsem0:=cif_dsem) (FML:=cifOF _) (M:=borrowM)
         [▷ _ ↦ _; cif_pointsto_ty _ _ _ _ _]%cif
         with "[] o [$↦ $↦' $T //] [†]") as "(α & _ & b & b' & _)"=>/=.
       { iApply lft_sincl_refl. }

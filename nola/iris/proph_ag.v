@@ -25,7 +25,7 @@ Section proph_ag.
 
   (** Value observer *)
   Local Definition val_obs_def {X} γ a xπ : iProp Σ :=
-    ghost_var γ (1/2) (a, existT' X xπ)'.
+    ghost_var_frac γ (1/2) (a, existT' X xπ)'.
   Local Lemma val_obs_aux : seal (@val_obs_def). Proof. by eexists. Qed.
   Definition val_obs {X} := val_obs_aux.(unseal) X.
   Local Lemma val_obs_unseal : @val_obs = @val_obs_def.
@@ -33,7 +33,7 @@ Section proph_ag.
 
   (** Double value observer *)
   Local Definition val_obs2 {X} γ a xπ : iProp Σ :=
-    ghost_var γ 1 (a, existT' X xπ)'.
+    ghost_var_frac γ 1 (a, existT' X xπ)'.
 
   (** Prophecy controller *)
   Local Definition proph_ctrl_def {X} γ a xπ (ξ : prvar X) : iProp Σ :=
@@ -51,8 +51,9 @@ Section proph_ag.
   (** Allocate two [val_obs]s *)
   Lemma vo_vo_alloc {X a xπ} : ⊢ |==> ∃ γ, @val_obs X γ a xπ ∗ val_obs γ a xπ.
   Proof.
-    rewrite val_obs_unseal. iMod ghost_var_alloc as (γ) "[??]". iExists _.
-    by iFrame.
+    rewrite val_obs_unseal.
+    iMod (ghost_var_alloc (A:=A *' sigT' (λ X : TY, clair TY X))
+      (a, existT' X xπ)') as (γ) "[??]". iExists _. by iFrame.
   Qed.
 
   (** Agreement between two [val_obs]s *)
@@ -60,7 +61,8 @@ Section proph_ag.
     @val_obs X γ a xπ -∗ val_obs γ a' xπ' -∗ ⌜a = a' ∧ xπ = xπ'⌝.
   Proof.
     rewrite val_obs_unseal. iIntros "vo vo'".
-    iDestruct (ghost_var_agree with "vo vo'") as %?. by simplify_eq.
+    iDestruct (ghost_var_agree with "vo vo'") as %?. simplify_eq.
+    by apply (inj (existT _)) in H0 as ->.
   Qed.
 
   (** Update the value of two [val_obs]s *)

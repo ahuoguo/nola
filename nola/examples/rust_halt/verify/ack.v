@@ -49,7 +49,8 @@ Section ack.
     { move=> n p q Xl Γ. iApply type_pre; last first.
       { type_path p as (?). type_path q as (?). iApply type_call.
         type_bind (_ = _)%E. { iApply type_eq_nat. solve_extract. }
-        iIntros (veq). iApply (type_if veq _); [|by iApply type_false].
+        iIntros (veq). iApply (type_if veq);
+          [solve_extract| |by iApply type_false].
         iApply type_add_nat. }
       move=>/= ?[?[??]][->[->/=]]. by have ->: n + Pos.to_nat 1 = S n by lia. }
     move=> m IH. elim.
@@ -57,21 +58,26 @@ Section ack.
       { type_path p as (v). type_path q as (?). iApply type_call.
         iApply (type_copy v); [solve_extract|exact _|]. type_bind (_ = _)%E.
         { iApply type_eq_nat. solve_extract. }
-        iIntros (veq). iApply (type_if veq _); [by iApply type_false|].
+        iIntros (veq). iApply (type_if veq);
+          [solve_extract|by iApply type_false|].
         type_bind (_ = _)%E. { iApply type_eq_nat. solve_extract. }
-        iIntros (veq'). iApply (type_if veq' _); [|by iApply type_false].
+        iIntros (veq'). iApply (type_if veq');
+          [solve_extract| |by iApply type_false].
         type_bind (_ - _)%E; [by iApply type_sub_nat|]. iIntros (?).
         iApply type_in; [|by iApply IH]. iApply sub_leak_rest. }
       move=>/= ?[?[??]][->[->/=?]]. do 2 (split; [lia|]).
       by have ->: m - 0 = m by lia. }
     move=> n IH' p q ??. iApply type_pre; last first.
     { type_path p as (v). type_path q as (v'). iApply type_call.
-      iApply (type_copy v' _). iApply (type_copy v); [solve_extract|exact _|].
+      iApply (type_copy v'); [solve_extract|exact _|].
+      iApply (type_copy v); [solve_extract|exact _|].
       type_bind (_ = _)%E. { iApply type_eq_nat. solve_extract. }
-      iIntros (veq). iApply (type_if veq _); [by iApply type_false|].
+      iIntros (veq). iApply (type_if veq);
+        [solve_extract|by iApply type_false|].
       type_bind (_ = _)%E. { iApply type_eq_nat. solve_extract. }
-      iIntros (veq'). iApply (type_if veq' _); [by iApply type_false|].
-      iApply (type_copy v _). type_bind (_ - _)%E.
+      iIntros (veq'). iApply (type_if veq');
+        [solve_extract|by iApply type_false|].
+      iApply (type_copy v); [solve_extract|exact _|]. type_bind (_ - _)%E.
       { iApply type_sub_nat. solve_extract. }
       iIntros (?). type_bind (_ - _)%E. { iApply type_sub_nat. solve_extract. }
       iIntros (?). type_bind (ackr [v; _])%E.
@@ -110,7 +116,8 @@ Section ack.
       { type_path p as (?). type_path q as (?). type_path r as (?).
         iApply type_call. type_bind (_ = _)%E.
         { iApply type_eq_nat. solve_extract. }
-        iIntros (veq). iApply (type_if veq _); [|by iApply type_false].
+        iIntros (veq). iApply (type_if veq);
+          [solve_extract| |by iApply type_false].
         type_bind (_ + _)%E. { iApply type_add_nat. solve_extract. }
         iIntros (?). iApply type_out.
         { iApply type_write;
@@ -125,9 +132,11 @@ Section ack.
       { type_path p as (v). type_path q as (?). type_path r as (?).
         iApply type_call. iApply (type_copy v); [solve_extract|exact _|].
         type_bind (_ = _)%E. { iApply type_eq_nat. solve_extract. }
-        iIntros (veq). iApply (type_if veq _); [by iApply type_false|].
+        iIntros (veq). iApply (type_if veq);
+        [solve_extract|by iApply type_false|].
         type_bind (_ = _)%E. { iApply type_eq_nat. solve_extract. }
-        iIntros (veq'). iApply (type_if veq' _); [|by iApply type_false].
+        iIntros (veq'). iApply (type_if veq');
+          [solve_extract| |by iApply type_false].
         type_bind (_ - _)%E. { iApply type_sub_nat. solve_extract. }
         iIntros (?). iApply type_in; [|by iApply IH]. iApply sub_leak_rest.
         solve_extract. }
@@ -138,10 +147,12 @@ Section ack.
       iApply type_call. iApply (type_copy v'); [solve_extract|exact _|].
       iApply (type_copy v); [solve_extract|exact _|].
       type_bind (_ = _)%E. { iApply type_eq_nat. solve_extract. }
-      iIntros (veq). iApply (type_if veq _); [by iApply type_false|].
+      iIntros (veq). iApply (type_if veq);
+        [solve_extract|by iApply type_false|].
       type_bind (_ = _)%E. { iApply type_eq_nat. solve_extract. }
-      iIntros (veq'). iApply (type_if veq' _); [by iApply type_false|].
-      iApply (type_copy v _). type_bind (_ - _)%E.
+      iIntros (veq'). iApply (type_if veq');
+        [solve_extract|by iApply type_false|].
+      iApply (type_copy v); [solve_extract|exact _|]. type_bind (_ - _)%E.
       { iApply type_sub_nat. solve_extract. }
       iIntros (?). iApply type_lft_new. iIntros (β). iApply type_seq.
       { iApply type_out.

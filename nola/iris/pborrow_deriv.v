@@ -191,7 +191,7 @@ Section pborrow_deriv.
       =[borrow_wsat M ⟦⟧ᶜ]=∗ [∗ plist] '(yπ, Ψx)' ∈ yπΨxl, plendd α yπ Ψx.
   Proof.
     iIntros "/=l →Ψxl".
-    iMod (lendd_split (FML:=cifOF _) (M:=M)
+    iMod (lendd_split (FML:=cifOF CON) (JUDG:=JUDG) (M:=M)
       (nola.iris.pborrow.cif_xplendl yπΨxl) with "l [→Ψxl]");
       rewrite big_sepL_of_plist //=.
     by setoid_rewrite sem_cif_in=>/=.
@@ -201,7 +201,8 @@ Section pborrow_deriv.
   Lemma plendd_retrieve {X α} {xπ : clair TY X} {Φx} :
     [†α] -∗ plendd α xπ Φx -∗ modw M (borrow_wsat M ⟦⟧ᶜ) (xplendd xπ Φx).
   Proof.
-    iIntros "† l". iMod (lendd_retrieve (M:=M) with "† l")=>/=.
+    iIntros "† l".
+    iMod (lendd_retrieve (FML:=cifOF CON) (JUDG:=JUDG) (M:=M) with "† l")=>/=.
     by setoid_rewrite sem_cif_in.
   Qed.
 

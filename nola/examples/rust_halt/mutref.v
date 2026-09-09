@@ -105,7 +105,8 @@ Section ty_mutref.
       iMod ("→καβ'" with "ηl") as "καβ'". iModIntro.
       iDestruct ("→καβ" with "καβ'") as "?". by iApply "→κβ'".
     - move=> ?? β ??. iIntros "[[κ κ'] [β β']] b".
-      iMod (bord_open (M:=borrowM) with "β b") as "/=[o (% & ↦ & big)]".
+      iMod (bord_open (Dsem0:=cif_dsem) (M:=borrowM) with "β b")
+        as "/=[o (% & ↦ & big)]".
       iDestruct "big" as (??? xπ  -> ? eq) "pb".
       rewrite heap_pointsto_vec_singleton sem_cif_in /=.
       iDestruct (lft_incl'_live_acc α with "κ") as (?) "[α →κ]".
@@ -119,8 +120,9 @@ Section ty_mutref.
       iDestruct (lft_incl'_live_acc (κ ⊓ (α ⊓ β)) with "κβ") as (?) "[καβ →κβ]".
       iMod (ty_share_le (T:=T) with "καβ bT") as "[καβ #T]"=>//.
       iDestruct ("→κβ" with "καβ") as "[κ $]".
-      iMod (obord_subdiv (FML:=cifOF _) (M:=borrowM) [▷ _ ↦ _]%cif (α ⊓ β)
-        with "[] o [↦] [→pb]") as "(β & _ & ↦ & _)"=>/=.
+      iMod (obord_subdiv (Dsem0:=cif_dsem) (M:=borrowM)
+        [▷ _ ↦ _]%cif (α ⊓ β) with "[] o [↦] [→pb]")
+        as "(β & _ & ↦ & _)"=>/=.
       { iApply lft_sincl_meet_r. } { by iSplitL. }
       { iIntros "† [↦ _] !>". iExists [_]. rewrite heap_pointsto_vec_singleton.
         iFrame "↦". iExists _, _, _, _. rewrite sem_cif_in /=.

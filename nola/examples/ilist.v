@@ -66,7 +66,8 @@ Section ilist.
   Lemma twp_new_ilist_cyclic {N N' E Φx l} : ↑N' ⊆ E →
     inv_tok N (Φx l) -∗ (l +ₗ 1) ↦ #l =[inv_wsat ⟦⟧ᶜ]{E}=∗ ilist N N' Φx l.
   Proof.
-    iIntros (?) "#$ ↦". iMod inv_tok_alloc_open as "[#$ cl]"=>//=. iApply "cl".
+    iIntros (?) "#$ ↦".
+    iMod (inv_tok_alloc_open (FML:=cifOF CON)) as "[#$ cl]"=>//=. iApply "cl".
     iExists _. iFrame "↦". rewrite sem_ilist. by iSplit.
   Qed.
   Lemma twp_new_ilist_cyclic2 {N N' E Φx l l'} : ↑N' ⊆ E →
@@ -74,8 +75,10 @@ Section ilist.
       =[inv_wsat ⟦⟧ᶜ]{E}=∗ ilist N N' Φx l ∗ ilist N N' Φx l'.
   Proof.
     iIntros (?) "#$ #$ ↦ ↦'".
-    iMod (inv_tok_alloc_open _ (N'.@ 0)) as "[#l cl]"; [solve_ndisj|].
-    iMod (inv_tok_alloc_open _ (N'.@ 1)) as "[#l' cl']"; [solve_ndisj|].
+    iMod (inv_tok_alloc_open (FML:=cifOF CON) _ (N'.@ 0)) as "[#l cl]";
+      [solve_ndisj|].
+    iMod (inv_tok_alloc_open (FML:=cifOF CON) _ (N'.@ 1)) as "[#l' cl']";
+      [solve_ndisj|].
     rewrite !(inv_tok_subset (N:=_.@_)); [iFrame "l l'"|solve_ndisj..]=>/=.
     iMod ("cl'" with "[$↦']"); [|iApply "cl"; iFrame "↦"]; rewrite sem_ilist;
       by iSplit.

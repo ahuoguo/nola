@@ -9,6 +9,11 @@ From iris.algebra Require Import gset.
 From iris.proofmode Require Import proofmode.
 Import iPropAppNotation ModwNotation WpwNotation.
 
+(** Iris keeps the [inG] instances behind [wsatGS] local to its [wsat.v],
+  so we re-declare the ones we need here *)
+Local Existing Instances wsatGS.wsat_inG wsatGS.wsatGpreS_inv
+  wsatGS.wsatGpreS_enabled wsatGS.wsatGpreS_disabled.
+
 Implicit Type (FML : oFunctor) (i : positive) (N : namespace).
 
 (** Ghost state for invariants *)

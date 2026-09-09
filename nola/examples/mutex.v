@@ -109,7 +109,8 @@ Section mutex_bor.
       mutex_bor α l Px ∗ lend_tok α (∃ b', ▷ l ↦ #b' ∗ Px)%cif ∗ q.[α].
   Proof.
     iIntros "↦ Px α".
-    iMod (bor_lend_tok_new (M:=bupd) with "[↦ Px]") as "[b $]"; [by iFrame|].
+    iMod (bor_lend_tok_new (FML:=cifOF CON) (M:=bupd) with "[↦ Px]")
+      as "[b $]"; [by iFrame|].
     iMod (bor_tok_open (M:=bupd) with "α b") as "/=[o[%b'[↦ Px]]]".
     iMod (obor_tok_subdiv (FML:=cifOF CON) (M:=bupd)
       [∃ b', ▷ l ↦ #b'; Px]%cif with "[] o [↦ Px] []")
@@ -124,7 +125,8 @@ Section mutex_bor.
     { iSplit; [|done]. rewrite sem_cif_in /=.
       iDestruct "↦" as ([|]) "↦"; [|iLeft]; iFrame. }
     { by iIntros "_ [[[$ _]|$]_]". }
-    iMod (inv_tok_alloc with "[b]") as "$"=>//=. by rewrite sem_cif_in.
+    iMod (inv_tok_alloc (FML:=cifOF CON) with "[b]") as "$"=>//=.
+    by rewrite sem_cif_in.
   Qed.
 
   (** ** Linked list with a shared borrow over a mutex *)

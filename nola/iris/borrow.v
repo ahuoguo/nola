@@ -4,7 +4,6 @@ From nola.util Require Export prod.
 From nola.bi Require Export internal modw.
 From nola.bi Require Import order gmap.
 From nola.iris Require Export iprop lft.
-From iris.bi.lib Require Import cmra.
 From iris.algebra Require Import excl agree gmap auth.
 From iris.proofmode Require Import proofmode.
 Import ProdNotation FunPNotation iPropAppNotation LftNotation ModwNotation.
@@ -327,7 +326,7 @@ Section borrow.
       ⌜Dl !! i = Some (α, Bl, Lm)'⌝ ∧ ⌜Lm !! k = Some Px'⌝ ∧ Px' ≡ Px.
   Proof.
     iIntros "● l". iDestruct (own_valid_2 with "● l") as "?". iStopProof.
-    uPred.unseal. by split=> ?? _ /depo_stl_lend_agree'.
+    sbi_unfold. by move=> ? /depo_stl_lend_agree'.
   Qed.
 
   (** Delete a lender w.r.t. [depo_stl_tok] *)
@@ -390,7 +389,7 @@ Section borrow.
       ⌜Dl !! i = Some (α, Bl, Lm)'⌝ ∧ ⌜Bl !! j = Some B'⌝ ∧ B' ≡ B.
   Proof.
     iIntros "● B". iDestruct (own_valid_2 with "● B") as "?". iStopProof.
-    uPred.unseal. by split=> n ? _ /depo_stl_bor_agree'.
+    sbi_unfold. by move=> ? /depo_stl_bor_agree'.
   Qed.
 
   (** Update the borrower state w.r.t. [depo_stl_tok] *)

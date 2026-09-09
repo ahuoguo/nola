@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - '**'
+  # Iris dev moves fast, so also check periodically against its master.
+  schedule:
+    - cron: '0 4 * * 1'
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - name: iris-pinned
+            iris_ref: 93c7df745a0485cebcb97ca77e7d263e5c920d4f
+            stdpp_ref: '1.13.0'
+            experimental: false
+          # The current Iris master, to notice upstream breakage early
+          - name: iris-master
+            iris_ref: master
+            stdpp_ref: master
+            experimental: true
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: coq-community/docker-coq-action@v1
+        with:
+          opam_file: 'coq-nola.opam'
+          coq_version: '9.1'
+          install: |
+            startGroup "Configure opam repositories"
+              opam repo add --this-switch rocq-released https://rocq-prover.org/opam/released || true
+              opam update -y
+            endGroup
+            startGroup "Pin std++ and Iris"
+              if [ "${{ matrix.stdpp_ref }}" = "master" ]; then
+                opam pin add -n -y -k git rocq-stdpp.dev git+https://gitlab.mpi-sws.org/iris/stdpp.git#master
+              else
+                opam pin add -n -y -k version rocq-stdpp ${{ matrix.stdpp_ref }}
+              fi
+              opam pin add -n -y -k git rocq-iris.dev git+https://gitlab.mpi-sws.org/iris/iris.git#${{ matrix.iris_ref }}
+              opam pin add -n -y -k path $PACKAGE $WORKDIR
+            endGroup
+            startGroup "Install dependencies"
+              opam install --confirm-level=unsafe-yes -j 2 $PACKAGE --deps-only --ignore-constraints-on=rocq-stdpp
+            endGroup
+          script: |
+            startGroup "Build"
+              make -j2
+            endGroup
+          uninstall: |
+            make clean

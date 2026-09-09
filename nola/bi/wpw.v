@@ -2,8 +2,8 @@
 
 From nola.bi Require Export modw.
 From nola.bi Require Import util.
-From iris.program_logic Require Export weakestpre total_weakestpre adequacy
-  total_adequacy.
+From iris.program_logic Require Export language weakestpre total_weakestpre
+  adequacy total_adequacy.
 From iris.bi.lib Require Import fixpoint_mono.
 From iris.proofmode Require Import proofmode.
 Import BUpd0Notation ModwNotation.
@@ -562,8 +562,8 @@ Theorem twpw_total Σ Λ `{!invGpreS Σ} s e σ n :
     ∃ W Φ, W ∗ state_interp σ n [] 0 ∗ WP[W] e @ s; ⊤ [{ Φ }]) →
   sn erased_step ([e], σ).
 Proof.
-  move=> big. apply: twp_total. iIntros (?).
+  move=> big. apply: (twp_total _ _ _ _ _ _ _ _ 0). iIntros (?).
   iMod big as (????) "(% & % & ? & ? & twp)".
   rewrite (twp_mono _ _ _ _ (λ _, True)%I); [|by iIntros]. iModIntro.
-  iExists _, _, _, _. iFrame.
+  iExists _, _, _, _. iFrame. by iIntros.
 Qed.

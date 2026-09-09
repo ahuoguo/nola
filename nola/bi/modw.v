@@ -139,7 +139,7 @@ Proof. split; exact _. Qed.
 #[export] Instance modw_mod_bupd `{!BiBUpd PROP, !ModBUpd M} {W} :
   ModBUpd (modw (PROP:=PROP) M W) | 10.
 Proof. move=> ?. unfold IsBUpd. iIntros ">$$". Qed.
-#[export] Instance modw_mod_plain `{!BiPlainly PROP, !BiBUpd PROP}
+#[export] Instance modw_mod_plain `{!Sbi PROP, !BiBUpd PROP}
   `{!@Mod PROP M, !ModPlain M, !Affine W} :
   ModPlain (modw M W) | 10.
 Proof.
