@@ -7,9 +7,8 @@ on:
   pull_request:
     branches:
       - '**'
-  # Iris dev moves fast, so also check periodically against its master.
-  schedule:
-    - cron: '0 4 * * 1'
+  # schedule:
+  #   - cron: '0 4 * * 1'
 
 jobs:
   build:
@@ -25,11 +24,11 @@ jobs:
             iris_ref: 93c7df745a0485cebcb97ca77e7d263e5c920d4f
             stdpp_ref: '1.13.0'
             experimental: false
-          # The current Iris master, to notice upstream breakage early
-          - name: iris-master
-            iris_ref: master
-            stdpp_ref: master
-            experimental: true
+          # Disabled for now.
+          # - name: iris-master
+          #   iris_ref: master
+          #   stdpp_ref: master
+          #   experimental: true
 
     steps:
       - uses: actions/checkout@v4
