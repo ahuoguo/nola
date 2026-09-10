@@ -57,9 +57,16 @@ jobs:
             startGroup "Install the Coq compatibility binaries"
               opam install -j 2 coq-core
             endGroup
+          before_script: |
+            startGroup "Workaround permission issue"
+              sudo chown -R 1000:1000 .
+            endGroup
           script: |
             startGroup "Build"
               make -j2
             endGroup
           uninstall: |
             make clean
+      - name: Revert permissions
+        if: ${{ always() }}
+        run: sudo chown -R 1001:116 .
