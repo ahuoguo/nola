@@ -54,6 +54,9 @@ jobs:
             startGroup "Install dependencies"
               opam install --confirm-level=unsafe-yes -j 2 $PACKAGE --deps-only --ignore-constraints-on=rocq-stdpp
             endGroup
+            startGroup "Install the Coq compatibility binaries"
+              opam install -j 2 coq-core
+            endGroup
           script: |
             startGroup "Build"
               make -j2
