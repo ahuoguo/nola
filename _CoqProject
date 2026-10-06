@@ -117,3 +117,6 @@ nola/examples/rust_halt/verify/list.v
 nola/examples/rust_halt/verify/list_more.v
 nola/examples/rust_halt/verify/mutlist.v
 nola/examples/rust_halt/verify/mutlist_more.v
+
+nola/alerus/own_and.v
+nola/alerus/lifetime/ra.v

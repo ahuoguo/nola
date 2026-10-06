@@ -117,6 +117,34 @@ Section guard.
     iIntros "[Q _]". by iApply "toWT".
   Qed.
 
+  (** Strengthen the body of a guarded existential with persistent knowledge
+
+    Leaf's [guards_strengthen_exists].  This is what lets a guarded existential
+    be refined once the rest of the guarded resources pin down the witness; it
+    is the rule behind [box_guard]. *)
+  Lemma guard_exist_strengthen `{!BiAffine PROP} {A W P Q} {R S : A → PROP} :
+    (∀ a, Q ∧ R a ⊢ S a) → (∀ a, Persistent (S a)) →
+    (P &&{W}&&> Q) -∗ (P &&{W}&&> ∃ a, R a) -∗ P &&{W}&&> ∃ a, R a ∗ S a.
+  Proof.
+    move=> QRtoS ?. rewrite /guard. iIntros "#gQ #gR !>" (T) "PT".
+    iAssert (Q ∧ ((∃ a, R a) ∗ ((∃ a, R a) -∗ W ∗ T)))%I with "[PT]" as "X".
+    { iSplit; [iDestruct ("gQ" with "PT") as "[$ _]"|by iApply "gR"]. }
+    rewrite bi.sep_exist_r bi.and_exist_l. iDestruct "X" as (a) "X".
+    iAssert (S a ∧ (R a ∗ ((∃ a, R a) -∗ W ∗ T)))%I with "[X]" as "X".
+    { iSplit; [|by iDestruct "X" as "[_ $]"]. iApply QRtoS. iSplit.
+      - by iDestruct "X" as "[$ _]".
+      - by iDestruct "X" as "[_[$ _]]". }
+    iDestruct "X" as "[#S[R toWT]]". iSplitL "R"; [by iFrame "R S"|].
+    iIntros "[%a'[R _]]". iApply "toWT". by iExists a'.
+  Qed.
+  Lemma guard_exist_strengthen_lhs `{!BiAffine PROP} {A W P} {R S : A → PROP} :
+    (∀ a, P ∧ R a ⊢ S a) → (∀ a, Persistent (S a)) →
+    (P &&{W}&&> ∃ a, R a) ⊢ P &&{W}&&> ∃ a, R a ∗ S a.
+  Proof.
+    move=> ??. iIntros "g". iApply (guard_exist_strengthen with "[] g")=>//.
+    iApply guard_refl.
+  Qed.
+
   (** Anything guards [True], in an affine logic *)
   Lemma guard_true `{!BiAffine PROP} {W P} : ⊢ P &&{W}&&> True.
   Proof.
