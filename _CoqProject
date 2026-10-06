@@ -122,3 +122,10 @@ nola/alerus/own_and.v
 nola/alerus/lifetime/ra.v
 nola/alerus/auth_frag.v
 nola/alerus/boxes.v
+nola/alerus/util/basic.v
+nola/alerus/util/vector.v
+nola/alerus/util/discrete_fun.v
+nola/alerus/util/fancy_lists.v
+nola/alerus/util/atomic_lock_counter.v
+nola/alerus/util/cellmap.v
+nola/alerus/lang/lang.v

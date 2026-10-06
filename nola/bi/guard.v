@@ -100,6 +100,12 @@ Section guard.
     iApply "toWT". iFrame.
   Qed.
 
+  (** Weaken the left-hand side of a guard *)
+  Lemma guard_lhs_sep_l {W P Q R} : (P &&{W}&&> Q) ⊢ (P ∗ R) &&{W}&&> Q.
+  Proof. iIntros "g". iApply (guard_trans with "[] g"). iApply guard_sep_l. Qed.
+  Lemma guard_lhs_sep_r {W P Q R} : (P &&{W}&&> Q) ⊢ (R ∗ P) &&{W}&&> Q.
+  Proof. iIntros "g". iApply (guard_trans with "[] g"). iApply guard_sep_r. Qed.
+
   (** Weaken the right-hand side of a guard *)
   Lemma guard_rhs_sep_l {W P Q R} :
     (P &&{W}&&> (Q ∗ R)) ⊢ P &&{W}&&> Q.
@@ -162,6 +168,58 @@ Section guard.
     rewrite /guard. iIntros "#g P W".
     iApply ("g" $! P with "[$P W]"). iIntros "$". iFrame "W".
   Qed.
+  (** Open two guards out of the same [P] at once
+
+    Leaf's [guards_open_two_simultaneously].  The intermediate [U] is what the
+    two guards are opened against, so that neither closes the other out. *)
+  Lemma guard_open_two {W P Q R} :
+    (P &&{W}&&> Q) -∗ (P &&{W}&&> R) -∗ P -∗ W -∗ ∃ U, U ∗
+      □ (U -∗ Q ∗ (Q -∗ U)) ∗ □ (U -∗ R ∗ (R -∗ U)) ∗ (U -∗ W ∗ P).
+  Proof.
+    rewrite /guard. iIntros "#gQ #gR P W".
+    iExists (P ∗ (P -∗ W ∗ P))%I. iSplitL.
+    { iFrame "P". iIntros "$". iFrame "W". }
+    iSplit; [|iSplit].
+    - iIntros "!> U". iDestruct ("gQ" $! P with "U") as "[$ toU]".
+      iIntros "Q". iDestruct ("toU" with "Q") as "[W $]". iIntros "$". iFrame "W".
+    - iIntros "!> U". iDestruct ("gR" $! P with "U") as "[$ toU]".
+      iIntros "R". iDestruct ("toU" with "R") as "[W $]". iIntros "$". iFrame "W".
+    - iIntros "[P toWP]". by iApply "toWP".
+  Qed.
+
+  (** Observe persistent knowledge from two guards at once
+
+    Leaf's [guards_and_pers]: the two guards see the *same* resource, so the
+    non-separating conjunction of their right-hand sides holds of it. *)
+  Lemma guard_and_pers `{!BiAffine PROP} {W P Q R S} `{!Persistent S} :
+    □ (Q ∧ R -∗ S) -∗ (P &&{W}&&> Q) -∗ (P &&{W}&&> R) -∗ P -∗ W -∗
+      W ∗ P ∗ S.
+  Proof.
+    iIntros "#toS gQ gR P W".
+    iDestruct (guard_open_two with "gQ gR P W") as (U) "(U & #accQ & #accR & toWP)".
+    iAssert (S ∧ U)%I with "[U]" as "SU".
+    { iSplit; [|iFrame "U"]. iApply "toS". iSplit.
+      - iDestruct ("accQ" with "U") as "[$ _]".
+      - iDestruct ("accR" with "U") as "[$ _]". }
+    iDestruct "SU" as "[#S U]".
+    iDestruct ("toWP" with "U") as "[$$]". iFrame "S".
+  Qed.
+  (** The same, with an extra exclusive resource available to the observation *)
+  Lemma guard_and_pers_with_excl `{!BiAffine PROP} {W P Q R S T}
+    `{!Persistent S} :
+    □ ((Q ∧ R) ∗ T -∗ S) -∗ (P &&{W}&&> Q) -∗ (P &&{W}&&> R) -∗ P -∗ T -∗ W -∗
+      W ∗ P ∗ T ∗ S.
+  Proof.
+    iIntros "#toS gQ gR P T W".
+    iDestruct (guard_open_two with "gQ gR P W") as (U) "(U & #accQ & #accR & toWP)".
+    iAssert (S ∧ (U ∗ T))%I with "[U T]" as "SUT".
+    { iSplit; [|iFrame "U T"]. iApply "toS". iFrame "T". iSplit.
+      - iDestruct ("accQ" with "U") as "[$ _]".
+      - iDestruct ("accR" with "U") as "[$ _]". }
+    iDestruct "SUT" as "[#S [U $]]".
+    iDestruct ("toWP" with "U") as "[$$]". iFrame "S".
+  Qed.
+
   (** Variant for a world satisfaction that includes the guard's one *)
   Lemma guard_accw `{!WsatIncl W W' Wr} {P Q} :
     (P &&{W'}&&> Q) -∗ P -∗ W -∗ Q ∗ (Q -∗ W ∗ P).

@@ -40,6 +40,28 @@ Section guard_and.
     iIntros "S". iDestruct ("toPT" with "S") as "[P toWT]". by iApply "toWT".
   Qed.
 
+  (** A point proposition entailed by [P] is guarded by [P]
+
+    Leaf's [guards_point]. *)
+  Lemma guard_point {W P Q} `{!point_prop Q} : (P ⊢ Q) → ⊢ P &&{W}&&> Q.
+  Proof.
+    move=> PtoQ. iApply guard_intro. iIntros "!> P".
+    iApply point_factor. iFrame "P". iIntros "P". by iApply PtoQ.
+  Qed.
+
+  (** Weaken the right-hand side of a guard to a point proposition *)
+  Lemma guard_rhs_point {W P Q S} `{!point_prop S} : (Q ⊢ S) →
+    (P &&{W}&&> Q) ⊢ P &&{W}&&> S.
+  Proof.
+    move=> QtoS. iIntros "g". iApply (guard_trans with "g").
+    by iApply guard_point.
+  Qed.
+
+  (** Leaf's [guards_and_own] *)
+  Lemma guard_and_own `{!inG Σ A} {W P Q R γ} {a : A} : (Q ∧ R ⊢ own γ a) →
+    (P &&{W}&&> Q) -∗ (P &&{W}&&> R) -∗ P &&{W}&&> own γ a.
+  Proof. move=> ?. by apply guard_and. Qed.
+
   (** Specialization: the right-hand sides are themselves kept *)
   Lemma guard_and' {W P Q R} `{!point_prop (Q ∧ R)} :
     (P &&{W}&&> Q) -∗ (P &&{W}&&> R) -∗ P &&{W}&&> (Q ∧ R).
