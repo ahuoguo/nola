@@ -27,6 +27,7 @@ nola/bi/order.v
 nola/bi/deriv.v
 nola/bi/mod.v
 nola/bi/modw.v
+nola/bi/guard.v
 nola/bi/wpw.v
 nola/bi/judg.v
 nola/bi/paradox.v
@@ -38,6 +39,8 @@ nola/iris/option.v
 nola/iris/agree.v
 nola/iris/csum.v
 nola/iris/sinv.v
+nola/iris/point.v
+nola/iris/guard.v
 nola/iris/inv.v
 nola/iris/inv_deriv.v
 nola/iris/na_inv.v
@@ -78,6 +81,7 @@ nola/lrust/tactics.v
 nola/lrust/races.v
 nola/lrust/heap.v
 nola/lrust/lifting.v
+nola/lrust/guard.v
 nola/lrust/proofmode.v
 nola/lrust/adequacy.v
 
