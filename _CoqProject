@@ -120,3 +120,5 @@ nola/examples/rust_halt/verify/mutlist_more.v
 
 nola/alerus/own_and.v
 nola/alerus/lifetime/ra.v
+nola/alerus/auth_frag.v
+nola/alerus/boxes.v
