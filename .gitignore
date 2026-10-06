@@ -12,3 +12,11 @@ html/
 *.glob
 .*.aux
 *.cache
+.claude/
+
+# macOS
+.DS_Store
+
+# Local notes and reference material, not part of the development
+TODO.md
+yusuke-thesis.pdf

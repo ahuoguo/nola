@@ -1,0 +1,230 @@
+(** * Later-free guarding
+
+  A reconstruction of the Leaf library's guarding logic (Hance et al.,
+  MIT-licensed) over Nola's explicit world satisfactions instead of Iris's
+  invariants.  Leaf's guard [P &&{E ; n}&&> Q] is indexed by an invariant mask
+  [E] and a *later count* [n]: opening a guard costs [n] laters, because the
+  underlying Iris invariant hands back [▷ P].  That cost is fatal for a total
+  program logic, where no step is available to strip a later.
+
+  Here the invariant storage is replaced by a world satisfaction [W], threaded
+  explicitly in the style of [nola.bi.modw].  Since Nola's world satisfactions
+  are later-free, so is the guard:
+
+    P &&{ W }&&> Q  :=  □ ∀ T, P ∗ (P -∗ W ∗ T) -∗ Q ∗ (Q -∗ W ∗ T)
+
+  Leaf's mask bookkeeping ([∃ m ⊆ E, …] plus the knowledge that the invariants
+  in [m] exist) is subsumed by [WsatIncl]: a guard over a smaller world
+  satisfaction weakens into one over a larger world satisfaction
+  ([guard_wsat_incl]).
+
+  The conjunction rule, which is what makes guards more than plain accessors,
+  lives in [nola.iris.guard] because it needs the point-proposition machinery
+  of [nola.iris.point]. *)
+
+From nola.bi Require Export modw.
+From iris.proofmode Require Import proofmode.
+
+Implicit Type PROP : bi.
+
+(** ** [guard]: [P] gives shared access to [Q] under the world satisfaction [W]
+
+  Read [P &&{ W }&&> Q] as "[P] guards [Q] over [W]".  The frame [T] is
+  universally quantified, which is what makes the guard compose. *)
+Definition guard {PROP} (W P Q : PROP) : PROP :=
+  □ ∀ T, P ∗ (P -∗ W ∗ T) -∗ Q ∗ (Q -∗ W ∗ T).
+Arguments guard : simpl never.
+
+Module GuardNotation.
+  Notation "P &&{ W }&&> Q" := (guard W P Q)
+    (at level 99, W at level 50, Q at level 200,
+      format "P  &&{ W }&&>  Q") : bi_scope.
+End GuardNotation.
+Import GuardNotation.
+
+Section guard.
+  Context {PROP}.
+  Implicit Type W P Q R T : PROP.
+
+  (** [guard] is non-expansive and proper *)
+  #[export] Instance guard_ne {n} :
+    Proper ((≡{n}≡) ==> (≡{n}≡) ==> (≡{n}≡) ==> (≡{n}≡)) (guard (PROP:=PROP)).
+  Proof. rewrite /guard. solve_proper. Qed.
+  #[export] Instance guard_proper :
+    Proper ((≡) ==> (≡) ==> (≡) ==> (≡)) (guard (PROP:=PROP)).
+  Proof. rewrite /guard. solve_proper. Qed.
+
+  (** [guard] is persistent *)
+  #[export] Instance guard_persistent {W P Q} : Persistent (P &&{W}&&> Q).
+  Proof. rewrite /guard. exact _. Qed.
+
+  (** Introduce a guard from a persistent accessor *)
+  Lemma guard_intro {W P Q} : □ (P -∗ Q ∗ (Q -∗ P)) ⊢ P &&{W}&&> Q.
+  Proof.
+    rewrite /guard. iIntros "#toQ !>" (T) "[P toWT]".
+    iDestruct ("toQ" with "P") as "[$ toP]". iIntros "Q".
+    iApply "toWT". by iApply "toP".
+  Qed.
+
+  (** [guard] is reflexive and transitive *)
+  Lemma guard_refl {W P} : ⊢ P &&{W}&&> P.
+  Proof. rewrite /guard. by iIntros "!>" (?) "$". Qed.
+  Lemma guard_trans {W P Q R} :
+    (P &&{W}&&> Q) -∗ (Q &&{W}&&> R) -∗ P &&{W}&&> R.
+  Proof.
+    rewrite /guard. iIntros "#gPQ #gQR !>" (T) "PT".
+    iDestruct ("gPQ" with "PT") as "QT". by iApply "gQR".
+  Qed.
+
+  (** A guard can be weakened to a larger world satisfaction *)
+  Lemma guard_wsat_sep {W W' P Q} : (P &&{W}&&> Q) ⊢ P &&{W ∗ W'}&&> Q.
+  Proof.
+    rewrite /guard. iIntros "#g !>" (T) "[P toWT]".
+    iDestruct ("g" $! (W' ∗ T)%I with "[$P toWT]") as "[$ toWT]".
+    { iIntros "P". iDestruct ("toWT" with "P") as "[[$$]$]". }
+    iIntros "Q". iDestruct ("toWT" with "Q") as "[$[$$]]".
+  Qed.
+  Lemma guard_wsat_incl `{!WsatIncl W W' Wr} {P Q} :
+    (P &&{W'}&&> Q) ⊢ P &&{W}&&> Q.
+  Proof. rewrite (wsat_incl W W' Wr). exact guard_wsat_sep. Qed.
+
+  (** A separating conjunct is guarded by the whole *)
+  Lemma guard_sep_l {W P Q} : ⊢ (P ∗ Q) &&{W}&&> P.
+  Proof.
+    rewrite /guard. iIntros "!>" (T) "[[$ Q] toWT]". iIntros "P".
+    iApply "toWT". iFrame.
+  Qed.
+  Lemma guard_sep_r {W P Q} : ⊢ (P ∗ Q) &&{W}&&> Q.
+  Proof.
+    rewrite /guard. iIntros "!>" (T) "[[P $] toWT]". iIntros "Q".
+    iApply "toWT". iFrame.
+  Qed.
+
+  (** Weaken the left-hand side of a guard *)
+  Lemma guard_lhs_sep_l {W P Q R} : (P &&{W}&&> Q) ⊢ (P ∗ R) &&{W}&&> Q.
+  Proof. iIntros "g". iApply (guard_trans with "[] g"). iApply guard_sep_l. Qed.
+  Lemma guard_lhs_sep_r {W P Q R} : (P &&{W}&&> Q) ⊢ (R ∗ P) &&{W}&&> Q.
+  Proof. iIntros "g". iApply (guard_trans with "[] g"). iApply guard_sep_r. Qed.
+
+  (** Weaken the right-hand side of a guard *)
+  Lemma guard_rhs_sep_l {W P Q R} :
+    (P &&{W}&&> (Q ∗ R)) ⊢ P &&{W}&&> Q.
+  Proof. iIntros "g". iApply (guard_trans with "g"). iApply guard_sep_l. Qed.
+  Lemma guard_rhs_sep_r {W P Q R} :
+    (P &&{W}&&> (Q ∗ R)) ⊢ P &&{W}&&> R.
+  Proof. iIntros "g". iApply (guard_trans with "g"). iApply guard_sep_r. Qed.
+
+  (** Attach persistent knowledge to the right-hand side *)
+  Lemma guard_pers_rhs `{!Persistent R, !Affine R} {W P Q} :
+    R -∗ (P &&{W}&&> Q) -∗ P &&{W}&&> (Q ∗ R).
+  Proof.
+    rewrite /guard. iIntros "#R #g !>" (T) "PT".
+    iDestruct ("g" with "PT") as "[$ toWT]". iFrame "R".
+    iIntros "[Q _]". by iApply "toWT".
+  Qed.
+
+  (** Strengthen the body of a guarded existential with persistent knowledge
+
+    Leaf's [guards_strengthen_exists].  This is what lets a guarded existential
+    be refined once the rest of the guarded resources pin down the witness; it
+    is the rule behind [box_guard]. *)
+  Lemma guard_exist_strengthen `{!BiAffine PROP} {A W P Q} {R S : A → PROP} :
+    (∀ a, Q ∧ R a ⊢ S a) → (∀ a, Persistent (S a)) →
+    (P &&{W}&&> Q) -∗ (P &&{W}&&> ∃ a, R a) -∗ P &&{W}&&> ∃ a, R a ∗ S a.
+  Proof.
+    move=> QRtoS ?. rewrite /guard. iIntros "#gQ #gR !>" (T) "PT".
+    iAssert (Q ∧ ((∃ a, R a) ∗ ((∃ a, R a) -∗ W ∗ T)))%I with "[PT]" as "X".
+    { iSplit; [iDestruct ("gQ" with "PT") as "[$ _]"|by iApply "gR"]. }
+    rewrite bi.sep_exist_r bi.and_exist_l. iDestruct "X" as (a) "X".
+    iAssert (S a ∧ (R a ∗ ((∃ a, R a) -∗ W ∗ T)))%I with "[X]" as "X".
+    { iSplit; [|by iDestruct "X" as "[_ $]"]. iApply QRtoS. iSplit.
+      - by iDestruct "X" as "[$ _]".
+      - by iDestruct "X" as "[_[$ _]]". }
+    iDestruct "X" as "[#S[R toWT]]". iSplitL "R"; [by iFrame "R S"|].
+    iIntros "[%a'[R _]]". iApply "toWT". by iExists a'.
+  Qed.
+  Lemma guard_exist_strengthen_lhs `{!BiAffine PROP} {A W P} {R S : A → PROP} :
+    (∀ a, P ∧ R a ⊢ S a) → (∀ a, Persistent (S a)) →
+    (P &&{W}&&> ∃ a, R a) ⊢ P &&{W}&&> ∃ a, R a ∗ S a.
+  Proof.
+    move=> ??. iIntros "g". iApply (guard_exist_strengthen with "[] g")=>//.
+    iApply guard_refl.
+  Qed.
+
+  (** Anything guards [True], in an affine logic *)
+  Lemma guard_true `{!BiAffine PROP} {W P} : ⊢ P &&{W}&&> True.
+  Proof.
+    rewrite /guard. iIntros "!>" (T) "[P toWT]". iSplitR; [done|].
+    iIntros "_". by iApply "toWT".
+  Qed.
+
+  (** ** Using a guard
+
+    This is the later-free counterpart of Leaf's [guards_open].  The frame is
+    instantiated with [P] itself, so that closing the guard returns both the
+    world satisfaction and [P]. *)
+  Lemma guard_acc {W P Q} : (P &&{W}&&> Q) -∗ P -∗ W -∗ Q ∗ (Q -∗ W ∗ P).
+  Proof.
+    rewrite /guard. iIntros "#g P W".
+    iApply ("g" $! P with "[$P W]"). iIntros "$". iFrame "W".
+  Qed.
+  (** Open two guards out of the same [P] at once
+
+    Leaf's [guards_open_two_simultaneously].  The intermediate [U] is what the
+    two guards are opened against, so that neither closes the other out. *)
+  Lemma guard_open_two {W P Q R} :
+    (P &&{W}&&> Q) -∗ (P &&{W}&&> R) -∗ P -∗ W -∗ ∃ U, U ∗
+      □ (U -∗ Q ∗ (Q -∗ U)) ∗ □ (U -∗ R ∗ (R -∗ U)) ∗ (U -∗ W ∗ P).
+  Proof.
+    rewrite /guard. iIntros "#gQ #gR P W".
+    iExists (P ∗ (P -∗ W ∗ P))%I. iSplitL.
+    { iFrame "P". iIntros "$". iFrame "W". }
+    iSplit; [|iSplit].
+    - iIntros "!> U". iDestruct ("gQ" $! P with "U") as "[$ toU]".
+      iIntros "Q". iDestruct ("toU" with "Q") as "[W $]". iIntros "$". iFrame "W".
+    - iIntros "!> U". iDestruct ("gR" $! P with "U") as "[$ toU]".
+      iIntros "R". iDestruct ("toU" with "R") as "[W $]". iIntros "$". iFrame "W".
+    - iIntros "[P toWP]". by iApply "toWP".
+  Qed.
+
+  (** Observe persistent knowledge from two guards at once
+
+    Leaf's [guards_and_pers]: the two guards see the *same* resource, so the
+    non-separating conjunction of their right-hand sides holds of it. *)
+  Lemma guard_and_pers `{!BiAffine PROP} {W P Q R S} `{!Persistent S} :
+    □ (Q ∧ R -∗ S) -∗ (P &&{W}&&> Q) -∗ (P &&{W}&&> R) -∗ P -∗ W -∗
+      W ∗ P ∗ S.
+  Proof.
+    iIntros "#toS gQ gR P W".
+    iDestruct (guard_open_two with "gQ gR P W") as (U) "(U & #accQ & #accR & toWP)".
+    iAssert (S ∧ U)%I with "[U]" as "SU".
+    { iSplit; [|iFrame "U"]. iApply "toS". iSplit.
+      - iDestruct ("accQ" with "U") as "[$ _]".
+      - iDestruct ("accR" with "U") as "[$ _]". }
+    iDestruct "SU" as "[#S U]".
+    iDestruct ("toWP" with "U") as "[$$]". iFrame "S".
+  Qed.
+  (** The same, with an extra exclusive resource available to the observation *)
+  Lemma guard_and_pers_with_excl `{!BiAffine PROP} {W P Q R S T}
+    `{!Persistent S} :
+    □ ((Q ∧ R) ∗ T -∗ S) -∗ (P &&{W}&&> Q) -∗ (P &&{W}&&> R) -∗ P -∗ T -∗ W -∗
+      W ∗ P ∗ T ∗ S.
+  Proof.
+    iIntros "#toS gQ gR P T W".
+    iDestruct (guard_open_two with "gQ gR P W") as (U) "(U & #accQ & #accR & toWP)".
+    iAssert (S ∧ (U ∗ T))%I with "[U T]" as "SUT".
+    { iSplit; [|iFrame "U T"]. iApply "toS". iFrame "T". iSplit.
+      - iDestruct ("accQ" with "U") as "[$ _]".
+      - iDestruct ("accR" with "U") as "[$ _]". }
+    iDestruct "SUT" as "[#S [U $]]".
+    iDestruct ("toWP" with "U") as "[$$]". iFrame "S".
+  Qed.
+
+  (** Variant for a world satisfaction that includes the guard's one *)
+  Lemma guard_accw `{!WsatIncl W W' Wr} {P Q} :
+    (P &&{W'}&&> Q) -∗ P -∗ W -∗ Q ∗ (Q -∗ W ∗ P).
+  Proof.
+    iIntros "g". iDestruct (guard_wsat_incl (W:=W) with "g") as "g".
+    iApply (guard_acc with "g").
+  Qed.
+End guard.
