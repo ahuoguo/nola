@@ -147,3 +147,20 @@ Proof.
   iMod sinv_auth_tok_alloc_empty as (?) "●". iModIntro. iExists _.
   iIntros (?) "Ne". rewrite sinv_wsat_unseal. by iFrame.
 Qed.
+
+(** Allocate a *second* [sinv_wsat] under the same ghost functor
+
+  Useful when one development needs two independent families of simple
+  invariants: the new instance reuses the [inG] of an existing one and only
+  gets a fresh ghost name. *)
+Lemma sinv_wsat_alloc_name `{!sinvGS FML Σ} :
+  ⊢ |==> ∃ γ : gname, ∀ sm, (∀ i, internal_ne (sm i)) -∗
+    sinv_wsat (sinvGS0 := SinvGS FML Σ sinvGS_pre γ) sm.
+Proof.
+  iMod (own_alloc (A:=gmap_viewR positive (agreeR (FML $oi Σ)))
+    (gmap_view_auth (DfracOwn 1) ∅)) as (γ) "●".
+  { apply gmap_view_auth_valid. }
+  iModIntro. iExists γ. iIntros (?) "Ne". rewrite sinv_wsat_unseal.
+  iFrame "Ne". iExists ∅. rewrite /sinv_auth_tok fmap_empty big_sepM_empty.
+  by iFrame "●".
+Qed.
