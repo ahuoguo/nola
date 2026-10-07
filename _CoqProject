@@ -139,3 +139,4 @@ nola/alerus/lifetime/split.v
 nola/alerus/lifetime/reborrow.v
 nola/alerus/lifetime/unnest.v
 nola/alerus/lifetime/unborrow.v
+nola/alerus/lifetime/expire_lt.v
