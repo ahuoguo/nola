@@ -7,6 +7,8 @@
   been upstreamed into Iris, by [nola.alerus.own_and]. *)
 
 From nola.alerus Require Import own_and.
+From nola.iris Require Import iprop.
+Import iPropAppNotation.
 
 Require Import stdpp.base.
 From iris.algebra Require Export cmra updates.
@@ -135,7 +137,10 @@ Qed.
 Local Definition slice_name := gname.
 Definition gmap_bor_state := gmap slice_name BorState.
 Definition gmultiset_bor_state := gmultiset (slice_name * BorState).
-Definition gmap_props Σ := gmap slice_name (iProp Σ).
+(** Ported change: the original stored *propositions* here, which forced
+  [agree (later (iProp Σ))] in the box and hence a [▷] on every agreement.
+  Slices now store syntactic formulas, so this is a map of formulas. *)
+Definition gmap_props (FML : oFunctor) Σ := gmap slice_name (FML $oi Σ).
 
 Inductive LtRa :=
   | LtOk : (option (gset lt_atom * gset lt_atom)) → gmultiset lt_atom → gset lt_atom →
