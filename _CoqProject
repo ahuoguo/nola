@@ -137,3 +137,5 @@ nola/alerus/lifetime/iff.v
 nola/alerus/lifetime/join.v
 nola/alerus/lifetime/split.v
 nola/alerus/lifetime/reborrow.v
+nola/alerus/lifetime/unnest.v
+nola/alerus/lifetime/unborrow.v
