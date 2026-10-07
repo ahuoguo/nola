@@ -88,6 +88,18 @@ Section guard.
     (P &&{W'}&&> Q) ⊢ P &&{W}&&> Q.
   Proof. rewrite (wsat_incl W W' Wr). exact guard_wsat_sep. Qed.
 
+  (** A conjunct of the world satisfaction is guarded by anything
+
+    This is the later-free, world-satisfaction counterpart of Leaf's
+    [guards_from_inv]: whatever sits inside the world satisfaction can be
+    observed by any guard without consuming it. *)
+  Lemma guard_wsat_out `{!WsatIncl W W' Wr} {P} : ⊢ P &&{W}&&> W'.
+  Proof.
+    rewrite /guard. iIntros "!>" (T) "[P toWT]".
+    iDestruct ("toWT" with "P") as "[W $]". rewrite (wsat_incl W W' Wr).
+    iDestruct "W" as "[$ Wr]". iIntros "W'". iFrame.
+  Qed.
+
   (** A separating conjunct is guarded by the whole *)
   Lemma guard_sep_l {W P Q} : ⊢ (P ∗ Q) &&{W}&&> P.
   Proof.
@@ -149,6 +161,60 @@ Section guard.
   Proof.
     move=> ??. iIntros "g". iApply (guard_exist_strengthen with "[] g")=>//.
     iApply guard_refl.
+  Qed.
+
+  (** Cancel a disjunct that guards a contradiction
+
+    Leaf's [guards_cancel_or_by_chaining]. *)
+  Lemma guard_or_false {W P Q R} :
+    (P &&{W}&&> (Q ∨ R)) -∗ (Q &&{W}&&> False) -∗ P &&{W}&&> R.
+  Proof.
+    rewrite /guard. iIntros "#g #gF !>" (T) "PT".
+    iDestruct ("g" with "PT") as "[[Q|$] toWT]"; last first.
+    { iIntros "R". iApply "toWT". by iRight. }
+    iDestruct ("gF" $! T with "[Q toWT]") as "[[] _]".
+    iFrame "Q". iIntros "Q". iApply "toWT". by iLeft.
+  Qed.
+  (** Cancel a disjunct that is incompatible with another guarded resource
+
+    Leaf's [guards_cancel_or]. *)
+  Lemma guard_cancel_or `{!BiAffine PROP} {W P Q R S} : (Q ∧ R ⊢ False) →
+    (P &&{W}&&> Q) -∗ (P &&{W}&&> (R ∨ S)) -∗ P &&{W}&&> S.
+  Proof.
+    move=> QR. iIntros "gQ gRS".
+    iAssert (P &&{W}&&> ∃ b : bool, if b then R else S)%I with "[gRS]" as "gRS".
+    { iApply (guard_trans with "gRS"). iApply guard_intro. iIntros "!> [R|S]".
+      - iSplitL; [by iExists true|]. iIntros "[%b ?]". destruct b; [by iLeft|].
+        by iRight.
+      - iSplitL; [by iExists false|]. iIntros "[%b ?]". destruct b; [by iLeft|].
+        by iRight. }
+    iDestruct (guard_exist_strengthen (S:=λ b : bool, ⌜b = false⌝)%I
+      with "gQ gRS") as "g".
+    { move=> b. destruct b; [|by iIntros "_"]. iIntros "QR". iExFalso.
+      by iApply QR. }
+    iAssert ((∃ b : bool, (if b then R else S) ∗ ⌜b = false⌝) &&{W}&&> S)%I
+      as "g2".
+    { iApply guard_intro. iIntros "!> [%b[? ->]]". iFrame. iIntros "S".
+      by iExists false; iFrame. }
+    iApply (guard_trans with "g g2").
+  Qed.
+
+  (** Combine two guards over disjoint world satisfactions
+
+    Leaf's [guards_true_sep_mask_disjoint]: disjointness of namespaces becomes
+    separation of world satisfactions. *)
+  Lemma guard_sep_wsat `{!BiAffine PROP} {W W' Q R} :
+    (True &&{W}&&> Q) -∗ (True &&{W'}&&> R) -∗ True &&{W ∗ W'}&&> (Q ∗ R).
+  Proof.
+    rewrite /guard. iIntros "#g #g' !>" (T) "[_ toWT]".
+    iDestruct ("toWT" with "[//]") as "[[W W'] T]".
+    iDestruct ("g" $! emp%I with "[W]") as "[Q toW]".
+    { iSplitR; [done|]. iIntros "_". iFrame "W". }
+    iDestruct ("g'" $! emp%I with "[W']") as "[R toW']".
+    { iSplitR; [done|]. iIntros "_". iFrame "W'". }
+    iFrame "Q R". iIntros "[Q R]".
+    iDestruct ("toW" with "Q") as "[$ _]". iDestruct ("toW'" with "R") as "[$ _]".
+    iFrame "T".
   Qed.
 
   (** Anything guards [True], in an affine logic *)
