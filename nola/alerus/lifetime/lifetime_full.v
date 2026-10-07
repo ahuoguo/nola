@@ -83,8 +83,11 @@ Section LlftLogic.
   Context `{!invGS_gen hlc Σ}.
   Context `{!sinvGS FML Σ, !BorSem FML Σ}.
   (** A second simple-invariant instance, holding the contents of shared
-    borrows.  The box uses the ambient [sinvGS]; this one is separate. *)
-  Context (shrGS : sinvGS FML Σ).
+    borrows.  The box uses the ambient [sinvGS]; this one is separate.  It is
+    introduced as a plain ghost name rather than a [Context] of class type, so
+    that it does not become a typeclass instance and get picked up by the box. *)
+  Context (shr_name : gname).
+  Local Definition shrGS : sinvGS FML Σ := SinvGS FML Σ sinvGS_pre shr_name.
   Context `{!ShrBorSem FML Σ}.
   (** [unnest] needs the formula language to express borrow-state ownership. *)
   Context `{!BorStateFml llft_name}.
@@ -1909,3 +1912,66 @@ Section LlftLogic.
   Qed.
 
 End LlftLogic.
+
+(** Initializing the lifetime logic
+
+  Leaf allocates two Iris invariants here ([Nmain] and [NllftO]); later-free,
+  the same content becomes the world satisfaction [llft_wsat], which the client
+  threads instead of opening. *)
+
+Lemma llft_wsat_alloc {Σ : gFunctors} {FML : oFunctor} {hlc}
+  `{!llft_logicGpreS Σ, !sinvGpreS FML Σ, !invGS_gen hlc Σ, !BorSem FML Σ}
+  (WG : iProp Σ) :
+  WG ⊢ |==> ∃ (_ : llft_logicGS Σ) (_ : sinvGS FML Σ) (shr_name : gname),
+    llft_wsat shr_name WG.
+Proof.
+  iIntros "WG".
+  iMod lt_alloc as (γ) "[J [Ab Modulo]]".
+  iMod (outlives_alloc ∅) as (γo) "[O1 O2]".
+  iMod (delayed_alloc None) as (γd) "[D1 D2]".
+  iMod (new_lt γ default_dead ∅ ∅ with "J") as "J"; [set_solver|set_solver|].
+  iMod (kill_lt γ default_dead with "J") as "[J dd]".
+  iMod (modulo_dead_new γ default_dead ∅ with "[dd Modulo]") as "Modulo".
+  { iFrame. }
+  iMod sinv_wsat_alloc as (Hbox) "Wbox".
+  iMod sinv_wsat_alloc_name as (shr_name) "Wshr".
+  iDestruct ("Wbox" $! (λ γ' Px, slice_body bor_sem γ' Px) with "[]") as "Wbox".
+  { iIntros (?). iApply ne_internal_ne. solve_proper. }
+  iDestruct ("Wshr" $! (λ _ Px, bor_sem Px) with "[]") as "Wshr".
+  { iIntros (?). iApply ne_internal_ne. solve_proper. }
+  iModIntro. iExists (LlftLogicG _ _ γ γo γd), Hbox, shr_name.
+  rewrite /llft_wsat /llft_wsatG /shr_wsat /llft_inv_other /llft_outlives
+    /llft_inv_main /box_wsat.
+  iFrame "WG Wshr Wbox".
+  iSplitR "D2 O2"; last first.
+  { iExists ∅. iFrame "D2 O2". iIntros (o) "%Ho". set_solver. }
+  iExists ∅, {[default_dead]}, ∅.
+  replace ((∅ ∪ {[default_dead]}) ∖ {[default_dead]}) with (∅ : gset lt_atom);
+    last by set_solver.
+  replace (∅ ∪ {[default_dead]}) with ({[default_dead]} : gset lt_atom);
+    last by set_solver.
+  iFrame "J". rewrite /llft_alive_def' !big_sepS_empty.
+  iSplitR; first by done. iSplitL; last by done.
+  iExists None. iFrame "D1". iExists ∅, ∅, emp%I, ∅.
+  iFrame "Ab O1 Modulo".
+  iSplitL. { rewrite /boxmap fmap_empty. iApply box_alloc. }
+  iSplitL. { rewrite future_vs_def. iIntros (k) "[%Hk _]". set_solver. }
+  iSplitL.
+  { iPureIntro. split; trivial. split.
+    - rewrite /inv.map_wf.
+      split. { set_solver. }
+      split. { set_solver. }
+      split. { set_solver. }
+      split. { intros sn bs Hl. rewrite lookup_empty in Hl. discriminate. }
+      split. { intros sn1 bs1 sn2 bs2 Hne Hl. rewrite lookup_empty in Hl.
+        discriminate. }
+      intros o Ho. set_solver.
+    - intros o Ho. set_solver. }
+  rewrite big_sepM_empty. done.
+Qed.
+
+Notation "@[ κ ]" := (llft_alive κ) (format "@[ κ ]") : bi_scope.
+Notation "[† κ ]" := (llft_dead κ) (format "[† κ ]") : bi_scope.
+Infix "⊑" := llft_incl (at level 70) : bi_scope.
+Notation "&{ κ }" := (full_bor κ) (format "&{ κ }") : bi_scope.
+Notation "&{ κ , i }" := (idx_bor κ i) (format "&{ κ , i }") : bi_scope.
