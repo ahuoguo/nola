@@ -1066,4 +1066,128 @@ Section LlftLogic.
   Qed.
   (* end hide *)
 
+  Lemma llftl_bor_acc' E Px κ' κ :
+      llft_ctx -∗ κ' ⊑ κ -∗ &{κ} Px -∗ @[κ'] -∗ |=[llft_wsat]{E}=> bor_sem Px ∗
+          (∀ Qx, (bor_sem Qx ={↑NllftUsr ∪ ↑NllftUsr2}=∗ bor_sem Px) -∗
+            bor_sem Qx -∗ |=[llft_wsat]=> (&{κ} Qx) ∗ @[κ']).
+  Proof.
+    iIntros "ctx Incl Bor Alive".
+    iMod (llftl_bor_acc_maybe_swell' E Px (set_map LtAtomSwell κ') κ
+      with "ctx [Incl] Bor [Alive]") as "[P R]".
+      - rewrite /llft_incl /llft_alive_def' big_sepS_set_map. iFrame.
+      - rewrite /llft_alive_def' big_sepS_set_map. unseal. iFrame.
+      - iModIntro. iFrame "P". iIntros (Qx) "A B".
+        iMod ("R" $! Qx with "A B") as "[$ A]".
+        iModIntro. rewrite /llft_alive_def' big_sepS_set_map. unseal. iFrame.
+  Qed.
+
+  Lemma llftl_bor_acc E Px κ :
+      llft_ctx -∗ &{κ} Px -∗ @[κ] -∗ |=[llft_wsat]{E}=> bor_sem Px ∗
+          (∀ Qx, (bor_sem Qx ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ bor_sem Px) -∗
+            bor_sem Qx -∗ |=[llft_wsat]=> (&{κ} Qx) ∗ @[κ]).
+  Proof.
+    iIntros "#ctx fb alive". unseal_bor.
+    iDestruct "fb" as (sn κ') "[#incl [#slice OwnBor]]".
+    iMod (llftl_idx_acc_fwd E (set_map LtAtomSwell κ) (sn, κ') Px
+      with "ctx [] OwnBor [alive]") as "[P OwnBor]".
+      { rewrite /idx_bor_def' /llft_alive_def' big_sepS_set_map. unseal.
+        iFrame "incl". iFrame "slice". }
+      { rewrite /llft_alive_def' big_sepS_set_map. unseal. iFrame "alive". }
+    iModIntro. iFrame "P". iIntros (Qx) "vs Q".
+    iMod (llftl_idx_acc_back_vs (set_map LtAtomSwell κ) (sn, κ') Px Qx
+      with "ctx [] OwnBor Q [vs]") as (sn2) "[#bor2 [tok2 alive]]".
+      { rewrite /idx_bor_def' /llft_alive_def' big_sepS_set_map. unseal.
+        iFrame "incl". iFrame "slice". }
+      { rewrite /llft_dead_def' -dead_def_set_map. unseal. iFrame "vs". }
+    iModIntro. iSplitR "alive".
+    { iExists sn2, κ'. iFrame "incl tok2". rewrite /idx_bor_def'.
+      by iDestruct "bor2" as "[_ $]". }
+    rewrite /llft_alive_def' big_sepS_set_map. unseal. iFrame "alive".
+  Qed.
+
+  (** The atomic accessor keeps the lifetime invariant open: in Leaf that is
+    the mask change [|={↑Nllft,∅}=> ... |={∅,↑Nllft}=>], here it is that the
+    world satisfaction is handed in and only given back at the end. *)
+  Lemma llftl_bor_acc_atomic E Px κ :
+      llft_ctx -∗ &{κ} Px -∗ llft_wsat -∗ |={E}=>
+          (bor_sem Px ∗ (∀ Qx,
+             (bor_sem Qx ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ bor_sem Px) -∗
+             bor_sem Qx ==∗ llft_wsat ∗ &{κ} Qx))
+          ∨ (llft_wsat ∗ [†κ]).
+  Proof.
+      iIntros "_ fb". unseal_bor.
+      iDestruct "fb" as (sn κ') "[#Incl [#slice OwnBor]]".
+      rewrite {1}/llft_wsat /llft_wsatG.
+      iIntros "[[WG [Shr [Box Main]]] Other]".
+      iDestruct "Other" as (outlives) "[Delayed O]".
+      iDestruct "Main" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
+      iDestruct (make_everything_alive
+        (set_map LtAtomSwell κ ∪ set_map LtAtomSwell κ') sa sd blocked
+        with "State Alive OuInv Delayed") as "X".
+      iMod ("X" with "Box") as "[Box X]".
+      iDestruct "X" as (sa') "[%Hsa [State [Alive [OuInv Delayed]]]]".
+      iDestruct (outer_get_dead with "Delayed OuInv") as "%Hdd".
+      destruct (decide (set_map LtAtomSwell κ ⊆ sa')) as [Hksa'|Hksa']; last first.
+      { assert (∃ x , x ∈ (set_map LtAtomSwell κ : gset lt_atom) ∩ sd)
+          as Hex_x. { apply set_choose_L. set_solver. }
+        destruct Hex_x as [x Hex].
+        iDestruct (LtState_entails_Dead llft_name x sa' sd with "State")
+          as "#Deadx". { set_solver. }
+        iModIntro. iRight. iSplitR "".
+        { rewrite /llft_wsat /llft_wsatG. iFrame "WG Shr Box".
+          iSplitR "Delayed O".
+          - iExists sa', sd, blocked. iFrame.
+          - iExists outlives. iFrame. }
+        unseal. rewrite dead_def_set_map. iExists x. iFrame "Deadx".
+        iPureIntro. set_solver. }
+      destruct (decide (set_map LtAtomSwell κ' ⊆ sa')) as [Hk'sa'|Hk'sa']; last first.
+      { assert (∃ x , x ∈ (set_map LtAtomSwell κ' : gset lt_atom) ∩ sd)
+          as Hex_x. { apply set_choose_L. set_solver. }
+        destruct Hex_x as [x Hex].
+        iDestruct (LtState_entails_Dead llft_name x sa' sd with "State")
+          as "#Deadx". { set_solver. }
+        iDestruct (llftl_incl_dead_implies_dead E κ κ'
+          with "[] Incl [Deadx]") as "Upd".
+        { done. }
+        { unseal. rewrite dead_def_set_map. iExists x. iFrame "Deadx".
+          iPureIntro. set_solver. }
+        iMod ("Upd" with "[WG Shr Box State Alive OuInv Blo]")
+          as "[WsatG #Hdeadk]".
+        { rewrite /llft_wsatG. iFrame "WG Shr Box".
+          iExists sa', sd, blocked. iFrame. }
+        iModIntro. iRight. iFrame "Hdeadk".
+        rewrite /llft_wsat. iFrame "WsatG". iExists outlives. iFrame. }
+      iDestruct (llft_augment_outlives sa' sd blocked outlives
+        (set_map LtAtomSwell κ) (set_map LtAtomSwell κ')
+        with "[] Delayed O OuInv State") as "X"; [done|done| |].
+      { rewrite /llft_alive_def'. do 2 rewrite big_sepS_set_map. unseal.
+        iFrame "Incl". }
+      iMod ("X" with "Box") as "[Box X]".
+      iDestruct "X" as (outlives') "[%Ho' [Delayed [O [OuInv State]]]]".
+      iDestruct "O" as "[Ostate Oguards]".
+      iDestruct "slice" as (Px') "[#PEquiv #slice']".
+      iDestruct (outer_unborrow_atomic llft_name o_name d_name sa' sd blocked
+        outlives' sn (set_map LtAtomSwell κ) (set_map LtAtomSwell κ')
+        {[default_dead]} Px' with "[Delayed OuInv OwnBor Ostate]") as "X".
+      { done. } { set_solver. } { exact Ho'. }
+      { iFrame "Delayed OuInv Ostate OwnBor". iFrame "slice'". }
+      iMod ("X" with "Box") as "[Box [P X]]".
+      iModIntro. iLeft. iSplitL "P". { by iApply "PEquiv". }
+      iIntros (Qx) "vs Q". iDestruct ("X" $! Qx) as "X".
+      iDestruct ("X" with "[vs Q]") as "X".
+      { iFrame "Q". iIntros "A".
+        iMod ("vs" with "[A]") as "Y".
+        { unseal. rewrite dead_def_set_map. iFrame "A". }
+        iModIntro. by iApply "PEquiv". }
+      iMod ("X" with "Box") as "[Box X]".
+      iDestruct "X" as (sn2) "[Delayed [OuInv [Ostate [OwnBor #slice2]]]]".
+      iModIntro. iSplitR "OwnBor".
+      { rewrite /llft_wsat /llft_wsatG. iFrame "WG Shr Box".
+        iSplitR "Delayed Ostate Oguards".
+        - iExists sa', sd, blocked. iFrame.
+        - iExists outlives'. iFrame. }
+      iExists sn2, κ'. iFrame "Incl OwnBor". iExists Qx. iFrame "slice2".
+      iModIntro. iSplit; by iIntros "$".
+  Qed.
+
 End LlftLogic.
