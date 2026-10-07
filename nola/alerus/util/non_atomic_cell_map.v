@@ -1,0 +1,858 @@
+(** * The Points-To Cell Logic, later-free
+
+  Ported from VerusBelt ([util/non_atomic_cell_map.v], MIT, Hance, Elbeheiry,
+  Matsushita, Dreyer), with the laters removed.
+
+  Two changes against the original:
+
+  - The propositions guarding a cell used to be stored in ghost state through
+    [agree (later (iProp Σ))].  The [later] was there only for
+    impredicativity; as in [nola.alerus.boxes] we store a *syntactic formula*
+    [FML $oi Σ] instead, so the agreement lemmas conclude [Gx ≡ Gx'] rather
+    than [▷ (G ≡ G')].  That is where the five laters in the original came
+    from, and they all disappear.
+
+  - The guards carried a later count [d] and a matching later-credit budget
+    [£ d], spent through [lc_fupd_elim_laterN] (14 times in the original) to
+    strip the laters that opening a guard introduced.  With the later-free
+    guard of [nola.bi.guard] there is nothing to strip, so both the index and
+    the credits are gone.  The guards are taken over an explicit world
+    satisfaction [W] instead of an invariant mask. *)
+
+From iris.prelude Require Import options.
+From nola.bi Require Export guard.
+From nola.iris Require Export guard.
+From nola.alerus.lang Require Import lang.
+From nola.alerus.util Require Import cellmap.
+Require Import stdpp.base.
+From iris.algebra Require Export cmra updates.
+From iris.algebra Require Import proofmode_classes excl gmap_view.
+From nola.iris Require Export iprop.
+From iris.base_logic.lib Require Export own.
+From iris.proofmode Require Import base ltac_tactics proofmode coq_tactics.
+Import GuardNotation iPropAppNotation.
+
+Local Open Scope nat_scope.
+
+(** Non-atomic map. **)
+
+Definition ReadWriteState := lock_state.
+
+(* The original guarded over an invariant namespace [naN]; guards are now
+  taken over an explicit world satisfaction, so no namespace is needed. *)
+
+(* begin hide *)
+
+Section NonAtomicInternals.
+
+  Context `{!EqDecision L, !Countable L}.
+  Context {V: Type}.
+  
+  Implicit Types (σ: gmap L (ReadWriteState * V)).
+
+  Local Definition erase_count_map {L} {V} `{!EqDecision L, !Countable L} (σ: gmap L (ReadWriteState * V)) : gmap L V := snd <$> σ.
+    
+  Local Definition heap_count_r (σ: gmap L (ReadWriteState * V)) (l : L) : nat :=
+      match σ !! l with
+        | None => 0
+        | Some (WSt, v) => 0
+        | Some (RSt n, v) => n
+      end.
+      
+  Local Definition heap_count_w (σ: gmap L (ReadWriteState * V)) (l : L) : nat :=
+      match σ !! l with
+        | None => 0
+        | Some (WSt, v) => 1
+        | Some (RSt n, v) => 0
+      end.
+  
+  Local Definition m_count {B} (m : gmap (L * nat) B) (l : L) : nat :=
+      length (filter (λ p , p.1.1 = l) (map_to_list m)).
+      
+  Local Definition counts_agree_r {B} (σ: gmap L (ReadWriteState * V)) (m : gmap (L * nat) B)
+    : Prop := ∀ l, heap_count_r σ l = m_count m l.
+    
+  Local Definition counts_agree_w {B} (σ: gmap L (ReadWriteState * V)) (m : gmap (L * nat) B)
+    : Prop := ∀ l, heap_count_w σ l = m_count m l.
+    
+  Local Lemma length_filter_ex {A}
+    (P : A → Prop) (dec: ∀ x : A, Decision (P x)) (l : list A)
+    : length (filter P l) ≠ 0%nat → ∃ a , P a ∧ a ∈ l.
+  Proof.
+    induction l as [|a l IHl].
+    - intros lf. contradiction.
+    - intros lf. rewrite filter_cons in lf.
+      destruct (decide (P a)) as [h|h].
+      + exists a. rewrite elem_of_cons. intuition.
+      + destruct (IHl lf) as [a2 [pa al]]. exists a2. rewrite elem_of_cons. intuition.
+  Qed.
+  
+  Local Lemma length_filter_ex_rev {A}
+    (P : A → Prop) (dec: ∀ x : A, Decision (P x)) (l : list A) (a: A)
+    : P a → a ∈ l → length (filter P l) ≠ 0%nat.
+  Proof.
+    intros pa a_in_l lzero.
+    rewrite length_zero_iff_nil in lzero.
+    assert (a ∈ filter P l) as H.
+    { rewrite list_elem_of_filter. split; trivial. }
+    rewrite lzero in H. rewrite elem_of_nil in H. trivial.
+  Qed.
+  
+  Local Lemma m_count_get1 {B} (m : gmap (L * nat) B) (l : L)
+      : (m_count m l ≠ 0%nat) → ∃ i j , m !! (l, i) = Some j.
+  Proof.
+    unfold m_count. intros ne0.
+    destruct (length_filter_ex _ _ _ ne0) as [[[l1 i1] x] [sat is_in]].
+    rewrite elem_of_map_to_list in is_in.
+    exists i1. exists x. simpl in sat. subst l. trivial.
+  Qed.
+  
+  Local Lemma counts_agree_insert_writing {B: Type} σ (m : gmap (L * nat) B) l v :
+    σ !! l = Some (RSt 0, v) →
+    counts_agree_r σ m →
+    counts_agree_r (<[l:=(WSt, v)]> σ) m.
+  Proof.
+    unfold counts_agree_r. intros is_in hc l1. have hcl := hc l1.
+    unfold heap_count_r. unfold heap_count_r in hcl. destruct (decide (l = l1)) as [h|h].
+    - subst l1. rewrite lookup_insert_eq. rewrite is_in in hcl. trivial.
+    - rewrite lookup_insert_ne; trivial.
+  Qed.
+    
+  Local Lemma counts_agree_insert_reading0 {B} σ (m : gmap (L * nat) B) l v v' :
+    σ !! l = Some (WSt, v) →
+    counts_agree_r σ m →
+    counts_agree_r (<[l:=(RSt 0, v')]> σ) m.
+  Proof.
+    unfold counts_agree_r. intros is_in hc l1. have hcl := hc l1.
+    unfold heap_count_r. unfold heap_count_r in hcl. destruct (decide (l = l1)) as [h|h].
+    - subst l1. rewrite lookup_insert_eq. rewrite is_in in hcl. trivial.
+    - rewrite lookup_insert_ne; trivial.
+  Qed.
+  
+  Local Lemma counts_agree_w_update_reading {B} σ (m : gmap (L * nat) B) l v v' n n' :
+    σ !! l = Some (RSt n, v) →
+    counts_agree_w σ m →
+    counts_agree_w (<[l:=(RSt n', v')]> σ) m.
+  Proof.
+    unfold counts_agree_w. intros is_in hc l1. have hcl := hc l1.
+    unfold heap_count_w. unfold heap_count_w in hcl. destruct (decide (l = l1)) as [h|h].
+    - subst l1. rewrite lookup_insert_eq. rewrite is_in in hcl. trivial.
+    - rewrite lookup_insert_ne; trivial.
+  Qed.
+  
+  Local Lemma m_get_fresh_index {B} (m : gmap (L * nat) B) (l: L) :
+      ∃ i , m !! (l, i) = None.
+  Proof.
+    assert (exists x , x ∉ ((λ a , a.1.2) <$> map_to_list m)) as [x H].
+    { exists (fresh ((λ a , a.1.2) <$> map_to_list m)). apply infinite_is_fresh. }
+    exists x. destruct (m !! (l, x)) as [u|] eqn:mlx; trivial.
+    exfalso. apply H. rewrite <- elem_of_map_to_list in mlx.
+    rewrite list_elem_of_fmap. exists ((l, x), u). intuition.
+  Qed.
+       
+  Local Lemma erase_count_map_same_update_read_count (σ: gmap L (ReadWriteState * V)) l v n m :
+      σ !! l = Some (RSt n, v) →
+      erase_count_map (<[l:=(RSt m, v)]> σ) = erase_count_map σ.
+  Proof.
+    intro is_in. unfold erase_count_map. rewrite fmap_insert. simpl.
+    apply map_eq. intros l1. destruct (decide (l = l1)) as [h|h].
+    - subst l1. rewrite lookup_insert_eq. rewrite lookup_fmap. rewrite is_in. trivial.
+    - rewrite lookup_insert_ne; trivial.
+  Qed.
+  
+  Local Lemma m_count_insert_plus1 {B} (m : gmap (L * nat) B) l i G
+    (is_fresh : m !! (l, i) = None)
+    : m_count m l + 1 = m_count (<[(l, i):=G]> m) l.
+  Proof.
+    unfold m_count. setoid_rewrite map_to_list_insert; trivial.
+      rewrite filter_cons. simpl. destruct (decide (l=l)); last by contradiction.
+      unfold length. lia.
+  Qed.
+  
+  Local Lemma m_count_insert_ne_helper {B} (m : gmap (L * nat) B) l l1 i G
+    (ne : l ≠ l1)
+    (mot_in: m !! (l, i) = None)
+    : m_count m l1 = m_count (<[(l, i):=G]> m) l1.
+  Proof.
+    unfold m_count. setoid_rewrite map_to_list_insert; trivial.
+      rewrite filter_cons. simpl. destruct (decide (l=l)); last by contradiction.
+      destruct (decide (l = l1)); trivial; contradiction.
+  Qed.
+    
+  Local Lemma m_count_insert_ne {B} (m : gmap (L * nat) B) l l1 i G
+    (ne : l ≠ l1)
+    : m_count m l1 = m_count (<[(l, i):=G]> m) l1.
+  Proof.
+    assert (delete (l, i) m !! (l, i) = None) as H by apply lookup_delete_eq.
+    destruct (m !! (l, i)) as [G2|] eqn:m_in.
+     - have t1 := m_count_insert_ne_helper (delete (l, i) m) l l1 i G ne H.
+       have t2 := m_count_insert_ne_helper (delete (l, i) m) l l1 i G2 ne H.
+       rewrite insert_delete_id in t2; trivial.
+       rewrite insert_delete_eq in t1.
+       rewrite t2 in t1. trivial.
+     - apply m_count_insert_ne_helper; trivial.
+  Qed.
+    
+  Local Lemma m_count_delete_minus1 {B} (m : gmap (L * nat) B) l i G
+    (is_in : m !! (l, i) = Some G)
+    : m_count m l - 1 = m_count (delete (l, i) m) l.
+  Proof.
+    assert (delete (l, i) m !! (l, i) = None) as H by apply lookup_delete_eq.
+    have j := m_count_insert_plus1 (delete (l, i) m) l i G H.
+    rewrite insert_delete_id in j; trivial. lia.
+  Qed.
+    
+  Local Lemma m_count_delete_ne {B} (m : gmap (L * nat) B) l l1 i
+    (ne : l ≠ l1)
+    : m_count m l1 = m_count (delete (l, i) m) l1.
+  Proof.
+    destruct (m !! (l, i)) as [G|] eqn:de.
+     - have j := m_count_insert_ne (delete (l, i) m) l l1 i G ne.
+       rewrite j. rewrite insert_delete_id; trivial.
+     - rewrite delete_id; trivial.
+  Qed.
+      
+  Local Lemma counts_agree_insert_read {B}
+      (σ: gmap L (ReadWriteState * V))
+      (m : gmap (L * nat) B) l v n i G
+      (is_read : σ !! l = Some (RSt n, v))
+      (is_fresh : m !! (l, i) = None)
+      (ca: counts_agree_r σ m)
+    : counts_agree_r (<[l:=(RSt (n + 1), v)]> σ) (<[(l, i):=G]> m).
+  Proof.
+    intros l1. have cal := ca l1. unfold heap_count_r in *.
+    destruct (decide (l = l1)) as [h|h].
+     - subst l1. rewrite lookup_insert_eq. rewrite is_read in cal. rewrite cal.
+       apply m_count_insert_plus1; trivial.
+     - rewrite lookup_insert_ne; trivial. rewrite <- m_count_insert_ne; trivial.
+  Qed.
+
+  Local Lemma counts_agree_delete_read {B}
+      (σ: gmap L (ReadWriteState * V))
+      (m : gmap (L * nat) B) l v n i G
+      (is_read : σ !! l = Some (RSt n, v))
+      (is_in_m: m !! (l, i) = Some G)
+      (n_ge_1: n ≥ 1)
+      (ca: counts_agree_r σ m)
+   : counts_agree_r (<[l:=(RSt (n - 1), v)]> σ) (delete (l, i) m).
+  Proof.
+    intros l1. have cal := ca l1. unfold heap_count_r in *.
+    destruct (decide (l = l1)) as [h|h].
+     - subst l1. rewrite lookup_insert_eq. rewrite is_read in cal. rewrite cal.
+       apply m_count_delete_minus1 with (G := G); trivial.
+     - rewrite lookup_insert_ne; trivial. rewrite <- m_count_delete_ne; trivial.
+  Qed.
+  
+  Local Lemma counts_agree_insert_write {B}
+      (σ: gmap L (ReadWriteState * V))
+      (m : gmap (L * nat) B) l v i G
+      (is_read : σ !! l = Some (RSt 0, v))
+      (is_fresh : m !! (l, i) = None)
+      (ca: counts_agree_w σ m)
+    : counts_agree_w (<[l:=(WSt, v)]> σ) (<[(l, i):=G]> m).
+  Proof.
+    intros l1. have cal := ca l1. unfold heap_count_w in *.
+    destruct (decide (l = l1)) as [h|h].
+     - subst l1. rewrite lookup_insert_eq. rewrite is_read in cal. rewrite cal.
+       rewrite <- m_count_insert_plus1; trivial. lia.
+     - rewrite lookup_insert_ne; trivial. rewrite <- m_count_insert_ne; trivial.
+  Qed.
+  
+  Local Lemma counts_agree_delete_write {B}
+      (σ: gmap L (ReadWriteState * V))
+      (m : gmap (L * nat) B) l v v' i G
+      (is_read : σ !! l = Some (WSt, v))
+      (is_in_m: m !! (l, i) = Some G)
+      (ca: counts_agree_w σ m)
+   : counts_agree_w (<[l:=(RSt 0, v')]> σ) (delete (l, i) m).
+  Proof.
+    intros l1. have cal := ca l1. unfold heap_count_w in *.
+    destruct (decide (l = l1)) as [h|h].
+     - subst l1. rewrite lookup_insert_eq. rewrite is_read in cal.
+       replace 0 with (m_count m l - 1) by lia.
+       apply m_count_delete_minus1 with (G := G); trivial.
+     - rewrite lookup_insert_ne; trivial. rewrite <- m_count_delete_ne; trivial.
+  Qed.
+
+  Local Lemma counts_agree_r_alloc {B}
+    (σ: gmap L (ReadWriteState * V))
+    (m : gmap (L * nat) B) l v :
+    σ !! l = None →
+    counts_agree_r σ m →
+    counts_agree_r (<[l:=(RSt 0, v)]> σ) m.
+  Proof.
+    intros is_none ca l1. have cal := ca l1. unfold heap_count_r in *.
+    destruct (decide (l = l1)) as [h|h].
+    - subst l1. rewrite lookup_insert_eq. rewrite is_none in cal. trivial.
+    - rewrite lookup_insert_ne; trivial.
+  Qed.
+  
+  Local Lemma counts_agree_w_alloc {B}
+    (σ: gmap L (ReadWriteState * V))
+    (m : gmap (L * nat) B) l v :
+    σ !! l = None →
+    counts_agree_w σ m →
+    counts_agree_w (<[l:=(RSt 0, v)]> σ) m.
+  Proof.
+    intros is_none ca l1. have cal := ca l1. unfold heap_count_w in *.
+    destruct (decide (l = l1)) as [h|h].
+    - subst l1. rewrite lookup_insert_eq. rewrite is_none in cal. trivial.
+    - rewrite lookup_insert_ne; trivial.
+  Qed.
+  
+  Local Lemma counts_agree_r_delete {B}
+    (σ: gmap L (ReadWriteState * V))
+    (m : gmap (L * nat) B) l v :
+    σ !! l = Some (RSt 0, v) →
+    counts_agree_r σ m →
+    counts_agree_r (delete l σ) m.
+  Proof.
+    intros is_none ca l1. have cal := ca l1. unfold heap_count_r in *.
+    destruct (decide (l = l1)) as [h|h].
+    - subst l1. rewrite lookup_delete_eq. rewrite is_none in cal. trivial.
+    - rewrite lookup_delete_ne; trivial.
+  Qed.
+    
+  Local Lemma counts_agree_w_delete {B}
+    (σ: gmap L (ReadWriteState * V))
+    (m : gmap (L * nat) B) l v :
+    σ !! l = Some (RSt 0, v) →
+    counts_agree_w σ m →
+    counts_agree_w (delete l σ) m.
+  Proof.
+    intros is_none ca l1. have cal := ca l1. unfold heap_count_w in *.
+    destruct (decide (l = l1)) as [h|h].
+    - subst l1. rewrite lookup_delete_eq. rewrite is_none in cal. trivial.
+    - rewrite lookup_delete_ne; trivial.
+  Qed.
+  
+  Local Lemma m_count_ge_1_from {B}
+      (σ: gmap L (ReadWriteState * V))
+      (m : gmap (L * nat) B) l i G
+      (m_has : m !! (l, i) = Some G)
+      : m_count m l ≥ 1.
+  Proof.
+    enough (m_count m l ≠ 0) by lia.
+    unfold m_count. 
+    apply length_filter_ex_rev with (a := (l, i, G)); trivial.
+    rewrite elem_of_map_to_list. trivial.
+  Qed.
+   
+  Local Lemma counts_agree_ge1_is_reading {B}
+      (σ: gmap L (ReadWriteState * V))
+      (m : gmap (L * nat) B) l i G
+      (m_has : m !! (l, i) = Some G)
+      (ca: counts_agree_r σ m)
+      : ∃ n v0 , σ !! l = Some (RSt n, v0) ∧ n ≥ 1.
+  Proof.
+    have cal := ca l.
+    have j := m_count_ge_1_from σ m l i G m_has.
+    have j2 := j.
+    rewrite <- cal in j. unfold heap_count_r in j, cal.
+    destruct (σ !! l) as [[r v]|]; last by lia.
+    exists (m_count m l). exists v. intuition. f_equal. f_equal.
+    destruct r as [|n]. { lia. } { subst n. trivial. }
+  Qed.
+  
+  Local Lemma counts_agree_ge1_is_writing {B}
+      (σ: gmap L (ReadWriteState * V))
+      (m : gmap (L * nat) B) l i G
+      (m_has : m !! (l, i) = Some G)
+      (ca: counts_agree_w σ m)
+      : ∃ v0 , σ !! l = Some (WSt, v0).
+  Proof.
+    have cal := ca l.
+    have j := m_count_ge_1_from σ m l i G m_has.
+    have j2 := j.
+    rewrite <- cal in j. unfold heap_count_w in j, cal.
+    destruct (σ !! l) as [[r v]|]; last by lia.
+    exists v. intuition. f_equal. f_equal.
+    destruct r as [|n]. { trivial. } { lia. }
+  Qed.
+End NonAtomicInternals.
+
+(* end hide *)
+
+Definition cell_id := positive.
+
+Class na_logicG L V `{!EqDecision L, !Countable L, !Inhabited V}
+  (FML : oFunctor) Σ := {
+  #[local] na1_inG :: cmap_logicG L cell_id V Σ ;
+  #[local] na2_inG :: inG Σ (gmap_viewR (L * nat) (agreeR (FML $oi Σ))) ;
+  #[local] na3_inG :: inG Σ (gmap_viewR (L * nat) (agreeR
+      (prodO (leibnizO (option (list cell_id * cell_id))) (FML $oi Σ))
+     ))
+}.
+
+Definition na_logicΣ L V `{!EqDecision L, !Countable L, !Inhabited V}
+  (FML : oFunctor) `{!oFunctorContractive FML} : gFunctors := #[
+  cmap_logicΣ L cell_id V;
+  GFunctor (gmap_viewRF (L * nat) (agreeRF FML));
+  GFunctor (gmap_viewRF (L * nat)
+    (agreeRF (prodOF (leibnizO (option (list cell_id * cell_id))) FML)))
+].
+
+Global Instance subG_na_logicΣ L V `{!EqDecision L, !Countable L, !Inhabited V}
+  (FML : oFunctor) `{!oFunctorContractive FML} Σ :
+  subG (na_logicΣ L V FML) Σ → na_logicG L V FML Σ.
+Proof.
+  (* why is this not automatic? *)
+  split. 
+    - apply subG_cmap_logicΣ. unfold na_logicΣ in H.
+      have H2 := subG_inv _ _ _ H. destruct H2 as [H3 H4].
+      apply H3.
+    - unfold na_logicΣ in H.
+      have H2 := subG_inv _ _ _ H. destruct H2 as [H3 H4].
+      solve_inG.
+    - unfold na_logicΣ in H.
+      have H2 := subG_inv _ _ _ H. destruct H2 as [H3 H4].
+      solve_inG.
+Qed.
+
+
+Section NonAtomicMap.
+  Local Set Default Proof Using "Type*".
+
+  Context `{!EqDecision L, !Countable L}.
+  Context `{!Inhabited V}.
+
+  Context {Σ: gFunctors} {FML : oFunctor}.
+  Context `{!na_logicG L V FML Σ}.
+  (** The semantics of the stored formulas, and the world satisfaction the
+    guards are taken over.  The original took guards over the invariant mask
+    [↑naN] instead. *)
+  Context (sm : FML $oi Σ → iProp Σ) `{!NonExpansive sm} (W : iProp Σ).
+  (** The original stored the proposition [True%I] in ghost state when a write
+    is in progress on a plain location.  Formulas are syntactic, so we ask for
+    a formula standing for [True]. *)
+  Context (emptyx : FML $oi Σ) (emptyx_sem : sm emptyx ⊣⊢ True).
+
+  (** [point_prop] of a cell chain, so that [guard_and] applies *)
+  Local Existing Instance cmap_pt_seq_point_prop.
+
+  Implicit Types (ι: gname) (l: L) (v: V).
+  Implicit Types (lc: L + cell_id).
+  Implicit Types (cv: cell_id + V).
+  Implicit Types (cells: list cell_id).
+  Implicit Types (Gx: FML $oi Σ).
+  Implicit Types (σ: gmap L (ReadWriteState * V)).
+
+  Local Definition ιf1 (ι: gname) : gname :=
+    match prod_decode_fst ι with Some x => x | _ => ι end.
+  Local Definition ιf2 (ι: gname) : gname :=
+    match prod_decode_snd ι with Some x => x | _ => ι end.
+
+  Local Definition ιh (ι: gname) : gname := ιf1 ι.
+  Local Definition ιi (ι: gname) : gname := ιf1 (ιf2 ι).
+  Local Definition ιj (ι: gname) : gname := ιf2 (ιf2 ι).
+
+  Local Definition points_to_seq_def (ι: gname) (lc: L+cell_id)
+      (cells: list cell_id) (cv: cell_id+V) : iProp Σ :=
+      cellmap.pt_seq L cell_id V (ιh ι) lc cells cv.
+  Local Definition points_to_seq_aux : seal (@points_to_seq_def).
+  Proof. by eexists. Qed.
+  Definition points_to_seq ι lc cells cv : iProp Σ.
+  Proof. exact (points_to_seq_aux.(unseal) ι lc cells cv). Defined.
+  Local Definition points_to_seq_unseal :
+      @points_to_seq = @points_to_seq_def := points_to_seq_aux.(seal_eq).
+
+  Notation "l @↦[ ι ][^ cells ] v" := (points_to_seq ι l cells v)
+    (at level 20, format "l  @↦[ ι ][^ cells ]  v") : bi_scope.
+  Notation "l @↦[ ι ] v" := (points_to_seq ι l [] v)
+    (at level 20, format "l  @↦[ ι ]  v") : bi_scope.
+
+  (** The write bank's camera.  The original stored [laterO (iPropO Σ)]. *)
+  Local Definition wR :=
+    (agreeR (prodO (leibnizO (option (list cell_id * cell_id))) (FML $oi Σ))).
+
+  Local Definition points_to_w_intermediate_def (ι: gname) (l: L)
+      (o: option (list cell_id * cell_id)) Gx : iProp Σ :=
+    (∃ i, own (ιj ι) (gmap_view_frag (V:=wR) (l, i) (DfracOwn 1)
+      (to_agree (o, Gx)))).
+
+  (** The original carried [∃ d, £ d ∗ (G &&{↑naN; d}&&> …)]: a guard with [d]
+    laters and the credits to strip them.  The later-free guard needs neither. *)
+  Local Definition points_to_r_intermediate_def (ι: gname) (l: L)
+      (cells: list cell_id) (v: V) Gx : iProp Σ :=
+    (∃ i, own (ιi ι) (gmap_view_frag (l, i) (DfracOwn 1) (to_agree Gx))) ∗
+    (sm Gx &&{W}&&> (inl l @↦[ι][^ cells] inr v)).
+
+  Local Definition points_to_w_intermediate_aux :
+    seal (@points_to_w_intermediate_def).
+  Proof. by eexists. Qed.
+  Definition points_to_w_intermediate ι l
+    (o: option (list cell_id * cell_id)) Gx : iProp Σ.
+  Proof. exact (points_to_w_intermediate_aux.(unseal) ι l o Gx). Defined.
+  Local Definition points_to_w_intermediate_unseal :
+      @points_to_w_intermediate = @points_to_w_intermediate_def :=
+    points_to_w_intermediate_aux.(seal_eq).
+
+  Local Definition points_to_r_intermediate_aux :
+    seal (@points_to_r_intermediate_def).
+  Proof. by eexists. Qed.
+  Definition points_to_r_intermediate ι l cells v Gx : iProp Σ.
+  Proof. exact (points_to_r_intermediate_aux.(unseal) ι l cells v Gx). Defined.
+  Local Definition points_to_r_intermediate_unseal :
+      @points_to_r_intermediate = @points_to_r_intermediate_def :=
+    points_to_r_intermediate_aux.(seal_eq).
+
+  Local Definition read_bank ι (σ: gmap L (ReadWriteState * V)) : iProp Σ :=
+    ∃ (m : gmap (L * nat) (FML $oi Σ)),
+      own (ιi ι) (gmap_view_auth (DfracOwn 1) (to_agree <$> m))
+      ∗ ⌜ counts_agree_r σ m ⌝
+      ∗ [∗ map] k ↦ Gx ∈ m, sm Gx ∗ ∃ v cells,
+          (sm Gx &&{W}&&> (inl (k.1)) @↦[ι][^ cells ] inr v).
+
+  Local Definition write_bank ι (σ: gmap L (ReadWriteState * V)) : iProp Σ :=
+    ∃ (m : gmap (L * nat)
+        (option (list cell_id * cell_id) * (FML $oi Σ))),
+      own (ιj ι) (gmap_view_auth (V:=wR) (DfracOwn 1) (to_agree <$> m))
+      ∗ ⌜ counts_agree_w σ m ⌝
+      ∗ [∗ map] k ↦ '(o, Gx) ∈ m, sm Gx ∗ ∃ v, match o with
+          | None => inl (k.1) @↦[ι] inr v
+          | Some (cells, cell) =>
+              (sm Gx &&{W}&&> inl (k.1) @↦[ι][^cells] inl cell) ∗
+              inr cell @↦[ι] inr v
+      end.
+
+  Local Definition non_atomic_map_def (ι: gname)
+      (σ: gmap L (ReadWriteState * V)) : iProp Σ :=
+      cellmap.heap L cell_id V (ιh ι) (erase_count_map σ)
+        ∗ read_bank ι σ ∗ write_bank ι σ.
+
+  Local Definition non_atomic_map_aux : seal (@non_atomic_map_def).
+  Proof. by eexists. Qed.
+  Definition non_atomic_map ι σ : iProp Σ.
+  Proof. exact (non_atomic_map_aux.(unseal) ι σ). Defined.
+  Local Definition non_atomic_map_unseal :
+      @non_atomic_map = @non_atomic_map_def := non_atomic_map_aux.(seal_eq).
+
+  Local Ltac unseal := rewrite
+    ?non_atomic_map_unseal /non_atomic_map_def
+    ?points_to_seq_unseal /points_to_seq_def
+    ?points_to_r_intermediate_unseal /points_to_r_intermediate_def
+    ?points_to_w_intermediate_unseal /points_to_w_intermediate_def.
+
+  (** ** The read bank *)
+
+  Lemma read_bank_contradiction ι σ l n v1 cells v :
+      n ≠ 0 →
+      σ !! l = Some (RSt n, v1) →
+      read_bank ι σ -∗ (inl l @↦[ι][^ cells] inr v) -∗ W -∗ False.
+  Proof.
+    move=> h Hσl. iDestruct 1 as (m) "[oh [%ca big]]". iIntros "pt W".
+    have ca_l := ca l. unfold heap_count_r in ca_l. rewrite Hσl in ca_l.
+    rewrite ca_l in h.
+    have ij := m_count_get1 m l h. destruct ij as [i [Gx mli]].
+    iDestruct (big_sepM_delete with "big") as "[[g gu] _]"; [apply mli|].
+    iDestruct "gu" as (v0 cells0) "gu".
+    iDestruct (guard_acc with "gu g W") as "[pt2 _]". unseal.
+    by iDestruct (cmap_locs_ne with "pt pt2") as "%Hl".
+  Qed.
+
+  (** Here [G] is supplied by the client and never stored in ghost state, so
+    it can be an arbitrary proposition rather than a formula. *)
+  Lemma read_bank_contradiction_guarded_cells ι σ l n v1 cells c v (G : iProp Σ) :
+      n ≠ 0 →
+      σ !! l = Some (RSt n, v1) →
+      read_bank ι σ -∗
+      (G &&{W}&&> inl l @↦[ι][^ cells] inl c) -∗
+      G -∗
+      (inr c @↦[ι] inr v) -∗ W -∗ False.
+  Proof.
+    move=> h Hσl. iDestruct 1 as (m) "[oh [%ca big]]".
+    iIntros "#guard G pt W".
+    have ca_l := ca l. unfold heap_count_r in ca_l. rewrite Hσl in ca_l.
+    rewrite ca_l in h.
+    have ij := m_count_get1 m l h. destruct ij as [i [Gx0 mli]].
+    iDestruct (big_sepM_delete with "big") as "[[G0 gu] _]"; [apply mli|].
+    iDestruct "gu" as (v0 cells0) "#guard0".
+    iDestruct (guard_lhs_sep_l (R:=sm Gx0) with "guard") as "guard'".
+    iDestruct (guard_lhs_sep_r (R:=G) with "guard0") as "guard0'".
+    iDestruct (guard_and_pers_with_excl (S:=False%I)
+      with "[] guard' guard0' [$G $G0] pt W") as "(_ & _ & _ & [])".
+    iIntros "!> [And pt]".
+    iDestruct (cmap_pt_and_gives_prefix with "[And]") as "%IsPrefix"; [unseal; done|].
+    destruct IsPrefix as [cells2 IsPrefix]. rewrite IsPrefix.
+    iDestruct "And" as "[_ prefix]". unseal.
+    iDestruct (cmap_pt_seq_cons_app with "prefix") as "[a b]".
+    by iDestruct (cmap_cells_ne with "pt b") as "%A".
+  Qed.
+
+  Lemma read_bank_begin ι σ l n v0 cells v Gx :
+      σ !! l = Some (RSt n, v0) →
+      read_bank ι σ -∗
+      (sm Gx &&{W}&&> (inl l @↦[ι][^ cells] inr v)) -∗
+      sm Gx ==∗
+      points_to_r_intermediate ι l cells v Gx ∗
+        read_bank ι (<[ l := (RSt (n+1), v0) ]> σ).
+  Proof.
+    move=> is_read. iIntros "na #guard g".
+    iDestruct "na" as (m) "[oi [%ca big]]".
+    destruct (m_get_fresh_index m l) as [i is_fresh].
+    iMod (@own_update Σ _ na2_inG (ιi ι) _ ((
+      gmap_view_auth (V := (agreeR (FML $oi Σ)))
+        (DfracOwn 1) (to_agree <$> (<[ (l,i) := Gx ]> m))
+    ⋅ gmap_view_frag (V := (agreeR (FML $oi Σ)))
+        (l, i) (DfracOwn 1) (to_agree Gx)
+    )) with "oi") as "[oi ptr]".
+    { rewrite fmap_insert. apply gmap_view_alloc; [|done..].
+      by rewrite lookup_fmap is_fresh. }
+    iModIntro. iFrame "oi".
+    rewrite points_to_r_intermediate_unseal /points_to_r_intermediate_def.
+    iFrame "ptr guard". iSplitR.
+    { iPureIntro. by apply counts_agree_insert_read. }
+    rewrite big_sepM_insert; [|done]. iFrame "big g". by iExists v, cells.
+  Qed.
+
+  Local Lemma points_to_heap_agree' ι l cells v σ :
+    (inl l @↦[ι][^ cells ] inr v) ∗
+      cellmap.heap L cell_id V (ιh ι) (erase_count_map σ) ⊢
+      ⌜ ∃ st, σ !! l = Some (st, v) ⌝.
+  Proof.
+    unseal. iIntros "[pt heap]". iDestruct (cmap_read with "heap pt") as "%Hv".
+    iPureIntro. unfold erase_count_map in Hv. rewrite lookup_fmap in Hv.
+    destruct (σ !! l) as [p|].
+    - unfold "<$>", option_fmap, option_map in Hv.
+      exists (p.1). destruct p; f_equal. f_equal. by inversion Hv.
+    - inversion Hv.
+  Qed.
+
+  (** The original concluded under [▷ |={E}=>]: the later came from
+    [Next G ≡ Next G'], the fancy update from opening the guard.  Now the
+    agreement is [Gx ≡ Gx'] and the guard is opened against [W]. *)
+  Lemma read_bank_end ι σ l cells v Gx :
+      read_bank ι σ -∗
+      points_to_r_intermediate ι l cells v Gx -∗
+      cellmap.heap L cell_id V (ιh ι) (erase_count_map σ) -∗
+      W ==∗ ∃ n, sm Gx
+        ∗ ⌜n ≥ 1 ∧ σ !! l = Some (RSt n, v)⌝
+        ∗ read_bank ι (<[ l := (RSt (n-1), v) ]> σ)
+        ∗ cellmap.heap L cell_id V (ιh ι) (erase_count_map σ)
+        ∗ W.
+  Proof.
+    rewrite points_to_r_intermediate_unseal /points_to_r_intermediate_def.
+    iIntros "na [ptr #guard] oh W".
+    iDestruct "na" as (m) "[oi [%ca big]]".
+    iDestruct "ptr" as (i) "ptr".
+    iAssert (∃ n Gx' v0,
+      ⌜ σ !! l = Some (RSt n, v0) ∧ n ≥ 1 ∧ m !! (l, i) = Some Gx'⌝
+      ∗ Gx ≡ Gx')%I as (n Gx' v0) "[%p #equ]".
+    { iCombine "oi ptr" as "oi".
+      iDestruct (own_valid with "oi") as "oi_val".
+      rewrite gmap_view_both_validI_total.
+      iDestruct "oi_val" as (v') "[%_vf1 [%_vf2 [%sm' [val1 val2]]]]".
+      have [Gx' dest_eqn] : ∃ Gx', m !! (l, i) = Some Gx'.
+      { destruct (m !! (l, i)) as [Gx'|] eqn:E'; [by eexists|].
+        exfalso. move: sm'. rewrite lookup_fmap E' /=. by inversion 1. }
+      move: sm'. rewrite lookup_fmap dest_eqn /= => sm'. inversion sm'. subst v'.
+      rewrite to_agree_includedI.
+      destruct (counts_agree_ge1_is_reading σ m l i Gx' dest_eqn)
+        as [n [v0 is_read]]; [done|].
+      iExists n, Gx', v0. iFrame "val2". iPureIntro. intuition. }
+    iExists n. destruct p as [in_sig [n_ge1 in_m]].
+    iDestruct (big_sepM_delete with "big") as "[[g gu] big]"; [apply in_m|].
+    iDestruct "gu" as (v1 cells1) "_". iRewrite -"equ" in "g".
+    iDestruct (guard_acc with "guard g W") as "[pt back]".
+    iDestruct (points_to_heap_agree' ι l cells v σ with "[$pt $oh]")
+      as "%in_sig2".
+    iDestruct ("back" with "pt") as "[W G]".
+    iCombine "oi ptr" as "oi".
+    iMod (@own_update Σ _ na2_inG (ιi ι) _ ((
+      gmap_view_auth (V := (agreeR (FML $oi Σ)))
+        (DfracOwn 1) (to_agree <$> (delete (l, i) m))
+    )) with "oi") as "oi".
+    { rewrite fmap_delete. apply gmap_view_delete. }
+    have veq : v = v0.
+    { destruct in_sig2 as [n0 in_sig2]. rewrite in_sig in in_sig2.
+      by inversion in_sig2. }
+    subst v0. iModIntro. iFrame "G". iSplitR; [iPureIntro; intuition|].
+    iFrame "oi big oh W". iPureIntro.
+    apply (counts_agree_delete_read _ _ _ _ _ _ Gx'); trivial.
+  Qed.
+
+  Lemma read_bank_no_op_to_wst ι σ l v :
+      σ !! l = Some (RSt 0, v) →
+      read_bank ι σ ⊢ read_bank ι (<[l:=(WSt, v)]> σ).
+  Proof.
+    iIntros (Hin) "rb". iDestruct "rb" as (m) "[oi [%ca big]]".
+    iFrame. iPureIntro. by apply counts_agree_insert_writing.
+  Qed.
+
+  Lemma read_bank_no_op_to_rst0 ι σ l v v' :
+      σ !! l = Some (WSt, v) →
+      read_bank ι σ ⊢ read_bank ι (<[l:=(RSt 0, v')]> σ).
+  Proof.
+    iIntros (Hin) "rb". iDestruct "rb" as (m) "[oi [%ca big]]".
+    iFrame. iPureIntro. by eapply counts_agree_insert_reading0.
+  Qed.
+
+  Lemma read_bank_insert ι l v σ :
+    (σ !! l = None) →
+    read_bank ι σ ⊢ read_bank ι (<[ l := (RSt 0, v) ]> σ).
+  Proof.
+    iIntros (not_in) "rb". iDestruct "rb" as (m) "[oi [%ca big]]".
+    iExists m. iFrame. iPureIntro. by apply (counts_agree_r_alloc σ m l v).
+  Qed.
+
+  Lemma read_bank_delete ι l v σ :
+    (σ !! l = Some (RSt 0, v)) →
+    read_bank ι σ ⊢ read_bank ι (delete l σ).
+  Proof.
+    iIntros (not_in) "rb". iDestruct "rb" as (m) "[oi [%ca big]]".
+    iExists m. iFrame. iPureIntro. by apply (counts_agree_r_delete σ m l v).
+  Qed.
+
+  (** ** The write bank *)
+
+  Lemma write_bank_contradiction ι σ l v1 v :
+      σ !! l = Some (WSt, v1) →
+      write_bank ι σ -∗ (inl l @↦[ι] inr v) -∗ W -∗ False.
+  Proof.
+    move=> Hσl. iDestruct 1 as (m) "[oh [%ca big]]". iIntros "pt W".
+    have ca_l := ca l. unfold heap_count_w in ca_l. rewrite Hσl in ca_l.
+    have ca_l' : m_count m l ≠ 0 by lia.
+    have ij := m_count_get1 m l ca_l'. destruct ij as [i [[o Gx] mli]].
+    iDestruct (big_sepM_delete with "big") as "[a _]"; [apply mli|].
+    simpl. iDestruct "a" as "[G a]". destruct o as [[cells cell]|].
+    - iDestruct "a" as (v0) "[#guard pt2]".
+      iDestruct (guard_acc with "guard G W") as "[pt3 _]". unseal.
+      repeat rewrite <- pt_seq_singleton.
+      by iDestruct (cmap_locs_ne with "pt pt3") as "%Hl".
+    - iDestruct "a" as (v0) "pt2". unseal.
+      repeat rewrite <- pt_seq_singleton.
+      by iDestruct (cmap_locs_ne with "pt pt2") as "%Hl".
+  Qed.
+
+  Lemma write_bank_contradiction_guarded_all ι σ l v1 cells v (G : iProp Σ) :
+      σ !! l = Some (WSt, v1) →
+      write_bank ι σ -∗
+      (G &&{W}&&> inl l @↦[ι][^ cells] inr v) -∗
+      G -∗ W -∗ False.
+  Proof.
+    move=> Hσl. iDestruct 1 as (m) "[oh [%ca big]]". iIntros "#guard G W".
+    have ca_l := ca l. unfold heap_count_w in ca_l. rewrite Hσl in ca_l.
+    have ca_l' : m_count m l ≠ 0 by lia.
+    have ij := m_count_get1 m l ca_l'. destruct ij as [i [[o Gx0] mli]].
+    iDestruct (big_sepM_delete with "big") as "[a _]"; [apply mli|].
+    simpl. iDestruct "a" as "[G0 a]". destruct o as [[cells0 cell0]|].
+    - iDestruct "a" as (v0) "[#guard0 pt0]".
+      iDestruct (guard_lhs_sep_l (R:=sm Gx0) with "guard") as "guard'".
+      iDestruct (guard_lhs_sep_r (R:=G) with "guard0") as "guard0'".
+      iDestruct (guard_and_pers_with_excl (S:=False%I)
+        with "[] guard' guard0' [$G $G0] pt0 W") as "(_ & _ & _ & [])".
+      iIntros "!> [And pt]". unseal.
+      repeat rewrite <- pt_seq_singleton.
+      iApply (cmap_pt_and_gives_contra _ _ _ (ιh ι) (inl l) cells cells0 cell0
+        v v0 with "And [pt]"). { rewrite <- pt_seq_singleton. iFrame. }
+    - iDestruct (guard_acc with "guard G W") as "[pt0 _]".
+      iDestruct "a" as (v0) "pt1". unseal.
+      repeat rewrite <- pt_seq_singleton.
+      by iDestruct (cmap_locs_ne with "pt0 pt1") as "%Hl".
+  Qed.
+
+  Lemma write_bank_contradiction_guarded_cells ι σ l v1 cells c v
+      (G : iProp Σ) :
+      σ !! l = Some (WSt, v1) →
+      write_bank ι σ -∗
+      (G &&{W}&&> inl l @↦[ι][^ cells] inl c) -∗
+      G -∗
+      (inr c @↦[ι] inr v) -∗ W -∗ False.
+  Proof.
+    move=> Hσl. iIntros "wb #guard G pt W".
+    iApply (write_bank_contradiction_guarded_all ι σ l v1 (cells ++ [c]) v
+      (G ∗ inr c @↦[ι] inr v)%I Hσl with "wb [] [$G $pt] W").
+    unseal. iApply guard_and; [apply cmap_pt_and_cons_back| |].
+    - iApply guard_lhs_sep_l. unseal. iApply "guard".
+    - iApply guard_sep_r.
+  Qed.
+
+  Lemma write_bank_begin ι σ l v0 v :
+      σ !! l = Some (RSt 0, v0) →
+      write_bank ι σ -∗ inl l @↦[ι] inr v ==∗
+      points_to_w_intermediate ι l None emptyx ∗
+        write_bank ι (<[ l := (WSt, v0) ]> σ).
+  Proof.
+    move=> is_read. iIntros "na pt". iDestruct "na" as (m) "[oi [%ca big]]".
+    destruct (m_get_fresh_index m l) as [i is_fresh].
+    iMod (@own_update Σ _ na3_inG (ιj ι) _ ((
+      gmap_view_auth (V := wR)
+        (DfracOwn 1) (to_agree <$> (<[ (l,i) := (None, emptyx) ]> m))
+    ⋅ gmap_view_frag (V := wR)
+        (l, i) (DfracOwn 1) (to_agree (None, emptyx))
+    )) with "oi") as "[oi ptr]".
+    { rewrite fmap_insert. apply (gmap_view_alloc (V:=wR)); [|done..].
+      by rewrite lookup_fmap is_fresh. }
+    iModIntro. iFrame "oi".
+    rewrite points_to_w_intermediate_unseal /points_to_w_intermediate_def.
+    iFrame "ptr". iSplitR.
+    { iPureIntro. by apply counts_agree_insert_write. }
+    rewrite big_sepM_insert; [|done]. iFrame "big".
+    rewrite emptyx_sem. iSplit; [done|]. by iExists v.
+  Qed.
+
+  Lemma write_bank_begin_guarded_cells ι σ l cells c v0 v Gx :
+      σ !! l = Some (RSt 0, v0) →
+      write_bank ι σ -∗
+      (sm Gx &&{W}&&> inl l @↦[ι][^ cells] inl c) -∗
+      sm Gx -∗
+      (inr c @↦[ι] inr v) ==∗
+      points_to_w_intermediate ι l (Some (cells, c)) Gx ∗
+        write_bank ι (<[ l := (WSt, v0) ]> σ).
+  Proof.
+    move=> is_read. iIntros "na #guard G pt".
+    iDestruct "na" as (m) "[oi [%ca big]]".
+    destruct (m_get_fresh_index m l) as [i is_fresh].
+    iMod (@own_update Σ _ na3_inG (ιj ι) _ ((
+      gmap_view_auth (V := wR)
+        (DfracOwn 1) (to_agree <$> (<[ (l,i) := (Some (cells, c), Gx) ]> m))
+    ⋅ gmap_view_frag (V := wR)
+        (l, i) (DfracOwn 1) (to_agree (Some (cells, c), Gx))
+    )) with "oi") as "[oi ptr]".
+    { rewrite fmap_insert. apply (gmap_view_alloc (V:=wR)); [|done..].
+      by rewrite lookup_fmap is_fresh. }
+    iModIntro. iFrame "oi".
+    rewrite points_to_w_intermediate_unseal /points_to_w_intermediate_def.
+    iFrame "ptr". iSplitR.
+    { iPureIntro. by apply counts_agree_insert_write. }
+    rewrite big_sepM_insert; [|done]. iFrame "big G guard". by iExists v.
+  Qed.
+
+  Lemma write_bank_no_op ι σ l n v n' v' :
+      σ !! l = Some (RSt n, v) →
+      write_bank ι σ ⊢ write_bank ι (<[l:=(RSt n', v')]> σ).
+  Proof.
+    iIntros (Hin) "wb". iDestruct "wb" as (m) "[oj [%ca big]]".
+    iFrame. iPureIntro. by eapply counts_agree_w_update_reading.
+  Qed.
+
+  Lemma write_bank_insert ι l v σ :
+    (σ !! l = None) →
+    write_bank ι σ ⊢ write_bank ι (<[ l := (RSt 0, v) ]> σ).
+  Proof.
+    iIntros (not_in) "wb". iDestruct "wb" as (m) "[oj [%ca big]]".
+    iExists m. iFrame. iPureIntro. by apply (counts_agree_w_alloc σ m l v).
+  Qed.
+
+  Lemma write_bank_delete ι l v σ :
+    (σ !! l = Some (RSt 0, v)) →
+    write_bank ι σ ⊢ write_bank ι (delete l σ).
+  Proof.
+    iIntros (not_in) "wb". iDestruct "wb" as (m) "[oj [%ca big]]".
+    iExists m. iFrame. iPureIntro. by apply (counts_agree_w_delete σ m l v).
+  Qed.
+
+  (** TODO: still to port from the original, in order:
+    [write_bank_end], [write_bank_end_guarded_cells],
+    [non_atomic_map_alloc_empty], [points_to_heap_agree],
+    [points_to_heap_reading0(_guarded_cells)],
+    [points_to_heap_readingN_guarded_all], [na_write_begin(_guarded_cells)],
+    [na_write_finish(_guarded_cells)], [na_read_begin], [na_read_end],
+    [atomic_write(_guarded_cells)], [atomic_read], [non_atomic_map_insert],
+    [non_atomic_map_delete], [non_atomic_map_alloc_heap], and the [pt_seq_*] /
+    [pt_alloc_cell] / [pt_delete_cell] algebra, which are thin wrappers around
+    [nola.alerus.util.cellmap] and should port near-verbatim.  16 of the
+    original 47 lemmas are done; the two banks, which carry all of the
+    original's laters and later credits, are complete. *)
+
+End NonAtomicMap.
