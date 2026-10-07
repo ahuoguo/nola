@@ -63,11 +63,28 @@ Definition llft_logicΣ : gFunctors := #[
 Global Instance subG_lt_logicΣ Σ : subG llft_logicΣ Σ → llft_logicGpreS Σ.
 Proof. solve_inG. Qed.
 
+(** The formula language must be able to express the content of a shared
+  borrow: the borrowed formula, or the lifetime's death together with the
+  cancellation token that reclaims it.  This is Leaf's
+  [P ∨ (llft_dead_def' κ ∗ CCancel γc)]; it mentions no guard, so making it a
+  formula creates no cycle. *)
+Class ShrBorSem (FML : oFunctor) Σ `{!llft_logicGS Σ, !BorSem FML Σ} := {
+  shr_fml : gset lt_atom → gname → FML $oi Σ → FML $oi Σ;
+  shr_fml_sem κ γc Px :
+    bor_sem (shr_fml κ γc Px) ⊣⊢
+      bor_sem Px ∨ ((∃ k, ⌜k ∈ κ⌝ ∗ Dead llft_name k) ∗ CCancel γc);
+}.
+
 Section LlftLogic.
+  #[local] Set Default Proof Using "All".
   Context {Σ: gFunctors} {FML : oFunctor}.
   Context `{!llft_logicGS Σ}.
   Context `{!invGS_gen hlc Σ}.
   Context `{!sinvGS FML Σ, !BorSem FML Σ}.
+  (** A second simple-invariant instance, holding the contents of shared
+    borrows.  The box uses the ambient [sinvGS]; this one is separate. *)
+  Context (shrGS : sinvGS FML Σ).
+  Context `{!ShrBorSem FML Σ}.
   (** The user's guarding world satisfaction, Leaf's [↑NllftG] minus the
     lifetime logic's own invariants. *)
   Context (WG : iProp Σ).
@@ -100,8 +117,13 @@ Section LlftLogic.
         ∗ outer_inv llft_name o_name d_name sa sd blocked
         ∗ llft_alive_def' blocked.
 
+  (** Storage for shared borrows. *)
+  Definition shr_wsat : iProp Σ :=
+    sinv_wsat (sinvGS0:=shrGS) (λ _ Px, bor_sem Px).
+
   (** The world satisfaction that lifetime inclusion guards live at. *)
-  Definition llft_wsatG : iProp Σ := WG ∗ box_wsat bor_sem ∗ llft_inv_main.
+  Definition llft_wsatG : iProp Σ :=
+    WG ∗ shr_wsat ∗ box_wsat bor_sem ∗ llft_inv_main.
 
   (** The rest of the lifetime invariant: Leaf's [↑NllftO].  Note that the
     stored inclusion guards are at [llft_wsatG], which does not contain this. *)
@@ -117,20 +139,17 @@ Section LlftLogic.
     WsatIncl llft_wsat llft_wsatG llft_inv_other.
   Proof. done. Qed.
   #[export] Instance wsat_incl_llft_wsatG_G :
-    WsatIncl llft_wsatG WG (box_wsat bor_sem ∗ llft_inv_main).
+    WsatIncl llft_wsatG WG (shr_wsat ∗ box_wsat bor_sem ∗ llft_inv_main).
   Proof. done. Qed.
+  #[export] Instance wsat_incl_llft_wsatG_shr :
+    WsatIncl llft_wsatG shr_wsat (WG ∗ box_wsat bor_sem ∗ llft_inv_main).
+  Proof. rewrite /WsatIncl /llft_wsatG. iSplit; iIntros "(a&b&c&d)"; iFrame. Qed.
   #[export] Instance wsat_incl_llft_wsatG_box :
-    WsatIncl llft_wsatG (box_wsat bor_sem) (WG ∗ llft_inv_main).
-  Proof. rewrite /WsatIncl /llft_wsatG. iSplit.
-    - iIntros "($ & $ & $)".
-    - iIntros "($ & $ & $)".
-  Qed.
+    WsatIncl llft_wsatG (box_wsat bor_sem) (WG ∗ shr_wsat ∗ llft_inv_main).
+  Proof. rewrite /WsatIncl /llft_wsatG. iSplit; iIntros "(a&b&c&d)"; iFrame. Qed.
   #[export] Instance wsat_incl_llft_wsatG_main :
-    WsatIncl llft_wsatG llft_inv_main (WG ∗ box_wsat bor_sem).
-  Proof. rewrite /WsatIncl /llft_wsatG. iSplit.
-    - iIntros "($ & $ & $)".
-    - iIntros "($ & $ & $)".
-  Qed.
+    WsatIncl llft_wsatG llft_inv_main (WG ∗ shr_wsat ∗ box_wsat bor_sem).
+  Proof. rewrite /WsatIncl /llft_wsatG. iSplit; iIntros "(a&b&c&d)"; iFrame. Qed.
 
   (** The context is no longer an invariant assertion: its content lives in the
     world satisfaction.  It is kept so that the rule statements still read like
@@ -470,7 +489,7 @@ Section LlftLogic.
         ∃ k, Alive llft_name (if b then LtAtomSwell k else LtAtomNotSwell k).
   Proof.
       iIntros "_". rewrite /modw /llft_wsat /llft_wsatG.
-      iIntros "[[WG [Box Main]] Other]".
+      iIntros "[[WG [Shr [Box Main]]] Other]".
       iDestruct "Main" as (sa sd blocked) "[State [Alive [Ou Blo]]]".
       assert (∃ k , (if b then LtAtomSwell k else LtAtomNotSwell k) ∉ (sa ∪ sd))
         as Fres. {
@@ -487,7 +506,7 @@ Section LlftLogic.
       iMod ("X" with "Box") as "[Box [Ou Delayed]]".
       iMod (new_lt llft_name (if b then LtAtomSwell k else LtAtomNotSwell k) sa sd
         with "State") as "[State [A1 A2]]"; [set_solver|set_solver|].
-      iModIntro. iFrame "WG Box". iSplitR "A2"; last by iExists k; iFrame "A2".
+      iModIntro. iFrame "WG Shr Box". iSplitR "A2"; last by iExists k; iFrame "A2".
       iSplitR "Delayed O1 O2"; last by iExists outlives; iFrame.
       iExists (sa ∪ {[ (if b then LtAtomSwell k else LtAtomNotSwell k) ]}), sd, blocked.
       iFrame "State Ou Blo". rewrite /llft_alive_def'.
@@ -512,7 +531,7 @@ Section LlftLogic.
       |=[llft_wsat]{↑NllftUsr ∪ ↑NllftUsr2}=> Dead llft_name k.
   Proof.
       iIntros "_ token". rewrite /modw /llft_wsat /llft_wsatG.
-      iIntros "[[WG [Box Main]] Other]".
+      iIntros "[[WG [Shr [Box Main]]] Other]".
       iDestruct "Other" as (outlives1) "[Delayed [O1 O2]]".
       iDestruct "Main" as (sa1 sd1 blocked1) "[State Alive]".
       iAssert (⌜k ∈ sa1⌝)%I as "%k_sa1".
@@ -547,7 +566,7 @@ Section LlftLogic.
         { intros other Hin Hsub. by apply (Houtlives other). }
         { iFrame "Ou Delayed O1". iFrame "dead". }
         iMod ("X" with "Box") as "[Box [Ou [Outlives Delayed]]]".
-        iModIntro. iFrame "WG Box dead". iSplitR "Outlives Delayed O2".
+        iModIntro. iFrame "WG Shr Box dead". iSplitR "Outlives Delayed O2".
         { iExists (sa1 ∖ {[k]}), (sd1 ∪ {[k]}), blocked1. iFrame. }
         iExists outlives1. iFrame.
       }
@@ -565,10 +584,11 @@ Section LlftLogic.
       { done. }
       { simpl. rewrite /llft_alive_def' big_sepS_singleton. iFrame "Oguard". }
       { rewrite /llft_dead_def'. iExists k. iFrame "dead". iPureIntro. set_solver. }
-      iMod ("OdeadUpd" with "[WG Box State Alive Ou Blo]") as "[WsatG #Odead]".
-      { rewrite /llft_wsatG. iFrame "WG Box".
+      iMod ("OdeadUpd" with "[WG Shr Box State Alive Ou Blo]")
+        as "[WsatG #Odead]".
+      { rewrite /llft_wsatG. iFrame "WG Shr Box".
         iExists (sa1 ∖ {[k]}), (sd1 ∪ {[k]}), blocked1. iFrame. }
-      iDestruct "WsatG" as "[WG [Box Main]]".
+      iDestruct "WsatG" as "[WG [Shr [Box Main]]]".
       iDestruct "Main" as (sa2 sd2 blocked2) "[State [Alive [Ou Blo]]]".
       iDestruct "Ou" as (opt_k) "[Delayed2 X]".
       iDestruct (delayed_agree with "[Delayed Delayed2]") as "%Dagree".
@@ -605,5 +625,82 @@ Section LlftLogic.
     iModIntro. iExists κ. iFrame "Alive". iModIntro.
     iApply llftl_end'; done.
   Qed.
+
+  (** Shared borrows *)
+
+  Local Lemma shr_fml_sem_1 κ γc Px :
+    bor_sem (shr_fml κ γc Px) ⊢ bor_sem Px ∨ (llft_dead_def' κ ∗ CCancel γc).
+  Proof. apply bi.equiv_entails_1_1, shr_fml_sem. Qed.
+  Local Lemma shr_fml_sem_2 κ γc Px :
+    bor_sem Px ∨ (llft_dead_def' κ ∗ CCancel γc) ⊢ bor_sem (shr_fml κ γc Px).
+  Proof. apply bi.equiv_entails_1_2, shr_fml_sem. Qed.
+
+  (* begin hide *)
+  Local Lemma llftl_borrow_shared_maybe_swell κ (Px : FML $oi Σ) :
+      bor_sem Px -∗ |=[llft_wsatG]=>
+        (llft_alive_def' κ &&{llft_wsatG}&&> bor_sem Px)
+        ∗ (llft_dead_def' κ -∗ |=[llft_wsatG]=> bor_sem Px).
+  Proof.
+    iIntros "P". iMod new_cancel as (γc) "c1".
+    rewrite {1}/modw /llft_wsatG. iIntros "[WG [Shr Rest]]".
+    iDestruct (sinv_tok_alloc_suspend (sinvGS0:=shrGS)
+      (sm := λ _ Qx, bor_sem Qx) (shr_fml κ γc Px) with "Shr") as (I) "Alloc".
+    iMod ("Alloc" $! (fresh I) with "[]") as "[#tok Shr]".
+    { iPureIntro. apply is_fresh. }
+    iDestruct ("Shr" with "[P]") as "Shr".
+    { iApply shr_fml_sem_2. by iLeft. }
+    iDestruct (sinv_tok_guard (sinvGS0:=shrGS) (sm := λ _ Qx, bor_sem Qx)
+      with "tok") as "#Tguard".
+    rewrite -/shr_wsat.
+    iDestruct (guard_wsat_incl (W:=llft_wsatG) with "Tguard") as "#Tguard'".
+    iModIntro. iFrame "WG Shr Rest". iSplit.
+    - (* the guard *)
+      iAssert (llft_alive_def' κ &&{llft_wsatG}&&>
+        bor_sem (shr_fml κ γc Px))%I as "#G".
+      { iApply (guard_trans with "[] Tguard'"). iApply guard_true. }
+      iAssert (bor_sem (shr_fml κ γc Px) &&{llft_wsatG}&&>
+        ((llft_dead_def' κ ∗ CCancel γc) ∨ bor_sem Px))%I as "#Gswap".
+      { iApply guard_intro. iIntros "!> Q".
+        iDestruct (shr_fml_sem_1 with "Q") as "[P|D]".
+        - iSplitL "P"; first by iRight. iIntros "X". iApply shr_fml_sem_2.
+          iDestruct "X" as "[D|P]"; [by iRight|by iLeft].
+        - iSplitL "D"; first by iLeft. iIntros "X". iApply shr_fml_sem_2.
+          iDestruct "X" as "[D|P]"; [by iRight|by iLeft]. }
+      iDestruct (guard_trans with "G Gswap") as "#Gor".
+      iApply (guard_cancel_or (Q:=llft_alive_def' κ)
+        (R:=(llft_dead_def' κ ∗ CCancel γc)%I) (S:=bor_sem Px) with "[] Gor").
+      { iIntros "t".
+        iAssert (llft_dead_def' κ) as "#D". { iDestruct "t" as "[_ [$ _]]". }
+        iApply (llftl_not_own_end_unswell κ with "[t] D").
+        { iDestruct "t"  as "[$ _]". } }
+      { iApply guard_refl. }
+    - (* the reclamation *)
+      iIntros "#deadk". rewrite /modw /llft_wsatG.
+      iIntros "[WG [Shr Rest]]".
+      iDestruct (sinv_tok_acc (sm := λ _ Qx, bor_sem Qx) with "tok Shr")
+        as "[J K]".
+      iDestruct (shr_fml_sem_1 with "J") as "[P|[_ c2]]".
+      + iDestruct ("K" with "[c1]") as "Shr".
+        { iApply shr_fml_sem_2. iRight. iFrame "deadk c1". }
+        iModIntro. by iFrame.
+      + iDestruct (cancel_cancel_false γc with "[c1 c2]") as "J".
+        { iFrame. } iExFalso. iFrame "J".
+  Qed.
+  (* end hide *)
+
+  (** LeLiLo-Shr-Borrow *)
+  Lemma llftl_borrow_shared κ (Px : FML $oi Σ) :
+      bor_sem Px -∗ |=[llft_wsatG]=>
+        (@[ κ ] &&{llft_wsatG}&&> bor_sem Px)
+        ∗ ([† κ ] -∗ |=[llft_wsatG]=> bor_sem Px).
+  Proof.
+      unseal. rewrite -big_sepS_set_map dead_def_set_map.
+      apply (llftl_borrow_shared_maybe_swell (set_map LtAtomSwell κ)).
+  Qed.
+
+  (** LeLiLo-Shr-Pers *)
+  Lemma llftl_borrow_shared_persistent κ (Px : FML $oi Σ) :
+      Persistent (@[ κ ] &&{llft_wsatG}&&> bor_sem Px).
+  Proof. typeclasses eauto. Qed.
 
 End LlftLogic.
