@@ -90,6 +90,16 @@ Class BorSem (FML : oFunctor) (Σ : gFunctors) := {
   bor_sep_sem Px Qx : bor_sem (bor_sep Px Qx) ⊣⊢ bor_sem Px ∗ bor_sem Qx;
 }.
 
+(** Unnesting stores the lifetime logic's *own* borrow-state ownership inside
+  a slice, so the formula language has to be able to express it.  The original
+  could just put the proposition there.  In Nola this is what a custom [cif]
+  constructor is for; the obligation is on whoever instantiates [FML]. *)
+Class BorStateFml `{!llft_logicGS Σ, !BorSem FML Σ} (γ : gname) := {
+  bor_state_fml : ra.slice_name → BorState → FML $oi Σ;
+  bor_state_fml_sem sn bs :
+    bor_sem (bor_state_fml sn bs) ⊣⊢ OwnBorState γ sn bs;
+}.
+
 Section FullBorrows.
   Context {Σ: gFunctors} {FML : oFunctor}.
   Context `{!llft_logicGS Σ}.

@@ -567,7 +567,7 @@ Section FullBorrows.
         ∗ sinv_tok sn Px
         -∗ |=[box_wsat bor_sem]=> bor_sem Px ∗ ∀ Qx, 
         ((bor_sem Qx ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ bor_sem Px)) ∗ (bor_sem Qx)
-          -∗ |=[box_wsat bor_sem]{↑NllftUsr}=> ∃ sn2,
+          -∗ |=[box_wsat bor_sem]=> ∃ sn2,
     Delayed γd None
         ∗ (outer_inv γ γo γd alive dead blocked)
         ∗ Outlives γo outlives
