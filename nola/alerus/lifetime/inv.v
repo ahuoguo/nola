@@ -11,7 +11,7 @@
   move.
 
   The box's invariant namespace [Nbox] is likewise replaced by the box's world
-  satisfaction [box_wsat sm]; the user-facing masks ([NllftUsr]) stay as fancy
+  satisfaction [box_wsat bor_sem]; the user-facing masks ([NllftUsr]) stay as fancy
   updates, since those are the client's and introduce no laters. *)
 
 From nola.alerus Require Import boxes.
@@ -72,20 +72,29 @@ Proof.
   intros x Hin. rewrite elem_of_singleton in Hin. subst x. done.
 Qed.
 
+(** The semantics of the formulas stored in borrow slices.
+
+  The original stored propositions in the slices directly, behind a [later].
+  This is a class rather than a section parameter so that it stays out of the
+  positional arguments of everything the lifetime logic exports.
+  [Inhabited] is needed because some proofs instantiate an irrelevant slice
+  with [True], which is no longer a formula. *)
+Class BorSem (FML : oFunctor) (Σ : gFunctors) := {
+  bor_sem : FML $oi Σ → iProp Σ;
+  bor_sem_ne :: NonExpansive bor_sem;
+  bor_sem_inhabited :: Inhabited (FML $oi Σ);
+  (** Splitting and joining borrows needs the formula language to have its own
+    separating conjunction; the original could just write [P ∗ Q], since
+    slices stored propositions. *)
+  bor_sep : FML $oi Σ → FML $oi Σ → FML $oi Σ;
+  bor_sep_sem Px Qx : bor_sem (bor_sep Px Qx) ⊣⊢ bor_sem Px ∗ bor_sem Qx;
+}.
+
 Section FullBorrows.
-  (** Iris's [options] sets [Default Proof Using "Type"]; the extra section
-    parameters of this port are not all visible in every statement. *)
-  #[local] Set Default Proof Using "All".
   Context {Σ: gFunctors} {FML : oFunctor}.
   Context `{!llft_logicGS Σ}.
   Context `{!invGS_gen hlc Σ}.
-  Context `{!boxG Σ, !sinvGS FML Σ}.
-  (** The semantics of the formulas stored in slices.  The original stored
-    propositions directly, behind a [later]. *)
-  Context (sm : FML $oi Σ → iProp Σ) `{!NonExpansive sm}.
-  (** Some proofs instantiate an irrelevant slice proposition with [True];
-    formulas are syntactic, so we need a default inhabitant instead. *)
-  Context `{!Inhabited (FML $oi Σ)}.
+  Context `{!boxG Σ, !sinvGS FML Σ, !BorSem FML Σ}.
   
   Context (γ: gname).
   Context (γo: gname).
@@ -364,7 +373,7 @@ Section FullBorrows.
 
   Definition borrow_sum (f: BorState → bool) (m: gmap_bor_state) (mprops: gmap_props FML Σ) : iProp Σ := [∗ map] sn ↦ bs ∈ m ,
     match (f bs, mprops !! sn) with
-      | (true, Some Px) => sm Px
+      | (true, Some Px) => bor_sem Px
       | _ => True%I
     end.
   
@@ -486,7 +495,7 @@ Section FullBorrows.
   Lemma borrow_sum_insert f sn bs Px mbs mprops :
       mbs !! sn = None →
       borrow_sum f (<[sn:=bs]> mbs) (<[sn:=Px]> mprops)
-      ⊢ ((if f bs then sm Px else True) ∗ borrow_sum f mbs mprops).
+      ⊢ ((if f bs then bor_sem Px else True) ∗ borrow_sum f mbs mprops).
   Proof.
     intros Hmbs. unfold borrow_sum. rewrite big_sepM_insert; trivial. iIntros "[H J]".
     iSplitL "H".
@@ -500,7 +509,7 @@ Section FullBorrows.
       (mbs !! sn = Some bs) →
       (if f bs then mprops !! sn ≡ Some Px else True)
       ∗ borrow_sum f (delete sn mbs) (delete sn mprops)
-      ∗ (if f bs then sm Px else True)
+      ∗ (if f bs then bor_sem Px else True)
       ⊢  borrow_sum f mbs mprops.
   Proof.
     intros Hmbs. unfold borrow_sum. rewrite (big_sepM_delete _ mbs); last by apply Hmbs.
@@ -514,7 +523,7 @@ Section FullBorrows.
   
   Lemma borrow_sum_insert_2 (f : BorState → bool) sn bs Px mbs mprops :
       mbs !! sn = None →
-      ((if f bs then sm Px else True) ∗ borrow_sum f mbs mprops)
+      ((if f bs then bor_sem Px else True) ∗ borrow_sum f mbs mprops)
       ⊢ borrow_sum f (<[sn:=bs]> mbs) (<[sn:=Px]> mprops).
   Proof.
     intros Hmbs. unfold borrow_sum. rewrite big_sepM_insert; trivial. iIntros "[H J]".
@@ -530,7 +539,7 @@ Section FullBorrows.
       (if f bs then mprops !! sn ≡ Some Px else True)
       ∗ borrow_sum f mbs mprops
       ⊢ borrow_sum f (delete sn mbs) (delete sn mprops)
-      ∗ (if f bs then sm Px else True).
+      ∗ (if f bs then bor_sem Px else True).
   Proof.
     intros Hmbs. unfold borrow_sum. rewrite (big_sepM_delete _ mbs); last by apply Hmbs.
     iIntros "[#Eq [H P]]". iSplitL "P".
@@ -557,7 +566,7 @@ Section FullBorrows.
       mbs !! sn = None →
       invalidated alive dead k bs = true →
       (full_borrows_invalidated_via alive dead k (<[sn := bs]> mbs) (<[ sn := Px ]> mprops))
-      ⊢ (sm Px ∗ full_borrows_invalidated_via alive dead k mbs mprops).
+      ⊢ (bor_sem Px ∗ full_borrows_invalidated_via alive dead k mbs mprops).
   Proof.
       intros Hsn Hinv. iIntros "H".
       iDestruct (borrow_sum_insert with "H") as "H"; trivial. rewrite Hinv. iFrame.
@@ -576,7 +585,7 @@ Section FullBorrows.
       (mbs !! sn = Some bs) →
       (mprops !! sn ≡ Some Px)
         ∗ (full_borrows_invalidated_via alive dead k (delete sn mbs) (delete sn mprops))
-        ∗ sm Px
+        ∗ bor_sem Px
       ⊢ 
       full_borrows_invalidated_via alive dead k mbs mprops.
   Proof.
@@ -600,7 +609,7 @@ Section FullBorrows.
   Lemma full_borrows_revalidated_via_insert alive dead k sn mbs mprops bs Px :
       mbs !! sn = None →
       (full_borrows_revalidated_via alive dead k mbs mprops)
-      ∗ sm Px
+      ∗ bor_sem Px
       ⊢
       (full_borrows_revalidated_via alive dead k (<[sn := bs]> mbs) (<[ sn := Px ]> mprops)).
   Proof.
@@ -628,7 +637,7 @@ Section FullBorrows.
       ∗  full_borrows_revalidated_via alive dead k mbs mprops
       ⊢
         (full_borrows_revalidated_via alive dead k (delete sn mbs) (delete sn mprops))
-      ∗ sm Px.
+      ∗ bor_sem Px.
   Proof.
       intros Hsn Hinv. iIntros "[#Heq H]".
       iDestruct (borrow_sum_delete_2 _ _ _ Px with "[H]") as "[H P]"; trivial. { apply Hsn. }
@@ -672,7 +681,7 @@ Section FullBorrows.
     ∃ (mbs: gmap_bor_state) (mprops: gmap_props FML Σ) Ptotal (outlives: outlives_set),
         AuthBorState γ mbs
           ∗ ModuloDead γ dead
-          ∗ box sm (boxmap alive dead mbs) Ptotal
+          ∗ box bor_sem (boxmap alive dead mbs) Ptotal
           ∗ future_vs alive dead outlives mbs mprops
           ∗ ⌜dom mbs = dom mprops
               ∧ map_wf alive dead blocked outlives mbs
@@ -683,12 +692,12 @@ Section FullBorrows.
           
   Lemma inner_fake (alive dead blocked al de : gset lt_atom) Qx :
     ¬(al ## dead) →
-    ModuloDead γ dead ⊢ |=[box_wsat sm]=> ∃ sn, 
+    ModuloDead γ dead ⊢ |=[box_wsat bor_sem]=> ∃ sn, 
     ModuloDead γ dead ∗ OwnBorState γ sn (Borrow al de) ∗ sinv_tok sn Qx.
   Proof.
     intros Hnotdisj.
     iIntros "Modulo".
-    iDestruct (box_alloc (sm:=sm)) as "box".
+    iDestruct (box_alloc (sm:=bor_sem)) as "box".
     iMod (slice_insert_empty Qx with "box") as (sn) "[_ [slice box2]]".
     iMod (alloc_fake_bor_state_lts γ sn alive dead al de with "Modulo") as "[Modulo OwnBor]".
     { trivial. }
@@ -874,7 +883,7 @@ Section FullBorrows.
   Lemma outer_fake (alive dead blocked al de : gset lt_atom) Qx :
     ¬(al ## dead) →
     Delayed γd None ∗ (outer_inv alive dead blocked)
-    -∗ |=[box_wsat sm]=>
+    -∗ |=[box_wsat bor_sem]=>
     ∃ sn,
     Delayed γd None ∗ (outer_inv alive dead blocked)
      ∗ OwnBorState γ sn (Borrow al de) ∗ sinv_tok sn Qx.

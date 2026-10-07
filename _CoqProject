@@ -131,3 +131,8 @@ nola/alerus/util/cellmap.v
 nola/alerus/lang/lang.v
 nola/alerus/util/non_atomic_cell_map.v
 nola/alerus/lifetime/inv.v
+nola/alerus/lifetime/augment_outlives.v
+nola/alerus/lifetime/new_lt.v
+nola/alerus/lifetime/iff.v
+nola/alerus/lifetime/join.v
+nola/alerus/lifetime/split.v
