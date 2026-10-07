@@ -29,6 +29,7 @@ Require Import stdpp.namespaces.
 From iris.algebra Require Export cmra updates.
 From iris.algebra Require Import proofmode_classes.
 From iris.algebra Require Import excl.
+From iris.algebra.lib Require Import excl_auth.
 From iris.prelude Require Import options.
 From iris.base_logic.lib Require Export own.
 From iris.proofmode Require Import base.
@@ -1476,6 +1477,209 @@ Section LlftLogic.
         - iExists outlives. iFrame. }
       iExists sn, κ. iFrame "OwnBor". iSplitR. { iApply guard_refl. }
       iExists Px. iFrame "slice". iModIntro. iSplit; by iIntros "$".
+  Qed.
+
+  (** Indexed borrows and guards *)
+
+  (* begin hide *)
+  Local Lemma llft_alive_set_map_1 κ :
+    llft_alive_def' (set_map LtAtomSwell κ) ⊢ @[κ].
+  Proof. rewrite /llft_alive_def' big_sepS_set_map. by unseal. Qed.
+  Local Lemma llft_alive_set_map_2 κ :
+    @[κ] ⊢ llft_alive_def' (set_map LtAtomSwell κ).
+  Proof. rewrite /llft_alive_def' big_sepS_set_map. by unseal. Qed.
+
+  Local Lemma guard_helper2 sn κ' b sa sd blocked :
+      set_map LtAtomSwell κ' ⊆ sa →
+      idx_bor_tok (sn, κ')
+      ∧ (inner_inv llft_name o_name sa sd blocked ∗ box_own_auth sn (●E b))
+      ⊢ ⌜b = true⌝.
+  Proof.
+    intros Hsub. iIntros "A". rewrite /inner_inv.
+    rewrite bi.sep_exist_r.
+    setoid_rewrite bi.sep_exist_r. setoid_rewrite bi.sep_exist_r.
+    setoid_rewrite bi.sep_exist_r.
+    rewrite bi.and_exist_l.
+    setoid_rewrite bi.and_exist_l. setoid_rewrite bi.and_exist_l.
+    setoid_rewrite bi.and_exist_l.
+    iDestruct "A" as (mbs mprops Ptotal outlives) "A".
+    iAssert (⌜sa ## sd ∧ default_dead ∈ sd⌝)%I as "[%Hdisj %Hdd]".
+    { iDestruct "A" as "[_ [(? & ? & ? & ? & %Hall & ?) _]]".
+      unfold inv.map_wf in Hall. iPureIntro. intuition. }
+    iDestruct (agree_bor_state_borrow_lts_and llft_name sn mbs sd
+      (set_map LtAtomSwell κ') {[default_dead]} with "[A]") as (de') "%Hde'".
+    { set_solver. }
+    { iSplit.
+      - iDestruct "A" as "[A _]". iFrame "A".
+      - iDestruct "A" as "[_ ((? & ? & ?) & ?)]". iFrame. }
+    destruct Hde' as [Hmbssn Hx].
+    iDestruct "A" as "[_ ((_ & _ & Box & _) & BoxOwnAuth)]".
+    assert (boxmap sa sd mbs !! sn = Some true) as Htrue.
+    { unfold boxmap. rewrite lookup_fmap. rewrite Hmbssn. simpl.
+      f_equiv. rewrite bool_decide_eq_true. set_solver. }
+    iAssert (⌜true = b⌝)%I with "[Box BoxOwnAuth]" as "%Heq";
+      last by iPureIntro.
+    iApply (box_own_auth_agree_and (γ:=sn)). iSplit.
+    - rewrite /box. iDestruct "Box" as (Φ) "[_ A]".
+      rewrite (big_sepM_delete _ _ sn); last by apply Htrue.
+      iDestruct "A" as "[[A B] _]". iFrame "A".
+    - iFrame "BoxOwnAuth".
+  Qed.
+
+  Local Lemma guard_helper1 sn κ' b sa sd blocked :
+      idx_bor_tok (sn, κ')
+        ∧ (outer_inv llft_name o_name d_name sa sd blocked
+              ∗ LtState llft_name sa sd
+              ∗ ⌜set_map LtAtomSwell κ' ⊆ sa⌝
+              ∗ box_own_auth sn (●E b))
+      ⊢ ⌜b = true⌝.
+  Proof.
+    rewrite /outer_inv. iIntros "A".
+    iAssert (⌜set_map LtAtomSwell κ' ⊆ sa⌝)%I as "%Hsub".
+    { iDestruct "A" as "[_ (? & ? & ? & ?)]". iFrame. }
+    rewrite bi.sep_exist_r. rewrite bi.and_exist_l.
+    iDestruct "A" as (opt_k) "A". destruct opt_k as [p|].
+    - destruct p as [k alive'].
+      iApply (guard_helper2 sn κ' b (sa ∪ {[k]}) (sd ∖ {[k]}) blocked).
+      { set_solver. }
+      iSplit.
+        + iDestruct "A" as "[A _]". iFrame.
+        + iDestruct "A" as "[_ ((? & ? & ?) & (? & ? & ?))]". iFrame.
+    - iApply (guard_helper2 sn κ' b sa sd blocked). { trivial. }
+      iSplit.
+        + iDestruct "A" as "[A _]". iFrame.
+        + iDestruct "A" as "[_ ((? & ?) & ? & ? & ?)]". iFrame.
+  Qed.
+
+  (** The state the guard sees: the main invariant together with the slice's
+    own cell, packaged as a single existential so that the persistent facts
+    can be pinned down by [guard_exist_strengthen]. *)
+  Local Definition guard_body (sn : ra.slice_name) (Px' : FML $oi Σ)
+    (a : gset lt_atom * gset lt_atom * gset lt_atom * bool) : iProp Σ :=
+    (LtState llft_name a.1.1.1 a.1.1.2 ∗ llft_alive_def' a.1.1.1
+      ∗ outer_inv llft_name o_name d_name a.1.1.1 a.1.1.2 a.1.2
+      ∗ llft_alive_def' a.1.2)
+    ∗ (box_own_auth sn (●E a.2) ∗ (if a.2 then bor_sem Px' else True%I)).
+
+  Local Lemma guard_body_eq_1 sn Px' :
+    (slice_body bor_sem sn Px' ∗ llft_inv_main) ⊢ ∃ a, guard_body sn Px' a.
+  Proof.
+    rewrite /llft_inv_main /slice_body /guard_body.
+    iIntros "[(%b & H2) (%sa & %sd & %blocked & H)]".
+    iExists (sa, sd, blocked, b). iFrame.
+  Qed.
+  Local Lemma guard_body_eq_2 sn Px' :
+    (∃ a, guard_body sn Px' a) ⊢ slice_body bor_sem sn Px' ∗ llft_inv_main.
+  Proof.
+    rewrite /llft_inv_main /slice_body /guard_body.
+    iIntros "(%a & H1 & H2)". destruct a as [[[sa sd] blocked] b]. simpl.
+    iSplitL "H2". { iExists b. iFrame. }
+    iExists sa, sd, blocked. iFrame.
+  Qed.
+  (* end hide *)
+
+  #[export] Instance wsat_incl_llft_wsatG_box_main :
+    WsatIncl llft_wsatG (box_wsat bor_sem ∗ llft_inv_main) (WG ∗ shr_wsat).
+  Proof.
+    rewrite /WsatIncl /llft_wsatG. iSplit.
+    - iIntros "(a&b&c&d)". iFrame.
+    - iIntros "((c&d)&(a&b))". iFrame.
+  Qed.
+
+  (** LeLiLo-Idx-Bor-Guard *)
+  Lemma llftl_idx_bor_guard' κ i Px G :
+    llft_ctx -∗ &{ κ, i } Px -∗
+      (G &&{llft_wsatG}&&> @[κ]) -∗
+      (G &&{llft_wsatG}&&> idx_bor_tok i) -∗
+      G &&{llft_wsatG}&&> (@[κ] ∗ bor_sem Px).
+  Proof.
+    destruct i as [sn κ']. unseal_bor.
+    iIntros "_ [#Incl #Slice] #Galive #Gtok".
+    iDestruct "Slice" as (Px') "[#PEquiv #slice]".
+    (* Combine the slice's guard with the one for the main invariant. *)
+    iDestruct (guard_wsat_out (W:=llft_inv_main) (W':=llft_inv_main)
+      (P:=True%I)) as "#gmain".
+    iDestruct (sinv_tok_guard (sm := λ γ Qx, slice_body bor_sem γ Qx)
+      with "slice") as "#gslice".
+    iDestruct (guard_sep_wsat with "gslice gmain") as "#gB".
+    iDestruct (guard_wsat_incl (W:=llft_wsatG) with "gB") as "#gB'".
+    iAssert (G &&{llft_wsatG}&&> ∃ a, guard_body sn Px' a)%I as "#g1".
+    { iDestruct (guard_true (P:=G) (W:=llft_wsatG)) as "#gt".
+      iDestruct (guard_trans with "gt gB'") as "#gC".
+      iAssert ((slice_body bor_sem sn Px' ∗ llft_inv_main)
+        &&{llft_wsatG}&&> ∃ a, guard_body sn Px' a)%I as "#gD".
+      { iApply guard_intro. iIntros "!> X".
+        iDestruct (guard_body_eq_1 with "X") as "X". iFrame "X".
+        iIntros "Y". by iApply guard_body_eq_2. }
+      iApply (guard_trans with "gC gD"). }
+    (* First fact: every atom of [κ ⊓ κ'] is alive. *)
+    iDestruct (llftl_incl_glb _ _ κ with "Incl []") as "#Incl2".
+    { iApply guard_refl. }
+    iDestruct (guard_trans with "Galive Incl2") as "#GaliveM".
+    iDestruct (guard_exist_strengthen
+      (S := λ a, ⌜set_map LtAtomSwell κ ∪ set_map LtAtomSwell κ'
+                   ⊆ a.1.1.1⌝%I) with "GaliveM g1") as "#g2".
+    { intros a. iIntros "A".
+      iAssert (∀ k, ⌜ k ∈ κ ∪ κ' → LtAtomSwell k ∈ a.1.1.1 ⌝)%I
+        with "[A]" as "%J".
+      { iIntros (k) "%Hk".
+        iApply (lt_state_alive llft_name (LtAtomSwell k) a.1.1.1 a.1.1.2).
+        iSplit.
+        { iDestruct "A" as "[_ [[A _] _]]". iFrame. }
+        { iDestruct "A" as "[A _]". unseal.
+          iDestruct (big_sepS_elem_of_acc _ (κ' ⊓ κ) k with "A") as "[$ _]".
+          unfold meet, llft_intersect. set_solver. } }
+      iPureIntro. intro x. rewrite elem_of_union !elem_of_map.
+      intros [[x0 [Heq Hin]]|[x0 [Heq Hin]]]; subst x; apply J; set_solver. }
+    (* Second fact: the slice is full. *)
+    iDestruct (guard_exist_strengthen
+      (S := λ a, ⌜a.2 = true⌝%I) with "Gtok g2") as "#g3".
+    { intros a. iIntros "A".
+      iApply (guard_helper1 sn κ' a.2 a.1.1.1 a.1.1.2 a.1.2). iSplit.
+      - iDestruct "A" as "[$ _]".
+      - iDestruct "A" as "[_ [[(LtState & _ & Ou & _) [Box _]] %Hfacts]]".
+        iFrame "Ou LtState Box". iPureIntro. set_solver. }
+    (* Now read the borrowed proposition off. *)
+    iApply (guard_trans with "g3"). iApply guard_intro. iIntros "!> X".
+    iDestruct "X" as (a) "[[B %Hsub] %Hb]".
+    destruct a as [[[sa sd] blocked] b]. simpl in Hsub, Hb. subst b.
+    iDestruct "B" as "[(LtState & Alive & Ou & Blo) [BoxAuth P]]".
+    rewrite (llft_alive_subset_split (set_map LtAtomSwell κ) sa);
+      last by set_solver.
+    iDestruct "Alive" as "[Alive1 Alive2]".
+    iSplitL "Alive1 P".
+    { iSplitL "Alive1". { by iApply llft_alive_set_map_1. }
+      by iApply "PEquiv". }
+    iIntros "[Alive1 P]".
+    iDestruct (llft_alive_set_map_2 with "Alive1") as "Alive1".
+    iExists (sa, sd, blocked, true). simpl.
+    iSplitR ""; last by iPureIntro.
+    iSplitR ""; last by iPureIntro.
+    rewrite /guard_body /=. iFrame "LtState Ou Blo BoxAuth".
+    iSplitL "Alive1 Alive2".
+    { rewrite (llft_alive_subset_split (set_map LtAtomSwell κ) sa);
+        last by set_solver. iFrame. }
+    by iApply "PEquiv".
+  Qed.
+
+  Lemma llftl_idx_bor_guard κ i Px :
+    llft_ctx -∗ &{ κ, i } Px -∗
+      (@[κ] ∗ &{ κ, i } Px ∗ idx_bor_tok i) &&{llft_wsatG}&&>
+        (@[κ] ∗ bor_sem Px).
+  Proof.
+    iIntros "#ctx #idx". iApply (llftl_idx_bor_guard' with "ctx idx").
+    - iApply guard_intro. iIntros "!> (A & B & C)". iFrame. by iIntros "$".
+    - iApply guard_intro. iIntros "!> (A & B & C)". iFrame. by iIntros "$".
+  Qed.
+
+  Lemma llftl_idx_bor_iff κ i Px Px' :
+    □ (bor_sem Px ↔ bor_sem Px') -∗ &{κ,i} Px -∗ &{κ,i} Px'.
+  Proof.
+    destruct i as [sn κ']. unseal_bor. iIntros "#Eq [#Incl #S]".
+    iDestruct "S" as (Px'') "[#Eq' slice]". iFrame "Incl". iExists Px''.
+    iFrame "slice". iModIntro. iSplit.
+    - iIntros. iApply "Eq". iApply "Eq'". iFrame.
+    - iIntros. iApply "Eq'". iApply "Eq". iFrame.
   Qed.
 
 End LlftLogic.
