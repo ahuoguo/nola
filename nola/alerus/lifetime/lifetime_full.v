@@ -1482,6 +1482,13 @@ Section LlftLogic.
   (** Indexed borrows and guards *)
 
   (* begin hide *)
+  Local Lemma llft_alive_sing_1 k :
+    llft_alive_def' {[k]} ⊢ Alive llft_name k.
+  Proof. rewrite /llft_alive_def'. by rewrite big_sepS_singleton. Qed.
+  Local Lemma llft_alive_sing_2 k :
+    Alive llft_name k ⊢ llft_alive_def' {[k]}.
+  Proof. rewrite /llft_alive_def'. by rewrite big_sepS_singleton. Qed.
+
   Local Lemma llft_alive_set_map_1 κ :
     llft_alive_def' (set_map LtAtomSwell κ) ⊢ @[κ].
   Proof. rewrite /llft_alive_def' big_sepS_set_map. by unseal. Qed.
@@ -1680,6 +1687,225 @@ Section LlftLogic.
     iFrame "slice". iModIntro. iSplit.
     - iIntros. iApply "Eq". iApply "Eq'". iFrame.
     - iIntros. iApply "Eq'". iApply "Eq". iFrame.
+  Qed.
+
+  (** Derived rules about full borrows *)
+
+  Lemma llftl_bor_shorten κ κ' Px :
+      κ' ⊑ κ -∗ &{κ} Px -∗ &{κ'} Px.
+  Proof.
+      rewrite llftl_bor_idx. rewrite llftl_bor_idx.
+      iIntros "#incl fb". iDestruct "fb" as (idx) "[idx tok]".
+      iDestruct (llftl_idx_shorten κ κ' with "incl idx") as "idx".
+      iExists idx. iFrame.
+  Qed.
+
+  Lemma llftl_bor_iff κ Px Px' :
+    □ (bor_sem Px ↔ bor_sem Px') -∗ &{κ} Px -∗ &{κ} Px'.
+  Proof.
+    rewrite !llftl_bor_idx. iIntros "#HP Hbor".
+    iDestruct "Hbor" as (i) "[Hbor Htok]". iExists i. iFrame "Htok".
+    iApply llftl_idx_bor_iff; done.
+  Qed.
+
+  Lemma llftl_reborrow E κ κ' Px :
+      llft_ctx -∗ κ' ⊑ κ -∗ &{κ} Px -∗ |=[llft_wsat]{E}=>
+        &{κ'} Px ∗ ([†κ'] -∗ |=[llft_wsat]=> &{κ} Px).
+  Proof.
+      iIntros "#ctx #incl fb". rewrite llftl_bor_idx.
+      iDestruct "fb" as (idx) "[#idx tok]". destruct idx as [sn κ2].
+      iMod (llftl_borrow κ'
+        (bor_state_fml sn (Borrow (set_map LtAtomSwell κ2) {[default_dead]}))
+        with "ctx [tok]") as "[tokbor back]".
+      { by iApply bi.equiv_entails_1_2; [apply bor_state_fml_sem|]. }
+      iMod (llftl_idx_bor_unnest E κ κ' (sn, κ2) Px with "ctx idx tokbor")
+        as "fullbor".
+      iModIntro. iSplitL "fullbor".
+      { iApply (llftl_bor_shorten with "[] fullbor").
+        iApply llftl_incl_glb. { iFrame "incl". } iApply guard_refl. }
+      iIntros "#dead". iMod ("back" with "dead") as "tok". iModIntro.
+      iExists (sn, κ2). iFrame "idx".
+      by iApply bi.equiv_entails_1_1; [apply bor_state_fml_sem|].
+  Qed.
+
+  Lemma llftl_bor_freeze `{!Inhabited T} E κ (Pxs : T → FML $oi Σ) Qx :
+      (bor_sem Qx ⊣⊢ ∃ x : T, bor_sem (Pxs x)) →
+      llft_ctx -∗ &{κ} Qx -∗ |=[llft_wsat]{E}=> ∃ x : T, &{κ} (Pxs x).
+  Proof.
+      intros Hsem.
+      have Hs1 := bi.equiv_entails_1_1 _ _ Hsem.
+      have Hs2 := bi.equiv_entails_1_2 _ _ Hsem.
+      iIntros "#ctx fb". rewrite /modw. iIntros "Wsat".
+      iMod (llftl_bor_acc_atomic E Qx κ with "ctx fb Wsat")
+        as "[[P back]|[Wsat #dead]]".
+      - iDestruct (Hs1 with "P") as (x) "P".
+        iMod ("back" $! (Pxs x) with "[] P") as "[Wsat fb]".
+        { iIntros "[P k]". iModIntro. iApply Hs2. by iExists x. }
+        iModIntro. iFrame "Wsat". by iExists x.
+      - iDestruct (llftl_bor_fake E κ (Pxs inhabitant) with "ctx dead") as "X".
+        iMod ("X" with "Wsat") as "[Wsat fb]".
+        iModIntro. iFrame "Wsat". by iExists inhabitant.
+  Qed.
+
+  Lemma llftl_bor_pers_from_wand E κ Px (Q : iProp Σ) `{!Persistent Q} :
+      llft_ctx -∗ &{κ} Px -∗ (bor_sem Px -∗ Q) -∗ |=[llft_wsat]{E}=>
+        &{κ} Px ∗ (Q ∨ [†κ]).
+  Proof.
+      iIntros "#ctx fb wand". rewrite /modw. iIntros "Wsat".
+      iMod (llftl_bor_acc_atomic E Px κ with "ctx fb Wsat")
+        as "[[P back]|[Wsat #dead]]".
+      - iDestruct ("wand" with "P") as "#Q".
+        iMod ("back" $! Px with "[] P") as "[Wsat fb]".
+        { iIntros "[P2 dead]". by iFrame. }
+        iModIntro. iFrame "Wsat fb". iLeft. iFrame "Q".
+      - iDestruct (llftl_bor_fake E κ Px with "ctx dead") as "X".
+        iMod ("X" with "Wsat") as "[Wsat fb]".
+        iModIntro. iFrame "Wsat fb". iRight. iFrame "dead".
+  Qed.
+
+  Lemma llftl_bor_pers_from_wand2 E κ Px (Q R : iProp Σ) `{!Persistent Q} :
+      llft_ctx -∗ &{κ} Px -∗ (R -∗ bor_sem Px -∗ Q) -∗ R -∗
+        |=[llft_wsat]{E}=> &{κ} Px ∗ (Q ∨ [†κ]) ∗ R.
+  Proof.
+      iIntros "#ctx fb wand R". rewrite /modw. iIntros "Wsat".
+      iMod (llftl_bor_acc_atomic E Px κ with "ctx fb Wsat")
+        as "[[P back]|[Wsat #dead]]".
+      - iDestruct ("wand" with "R P") as "#Q".
+        iMod ("back" $! Px with "[] P") as "[Wsat fb]".
+        { iIntros "[P2 dead]". by iFrame. }
+        iModIntro. iFrame "Wsat fb R". iLeft. iFrame "Q".
+      - iDestruct (llftl_bor_fake E κ Px with "ctx dead") as "X".
+        iMod ("X" with "Wsat") as "[Wsat fb]".
+        iModIntro. iFrame "Wsat fb R". iRight. iFrame "dead".
+  Qed.
+
+  Lemma llftl_bor_pers E κ Px `{!Persistent (bor_sem Px)} :
+      llft_ctx -∗ &{κ} Px -∗ |=[llft_wsat]{E}=>
+        &{κ} Px ∗ (bor_sem Px ∨ [†κ]).
+  Proof.
+      iIntros "#ctx fb".
+      iApply (llftl_bor_pers_from_wand E κ Px (bor_sem Px) with "ctx fb []").
+      by iIntros "$".
+  Qed.
+
+  Lemma llftl_bor_simple_atomic E Px κ :
+    llft_ctx -∗ &{κ} Px -∗ llft_wsat -∗ |={E}=>
+        (bor_sem Px ∗ (bor_sem Px ==∗ llft_wsat ∗ &{κ} Px))
+        ∨ (llft_wsat ∗ [†κ]).
+  Proof.
+    iIntros "ctx bor Wsat".
+    iMod (llftl_bor_acc_atomic E Px κ with "ctx bor Wsat")
+      as "[[P back]|[Wsat dead]]".
+    - iModIntro. iLeft. iFrame "P". iIntros "P".
+      iApply ("back" $! Px with "[] P"). by iIntros "[$ _]".
+    - iModIntro. iRight. iFrame.
+  Qed.
+
+  (** LeLiLo-Bor-Unnest.  The borrowed borrow is given syntactically: [Sx idx]
+    denotes the (persistent) indexed borrow and the borrow-state formula
+    denotes its token.  Note the conclusion is a plain update: the original
+    needed [|={E}▷=>] only because the inner borrow sat under a later. *)
+  Lemma llftl_bor_unnest E κ κ' Px (Sx : Idx → FML $oi Σ) Qx :
+      (∀ idx, bor_sem (Sx idx) ⊣⊢ &{κ, idx} Px) →
+      (bor_sem Qx ⊣⊢ ∃ idx : Idx, bor_sem (bor_sep (Sx idx)
+          (bor_state_fml idx.1
+            (Borrow (set_map LtAtomSwell idx.2) {[default_dead]})))) →
+      llft_ctx -∗ &{κ'} Qx -∗ |=[llft_wsat]{E}=> &{κ ⊓ κ'} Px.
+  Proof.
+      intros HS HQ.
+      assert (∀ i0, Persistent (bor_sem (Sx i0))) as Hpers.
+      { intros i0. rewrite (HS i0). apply _. }
+      iIntros "#ctx fb".
+      iMod (llftl_bor_freeze E κ' (λ idx, bor_sep (Sx idx)
+        (bor_state_fml idx.1
+          (Borrow (set_map LtAtomSwell idx.2) {[default_dead]}))) Qx HQ
+        with "ctx fb") as (idx) "fb".
+      iMod (llftl_sep_split E (Sx idx) (bor_state_fml idx.1
+        (Borrow (set_map LtAtomSwell idx.2) {[default_dead]})) κ'
+        with "ctx fb") as "[fb1 fb2]".
+      iMod (llftl_bor_pers E κ' (Sx idx) with "ctx fb1")
+        as "[fb1 [#idxbor|#dead]]".
+      - iDestruct (bi.equiv_entails_1_1 _ _ (HS idx) with "idxbor")
+          as "#idxbor'".
+        destruct idx as [sn κ2].
+        iApply (llftl_idx_bor_unnest E κ κ' (sn, κ2) Px with "ctx idxbor' fb2").
+      - iApply (llftl_bor_fake E (κ ⊓ κ') Px with "ctx []").
+        rewrite llftl_end_inter. by iRight.
+  Qed.
+
+  (** Guarded accessors
+
+    To use the guarded accessor laws without incurring a later, Leaf has to go
+    through a non-swell temporary lifetime, because ending a swell lifetime
+    costs a step.  Later-free, no lifetime costs a step, but the construction
+    is kept as it is also what makes the guard's left-hand side a token. *)
+
+  (* begin hide *)
+  Local Lemma llftl_guarded_tok_to_tmp E Gx κ :
+    llft_ctx -∗
+    (bor_sem Gx &&{llft_wsatG}&&> @[κ]) -∗
+    bor_sem Gx -∗ |=[llft_wsat]{E}=> ∃ κ' : gset lt_atom,
+        (llft_alive_def' κ' &&{llft_wsatG}&&> @[κ]) ∗
+        llft_alive_def' κ' ∗
+        □ (llft_alive_def' κ' -∗
+            |=[llft_wsat]{↑NllftUsr ∪ ↑NllftUsr2}=> llft_dead_def' κ') ∗
+        (llft_dead_def' κ' -∗ |=[llft_wsatG]=> bor_sem Gx).
+  Proof.
+    iIntros "#ctx #Gk G".
+    iMod (llftl_begin_maybe_swell' false with "ctx") as (κ1) "A1".
+    iMod (llftl_borrow_shared_maybe_swell ({[ LtAtomNotSwell κ1 ]}) Gx
+      with "G") as "[#G1 back]".
+    iDestruct (guard_trans with "G1 Gk") as "#Incl".
+    iModIntro. iExists ({[ LtAtomNotSwell κ1 ]}). iFrame "Incl".
+    iSplitL "A1". { by iApply llft_alive_sing_2. }
+    iSplitR; last first.
+    { iIntros "A". iApply ("back" with "A"). }
+    iIntros "!> Alive". iDestruct (llft_alive_sing_1 with "Alive") as "Alive".
+    iMod (llftl_end_maybe_swell' (LtAtomNotSwell κ1) with "ctx Alive") as "D".
+    iModIntro. rewrite /llft_dead_def'. iExists (LtAtomNotSwell κ1). iFrame "D".
+    iPureIntro. set_solver.
+  Qed.
+  (* end hide *)
+
+  Lemma llftl_bor_idx_acc_guarded E Gx κ idx Px :
+    llft_ctx -∗
+    &{κ, idx} Px -∗
+    idx_bor_tok idx -∗
+    (bor_sem Gx &&{llft_wsatG}&&> @[κ]) -∗
+    bor_sem Gx -∗ |=[llft_wsat]{E}=>
+        bor_sem Px ∗ (bor_sem Px -∗
+          |=[llft_wsat]{↑NllftUsr ∪ ↑NllftUsr2}=> idx_bor_tok idx ∗ bor_sem Gx).
+  Proof.
+    iIntros "#ctx #bor tok #Gk G".
+    iMod (llftl_guarded_tok_to_tmp E Gx κ with "ctx Gk G")
+      as (κ') "(#Incl & Alive & #Kill & Back)".
+    iMod (llftl_bor_idx_acc_maybe_swell E Px κ' idx with "ctx [] tok Alive")
+      as "[P Pback]".
+    { destruct idx as [sn κ2]. unseal_bor. rewrite /idx_bor_def'.
+      iDestruct "bor" as "[B1 $]". iApply (guard_trans with "Incl B1"). }
+    iModIntro. iFrame "P". iIntros "P". iMod ("Pback" with "P") as "[tok alive]".
+    iMod ("Kill" with "alive") as "X".
+    iMod ("Back" with "X") as "G". iModIntro. iFrame.
+  Qed.
+
+  Lemma llftl_bor_acc_guarded E Gx κ Px :
+    llft_ctx -∗
+    &{κ} Px -∗
+    (bor_sem Gx &&{llft_wsatG}&&> @[κ]) -∗
+    bor_sem Gx -∗ |=[llft_wsat]{E}=>
+        bor_sem Px ∗ (∀ Qx,
+          (bor_sem Qx ={↑NllftUsr ∪ ↑NllftUsr2}=∗ bor_sem Px) -∗ bor_sem Qx -∗
+          |=[llft_wsat]{↑NllftUsr ∪ ↑NllftUsr2}=> (&{κ} Qx) ∗ bor_sem Gx).
+  Proof.
+    iIntros "#ctx bor #Gk G".
+    iMod (llftl_guarded_tok_to_tmp E Gx κ with "ctx Gk G")
+      as (κ') "(#Incl & Alive & #Kill & Back)".
+    iMod (llftl_bor_acc_maybe_swell' E Px κ' κ with "ctx Incl bor Alive")
+      as "[P Pback]".
+    iModIntro. iFrame "P". iIntros (Qx) "vs Q".
+    iMod ("Pback" $! Qx with "vs Q") as "[fb alive]".
+    iMod ("Kill" with "alive") as "X". iMod ("Back" with "X") as "G".
+    iModIntro. iFrame.
   Qed.
 
 End LlftLogic.
