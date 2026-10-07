@@ -269,7 +269,7 @@ Section LlftLogic.
   (* begin hide *)
   Lemma llftl_incl_dead_implies_dead_unswell E κ κ' :
       ⊢ llft_ctx -∗ (llft_alive_def' κ &&{llft_wsatG}&&> llft_alive_def' κ') -∗
-        llft_dead_def' κ' -∗ |=[llft_wsat]{E}=> llft_dead_def' κ.
+        llft_dead_def' κ' -∗ |=[llft_wsatG]{E}=> llft_dead_def' κ.
   Proof.
     iIntros "_ #incl #dead".
     (* The guard to the right-hand side becomes a guard to [False]. *)
@@ -312,7 +312,7 @@ Section LlftLogic.
     iDestruct (guard_or_false with "ctx' GF") as "#G3".
     (* Now open the guard and produce the dead token. *)
     rewrite /modw. iIntros "Wsat".
-    iDestruct (guard_accw (W:=llft_wsat) with "G3 [//] Wsat") as "[J back]".
+    iDestruct (guard_acc with "G3 [//] Wsat") as "[J back]".
     iDestruct "J" as (sa sd blocked) "[%k_sa [State [alive [ou Blo]]]]".
     have the_k := not_subset_eq_get κ sa k_sa. destruct the_k as [k [k_in k_not_in]].
     have h : Decision (k ∈ sd) by solve_decision. destruct h as [h|n].
@@ -340,7 +340,7 @@ Section LlftLogic.
 
   (** LeLiLo-Incl-Dead *)
   Lemma llftl_incl_dead_implies_dead E κ κ' :
-      ⊢ llft_ctx -∗ κ ⊑ κ' -∗ [† κ' ] -∗ |=[llft_wsat]{E}=> [† κ ].
+      ⊢ llft_ctx -∗ κ ⊑ κ' -∗ [† κ' ] -∗ |=[llft_wsatG]{E}=> [† κ ].
   Proof.
       iIntros "#LFT #Incl #A".
       iDestruct (llftl_incl_dead_implies_dead_unswell E
@@ -460,6 +460,150 @@ Section LlftLogic.
     unseal. unfold llft_empty.
     iIntros "t". iDestruct "t" as (k) "[%p t]".
     rewrite elem_of_empty in p. contradiction.
+  Qed.
+
+  (** Allocating a new lifetime token *)
+
+  (* begin hide *)
+  Local Lemma llftl_begin_maybe_swell' (b: bool) :
+      llft_ctx ⊢ |=[llft_wsat]=>
+        ∃ k, Alive llft_name (if b then LtAtomSwell k else LtAtomNotSwell k).
+  Proof.
+      iIntros "_". rewrite /modw /llft_wsat /llft_wsatG.
+      iIntros "[[WG [Box Main]] Other]".
+      iDestruct "Main" as (sa sd blocked) "[State [Alive [Ou Blo]]]".
+      assert (∃ k , (if b then LtAtomSwell k else LtAtomNotSwell k) ∉ (sa ∪ sd))
+        as Fres. {
+          exists (fresh (set_map atom_unwrap (sa ∪ sd) : gset nat)).
+          destruct b.
+           - apply atom_not_in_swell. apply is_fresh.
+           - apply atom_not_in_not_swell. apply is_fresh.
+      }
+      destruct Fres as [k Fres].
+      iDestruct "Other" as (outlives) "[Delayed [O1 O2]]".
+      iDestruct (outer_new_lt llft_name o_name d_name sa sd blocked
+        (if b then LtAtomSwell k else LtAtomNotSwell k) with "[Ou Delayed]")
+        as "X"; first by set_solver. { iFrame "Ou Delayed". }
+      iMod ("X" with "Box") as "[Box [Ou Delayed]]".
+      iMod (new_lt llft_name (if b then LtAtomSwell k else LtAtomNotSwell k) sa sd
+        with "State") as "[State [A1 A2]]"; [set_solver|set_solver|].
+      iModIntro. iFrame "WG Box". iSplitR "A2"; last by iExists k; iFrame "A2".
+      iSplitR "Delayed O1 O2"; last by iExists outlives; iFrame.
+      iExists (sa ∪ {[ (if b then LtAtomSwell k else LtAtomNotSwell k) ]}), sd, blocked.
+      iFrame "State Ou Blo". rewrite /llft_alive_def'.
+      replace ((sa ∪ {[ (if b then LtAtomSwell k else LtAtomNotSwell k) ]}))
+        with (({[ (if b then LtAtomSwell k else LtAtomNotSwell k) ]} ∪ sa))
+        by set_solver.
+      rewrite big_sepS_insert; last by set_solver. iFrame.
+  Qed.
+  (* end hide *)
+
+  Lemma llftl_begin' :
+      llft_ctx ⊢ |=[llft_wsat]=> ∃ κ, @[ κ ] ∗ ⌜κ ≠ llft_empty⌝.
+  Proof.
+      iIntros "LFT". iMod (llftl_begin_maybe_swell' true with "LFT") as (k) "S".
+      unseal. iModIntro. iExists ({[ k ]}).
+      rewrite big_sepS_singleton. iFrame. iPureIntro. set_solver.
+  Qed.
+
+  (* begin hide *)
+  Local Lemma llftl_end_maybe_swell' (k: lt_atom) :
+      llft_ctx -∗ Alive llft_name k -∗
+      |=[llft_wsat]{↑NllftUsr ∪ ↑NllftUsr2}=> Dead llft_name k.
+  Proof.
+      iIntros "_ token". rewrite /modw /llft_wsat /llft_wsatG.
+      iIntros "[[WG [Box Main]] Other]".
+      iDestruct "Other" as (outlives1) "[Delayed [O1 O2]]".
+      iDestruct "Main" as (sa1 sd1 blocked1) "[State Alive]".
+      iAssert (⌜k ∈ sa1⌝)%I as "%k_sa1".
+      { iApply (lt_state_alive llft_name k sa1 sd1). iSplit.
+        { iFrame "State". } iFrame "token". }
+      iDestruct (LtState_disjoint llft_name _ _ with "State") as "%Hdisj".
+      rewrite {1}/llft_alive_def' (big_sepS_delete _ sa1 k); last done.
+      iDestruct "Alive" as "[[token2 Alive] [Ou Blo]]".
+      iMod (kill_lt llft_name k sa1 sd1 with "[State token token2]")
+        as "[State #dead]". { iFrame. }
+      iDestruct (outer_kill_lt_step1 llft_name o_name d_name sa1 sd1 blocked1 k
+        with "[Ou Delayed]") as "X"; [done|set_solver| |].
+      { iFrame "Ou Delayed". }
+      iMod ("X" with "Box") as "[Box [Ou Delayed]]".
+      destruct (decide (filter (λ (o: (gset lt_atom * lt_atom)) ,
+          o.2 = k ∧ o.1 ⊆ sa1 ∖ {[k]}) outlives1 = ∅)).
+      {
+        assert (∀ other , (other, k) ∈ outlives1 → ¬(other ⊆ sa1 ∖ {[k]}))
+          as Houtlives.
+        { intros other. intros Hin Hdisj2.
+          assert ((other,  k) ∈ filter (λ o : gset lt_atom * lt_atom,
+            o.2 = k ∧ o.1 ⊆ sa1 ∖ {[k]}) outlives1) as X.
+          { rewrite elem_of_filter. set_solver. } rewrite e in X. set_solver. }
+        destruct (decide (k ∈ blocked1)). {
+          iDestruct (big_sepS_delete _ _ k with "Blo") as "[B Blo]"; trivial.
+          iExFalso. iApply (lt_alive_dead_false llft_name k). iSplit.
+          { iFrame. } iFrame "dead".
+        }
+        iDestruct (outer_kill_lt_step2 llft_name o_name d_name
+          (sa1 ∖ {[k]}) (sd1 ∪ {[k]}) blocked1 outlives1 k (sa1 ∖ {[k]}) true
+          with "[Ou Delayed O1]") as "X"; [done|done| | |].
+        { intros other Hin Hsub. by apply (Houtlives other). }
+        { iFrame "Ou Delayed O1". iFrame "dead". }
+        iMod ("X" with "Box") as "[Box [Ou [Outlives Delayed]]]".
+        iModIntro. iFrame "WG Box dead". iSplitR "Outlives Delayed O2".
+        { iExists (sa1 ∖ {[k]}), (sd1 ∪ {[k]}), blocked1. iFrame. }
+        iExists outlives1. iFrame.
+      }
+      (* case: something violates the outlives relation. derive a contradiction. *)
+      assert (∃ (x : gset lt_atom * lt_atom) , x ∈ filter
+        (λ o : gset lt_atom * lt_atom, o.2 = k ∧ o.1 ⊆ sa1 ∖ {[k]}) outlives1)
+        as Hex_x. { apply set_choose_L; trivial. }
+      destruct Hex_x as [[oalive odead] Hex].
+      rewrite elem_of_filter in Hex. simpl in Hex.
+      destruct Hex as [[Hex1 Hex2] Hex3]. subst odead.
+      iDestruct ("O2" $! ((oalive, k)) with "[]") as "#Oguard".
+      { iPureIntro; trivial. }
+      iDestruct (llftl_incl_dead_implies_dead_unswell
+        (↑NllftUsr ∪ ↑NllftUsr2) oalive {[k]} with "[] [] []") as "OdeadUpd".
+      { done. }
+      { simpl. rewrite /llft_alive_def' big_sepS_singleton. iFrame "Oguard". }
+      { rewrite /llft_dead_def'. iExists k. iFrame "dead". iPureIntro. set_solver. }
+      iMod ("OdeadUpd" with "[WG Box State Alive Ou Blo]") as "[WsatG #Odead]".
+      { rewrite /llft_wsatG. iFrame "WG Box".
+        iExists (sa1 ∖ {[k]}), (sd1 ∪ {[k]}), blocked1. iFrame. }
+      iDestruct "WsatG" as "[WG [Box Main]]".
+      iDestruct "Main" as (sa2 sd2 blocked2) "[State [Alive [Ou Blo]]]".
+      iDestruct "Ou" as (opt_k) "[Delayed2 X]".
+      iDestruct (delayed_agree with "[Delayed Delayed2]") as "%Dagree".
+      { iFrame "Delayed Delayed2". }
+      subst opt_k. iDestruct "X" as "[X1 %Hsa2eq]".
+      destruct Hsa2eq as [_ [_ Hsa2eq]]. subst sa2.
+      iDestruct (big_sepS_subseteq _ _ oalive with "Alive") as "Alive"; first done.
+      iExFalso. iApply (llftl_not_own_end_unswell oalive with "[Alive] Odead").
+      { rewrite /llft_alive_def'. iFrame "Alive". }
+  Qed.
+  (* end hide *)
+
+  Lemma llftl_end' κ :
+      κ ≠ llft_empty →
+      llft_ctx -∗ @[ κ ] -∗ |=[llft_wsat]{↑NllftUsr ∪ ↑NllftUsr2}=> [† κ ].
+  Proof.
+      intros Hnotempty.
+      assert (∃ k, k ∈ κ) as Hex_k. { apply set_choose_L; trivial. }
+      destruct Hex_k as [k Hin_k].
+      iIntros "LFT A".
+      iMod (llftl_end_maybe_swell' (LtAtomSwell k) with "LFT [A]") as "J".
+        - unseal. rewrite (big_sepS_delete _ _ k); last by trivial.
+          iDestruct "A" as "[$ _]".
+        - iModIntro. unseal. iExists k. iSplit; done.
+  Qed.
+
+  (** LeLiLo-Begin *)
+  Lemma llftl_begin :
+      llft_ctx ⊢ |=[llft_wsat]=> ∃ κ, @[ κ ] ∗
+        □ (@[ κ ] -∗ |=[llft_wsat]{↑NllftUsr ∪ ↑NllftUsr2}=> [† κ ]).
+  Proof.
+    iIntros "#ctx".
+    iMod (llftl_begin' with "ctx") as (κ) "[Alive %nonemp]".
+    iModIntro. iExists κ. iFrame "Alive". iModIntro.
+    iApply llftl_end'; done.
   Qed.
 
 End LlftLogic.
