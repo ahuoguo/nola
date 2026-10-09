@@ -54,6 +54,17 @@ Section wsat_split.
   Proof. rewrite (wsat_incl W W' Wr). by iIntros "$$". Qed.
 End wsat_split.
 
+(** Weaken both the world satisfaction and the mask of a [fupdw].  The
+  lifetime logic's updates are over [llft_wsat] at [↑NllftUsr ∪ ↑NllftUsr2];
+  the typing layer works over the whole world satisfaction at [⊤]. *)
+Lemma fupdw_incl_mask {PROP : bi} `{!BiFUpd PROP}
+  {W W' Wr : PROP} `{!WsatIncl W W' Wr} {E E' P} :
+  E ⊆ E' → (|=[W']{E}=> P) ⊢ |=[W]{E'}=> P.
+Proof.
+  move=> ?. rewrite /modw (wsat_incl W W' Wr). iIntros "big [W' Wr]".
+  iApply fupd_mask_mono; [done|]. iMod ("big" with "W'") as "[$$]". by iFrame.
+Qed.
+
 (** ** Lifetime contexts
 
   These live here, rather than in [typing/lifetime.v] and
