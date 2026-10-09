@@ -54,6 +54,23 @@ Section wsat_split.
   Proof. rewrite (wsat_incl W W' Wr). by iIntros "$$". Qed.
 End wsat_split.
 
+(** Rewriting a guard along an equivalence.
+
+  VerusBelt does this with [leaf_goal lhs/rhs to …].  [guard_proper] would do
+  it too, but [rewrite] of an [⊣⊢] inside the Iris proof context trips over
+  the [Proper] search for [envs], so these are stated as directed lemmas. *)
+Section guard_iff.
+  Context {PROP : bi}.
+  Lemma guard_rhs_iff {W P Q Q' : PROP} :
+    (Q ⊣⊢ Q') → (P &&{W}&&> Q) ⊢ P &&{W}&&> Q'.
+  Proof. move=> eq. by rewrite eq. Qed.
+  Lemma guard_lhs_iff {W P P' Q : PROP} :
+    (P ⊣⊢ P') → (P' &&{W}&&> Q) ⊢ P &&{W}&&> Q.
+  Proof. move=> eq. by rewrite eq. Qed.
+  Lemma iff_1 {P Q : PROP} : (P ⊣⊢ Q) → P -∗ Q.
+  Proof. move=> eq. rewrite eq. by iIntros "$". Qed.
+End guard_iff.
+
 (** Weaken both the world satisfaction and the mask of a [fupdw].  The
   lifetime logic's updates are over [llft_wsat] at [↑NllftUsr ∪ ↑NllftUsr2];
   the typing layer works over the whole world satisfaction at [⊤]. *)
@@ -103,6 +120,10 @@ Class EmptySem (FML : oFunctor) Σ `{!BorSem FML Σ} := {
   empty_fml : FML $oi Σ;
   empty_fml_sem : bor_sem empty_fml ⊣⊢ True;
 }.
+
+(** Directed forms, for [iApply]: see [guard_iff] above *)
+Lemma empty_fml_sem_2 `{!BorSem FML Σ, !EmptySem FML Σ} : ⊢ bor_sem empty_fml.
+Proof. by rewrite empty_fml_sem. Qed.
 
 (** ** Guard sources for the Points-To Cell Logic
 

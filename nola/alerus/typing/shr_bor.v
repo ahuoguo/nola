@@ -28,18 +28,6 @@ Implicit Type 𝔄 𝔅: syn_type.
 Section shr_bor.
   Context `{!typeG FML Σ}.
 
-  (** Rewriting the right-hand side of a guard along an equivalence.
-
-    The original gets this from [leaf_goal rhs to …]; here [guard_proper] does
-    it, but only outside the Iris proof context. *)
-  Lemma guard_rhs_iff {W P Q Q' : iProp Σ} :
-    (Q ⊣⊢ Q') → (P &&{W}&&> Q) ⊢ P &&{W}&&> Q'.
-  Proof. move=> eq. by rewrite eq. Qed.
-
-  (** Likewise for a bare equivalence *)
-  Lemma iff_1 {P Q : iProp Σ} : (P ⊣⊢ Q) → P -∗ Q.
-  Proof. move=> eq. rewrite eq. by iIntros "$". Qed.
-
   Program Definition shr_bor {𝔄} (κ: lft) (ty: type 𝔄)
     : type (at_clocₛ 𝔄) := @ty_of_st _ _ _ (at_clocₛ 𝔄) ({|
     st_size := 1;
