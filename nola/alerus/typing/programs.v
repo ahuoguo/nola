@@ -25,7 +25,8 @@ From nola.alerus.lang.lib Require Import memcpy.
 From nola.alerus.typing Require Export type ctx lft_contexts type_context
   cont_context inv_context.
 From nola.bi Require Import guard modw.
-Import GuardNotation ModwNotation WpwNotation.
+From nola.iris Require Import iprop.
+Import GuardNotation ModwNotation WpwNotation iPropAppNotation.
 
 Implicit Type (𝔄 𝔅: syn_type) (𝔄l 𝔅l: syn_typel).
 
@@ -128,10 +129,11 @@ Section typing.
     (st: ~~𝔄 → ~~𝔅' → ~~𝔄' → Prop) : Prop :=
     tyb.(ty_size) = tyb'.(ty_size) ∧ ∀x d (v: fancy_val) tid γ q,
     llft_ctx -∗ uniq_ctx -∗ elctx_interp E -∗ Ltok γ L q -∗
-    ty_own ty x d d tid [v] =[alerus_wsat]{⊤}=∗ ∃(l: cloc) (d':nat) (H: iProp Σ),
+    ty_own ty x d d tid [v] =[alerus_wsat]{⊤}=∗
+      ∃(l: cloc) (d':nat) (Hx: FML $oi Σ),
       ⌜v = FVal #(l.1)⌝ ∗ ⌜d = S d'⌝ ∗ l #↦!∗: ty_own tyb (gt x) d' d tid ∗
-      H ∗ (H &&{Wguard}&&> l #↦∗_) ∗
-      ∀y db', l #↦!∗: ty_own tyb' y db' (S db') tid -∗ H
+      bor_sem Hx ∗ (bor_sem Hx &&{Wguard}&&> l #↦∗_) ∗
+      ∀y db', l #↦!∗: ty_own tyb' y db' (S db') tid -∗ bor_sem Hx
         =[alerus_wsat]{⊤}=∗ ∃z, Ltok γ L q ∗ ⌜st x y z⌝ ∗
           ty_own ty' z (S db') (d `max` S db') tid [v].
   Global Arguments typed_write {_ _ _ _} _ _ _%T _%T _%T _%T _%type _%type.
@@ -141,13 +143,13 @@ Section typing.
     : Prop := ∀x d v tid γ q,
     llft_ctx -∗ elctx_interp E -∗ Ltok γ L q -∗
     ty_own ty x d d tid [v] =[alerus_wsat]{⊤}=∗
-      ∃(l: cloc) (vl_concrete: list val) (vl: list fancy_val) H,
+      ∃(l: cloc) (vl_concrete: list val) (vl: list fancy_val) (Hx: FML $oi Σ),
         ⌜v = FVal #(l.1)⌝ ∗ ⌜length vl_concrete = length vl⌝ ∗
-        H ∗ (H &&{Wguard}&&> (l.1 ↦[^ l.2]∗ vl_concrete)) ∗
+        bor_sem Hx ∗ (bor_sem Hx &&{Wguard}&&> (l.1 ↦[^ l.2]∗ vl_concrete)) ∗
         (∀ l₁ c₁ , (l₁, c₁) #↦∗_ ∗ (l₁, c₁) #↦∗ vl_concrete ={∅}=∗
           (l₁, c₁) #↦∗_ ∗ (l₁, c₁) #↦!∗ vl) ∗
         ⌜StackOkay tyb → vl = fmap FVal vl_concrete⌝ ∗
-        ty_own tyb (gt x) d d tid vl ∗ (H =[alerus_wsat]{⊤}=∗
+        ty_own tyb (gt x) d d tid vl ∗ (bor_sem Hx =[alerus_wsat]{⊤}=∗
           ∃ z, ⌜st x z⌝ ∗ Ltok γ L q ∗ ty_own ty' z d d tid [v]).
   Global Arguments typed_read {_ _ _} _ _ _%T _%T _%T _ _%type.
 
@@ -368,6 +370,236 @@ Section typing.
   Proof.
     iIntros (? Extr) "?". iApply type_let; [by eapply type_path_instr|done| |done].
     destruct Extr as [Htrx _]=>?? /=. apply Htrx. by case.
+  Qed.
+  (** Assignment.
+
+    The original splits a [£(...)] budget four ways here and spends it on
+    [lc_fupd_elim_later] / [lc_step_fupdN_elim_later] to strip the laters of
+    the write guard and of [resolve]'s step-taking update.  None of that is
+    needed. *)
+  Lemma type_assign_instr {𝔄 𝔅 𝔄' 𝔅'} (ty: type 𝔄) (tyb: type 𝔅)
+                          (ty': type 𝔄') (tyb': type 𝔅') gt st Φ p pb E L I :
+    typed_write E L ty tyb ty' tyb' gt st → resolve' E L tyb Φ →
+    typed_instr E L I +[p ◁ ty; pb ◁ tyb'] (p <- pb) (λ _, +[p ◁ ty'])
+      (λ post '-[a; b], λ mask π,
+        Φ (gt a) π (∀ z, st a b z → post -[z] mask π)).
+  Proof.
+    iIntros ([Eq Wrt] Rslv ???? (x & y &[]))
+      "#LFT #PROPH #UNIQ #E L I (p & pb & _) Obs".
+    iApply twpw_fupdw_nonval; [done|].
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Ltok_alloc with "L W") as "[W (%γ & tok)]".
+    iDestruct (Ltok_split_1 with "tok") as "[t1 t2]". iModIntro. iFrame "W".
+    wp_bind p. iApply (twp_hasty with "p"). iIntros (v d Heq) "ty".
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Wrt with "LFT UNIQ E t1 ty W") as
+      "(W & %l & %d' & %Hx & %Heqv & -> & (%vl & ↦ & A) & H & #Hguards & Toty')".
+    inversion Heqv. subst v.
+    iDestruct "A" as "[tyb_ghos %tyb_phys]".
+    assert (length vl = ty_size tyb) as Sz.
+    { rewrite <- tyb_phys. apply ty_size_eq. }
+    iModIntro. iFrame "W".
+    wp_bind pb. iApply (twp_hasty with "pb"). iIntros (vb db ?) "tyb'".
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Rslv _ _ ⊤ with "LFT PROPH UNIQ E t2 tyb_ghos W")
+      as "(W & #Obs' & t2)"; [solve_ndisj|].
+    iDestruct "tyb'" as "[tyb'_gho %tyb'_phys]".
+    assert (ty_size tyb' = 1) as Sz'.
+    { rewrite <- (ty_size_eq _ y tid). rewrite tyb'_phys. trivial. }
+    rewrite <-Eq in Sz'. rewrite <-Sz in Sz'. generalize Sz'.
+    case vl=> [|?[|]]=>// ?.
+    iMod (mapsto_vec_untether_singleton _ _ ⊤ ∅ with "↦")
+      as (v₀ l₀ c₀) "[%Hl [↦ Retether]]". subst l. simpl.
+    iModIntro. iFrame "W".
+    iDestruct (guard_rhs_sep_l (Q:=((l₀, c₀) #↦_)%I) (R:=True%I)
+      with "Hguards") as "#Hg".
+    iApply (twp_write_na_guarded _ _ _ _ _ _ _ Hx with "[H ↦]").
+    { iFrame "Hg". iFrame. }
+    iIntros "[↦ H] W".
+    iMod ("Toty'" $! y db with "[↦ tyb'_gho] H W")
+      as "(W & %z & tok1 & %Hz & ty')".
+    { iExists [FVal vb]. rewrite -heap_complete_mapsto_fancy_singleton.
+      iFrame "↦". iSplitL.
+      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]".
+        { lia. } { lia. } }
+      done. }
+    iDestruct (Ltok_split_2 with "tok1 t2") as "tok".
+    iMod (Ltok_withdraw with "tok W") as "[W L]". iModIntro. iFrame "W".
+    iExists -[z]. iFrame "L I". iSplitR "Obs".
+    - rewrite right_id tctx_hasty_val'; [|done].
+      iExists (S (d' `max` db)). iDestruct "ty'" as "[gho phys]". iFrame.
+      iDestruct (ty_gho_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
+    - iCombine "Obs Obs'" as "Obs2".
+      iApply (proph_obs_impl with "Obs2")=>/= ?[? Imp].
+      generalize Hz. generalize z. apply Imp. trivial.
+  Qed.
+
+  (** Dereference.
+
+    The original takes [£(d+1)] through [typed_read] and spends it on the
+    read guard's laters; [⊤ ∖ ↑advN] is the mask with the time-receipt
+    invariant carved out.  Neither survives. *)
+  Lemma type_deref_instr {𝔄 𝔅 𝔄'} (ty: type 𝔄) (tyb: type 𝔅) (ty': type 𝔄')
+                                    gt st p E L I :
+    StackOkay tyb →
+    tyb.(ty_size) = 1%nat → typed_read E L ty tyb ty' gt st →
+    typed_instr E L I +[p ◁ ty] (!p) (λ v, +[v ◁ tyb; p ◁ ty'])
+      (λ post '-[a], λ mask π, ∀ z, st a z → post -[gt a; z] mask π).
+  Proof.
+    move=> StackOk Sz Rd. iIntros (????[x[]]) "#LFT _ _ #E L I [p _] obs".
+    iApply twpw_fupdw_nonval; [done|].
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Ltok_alloc with "L W") as "[W (%γ & tok)]". iModIntro. iFrame "W".
+    wp_bind p. iApply (twp_hasty with "p"). iIntros (v d Heq) "ty".
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Rd with "LFT E tok ty W") as
+      "(W & %l & %vl_concrete & %vl & %Hx & %Heqv & %Hleneq & Q & #QPt &
+        Retether & %Conc & Own & Toty')".
+    have Conc0 := Conc StackOk. subst vl.
+    inversion Heqv. subst v.
+    iDestruct "Own" as "[tyb_gho %tyb_phys]".
+    assert (length vl_concrete = 1) as Sz1.
+    { erewrite <- length_fmap. rewrite <- tyb_phys. rewrite ty_size_eq. trivial. }
+    case vl_concrete as [|v[|]]=>//. iModIntro. iFrame "W".
+    iApply (twp_read_na_guarded_cells_singleton _ _ _ _ _ Hx with "[Q]").
+    { iFrame "QPt Q". }
+    iIntros "H W".
+    iMod ("Toty'" with "H W") as "(W & %z & %Hz & tok & ty')".
+    iMod (Ltok_withdraw with "tok W") as "[W L]". iModIntro. iFrame "W".
+    iExists -[gt x; z]. iFrame "L I". iSplit.
+    - rewrite right_id tctx_hasty_val tctx_hasty_val'; [|done].
+      iSplitL "tyb_gho".
+      + iExists d. iFrame "tyb_gho". iPureIntro. by rewrite tyb_phys.
+      + iExists d. iFrame "ty'".
+    - iApply proph_obs_impl; last by iFrame "obs". intuition.
+  Qed.
+
+  Lemma type_deref {𝔄 𝔅 𝔄' 𝔄l 𝔅l ℭ} (ty: type 𝔄) (tyb: type 𝔅)
+                   (ty': type 𝔄') gt st
+                   (T: tctx 𝔄l) (T': tctx 𝔅l) p x e trx tr E L
+                   (I: invctx) (C: cctx ℭ) :
+    StackOkay tyb →
+    Closed (x :b: []) e → tctx_extract_ctx E L +[p ◁ ty] T T' trx →
+    typed_read E L ty tyb ty' gt st → tyb.(ty_size) = 1%nat →
+    (∀v: val, typed_body E L I C (v ◁ tyb +:: p ◁ ty' +:: T') (subst' x v e) tr) -∗
+    typed_body E L I C T (let: x := !p in e)
+      (trx ∘ (λ post '(a -:: al), λ mask π,
+        ∀ z, st a z → tr post (gt a -:: z -:: al) mask π))%type.
+  Proof.
+    iIntros (?? Extr ??) "?".
+    iApply type_let; [by eapply type_deref_instr|done| |done].
+    destruct Extr as [Htrx _]=>?? /=. apply Htrx. by case.
+  Qed.
+
+  Lemma type_assign {𝔄 𝔅 𝔄' 𝔅' 𝔄l 𝔅l ℭ} (ty: type 𝔄) (tyb: type 𝔅)
+                    (ty': type 𝔄') (tyb': type 𝔅') gt st Φ p pb E L
+                    (I: invctx) (C: cctx ℭ) (T: tctx 𝔄l) (T': tctx 𝔅l) trx tr e :
+    Closed [] e → tctx_extract_ctx E L +[p ◁ ty; pb ◁ tyb'] T T' trx →
+    typed_write E L ty tyb ty' tyb' gt st → resolve' E L tyb Φ →
+    typed_body E L I C (p ◁ ty' +:: T') e tr -∗
+    typed_body E L I C T (p <- pb;; e)
+      (trx ∘ (λ post '(a -:: b -:: bl), λ mask π,
+        Φ (gt a) π (∀ z, st a b z → tr post (z -:: bl) mask π)))%type.
+  Proof.
+    iIntros (? Extr ??) "?".
+    iApply type_seq; [by eapply type_assign_instr|done| |done].
+    destruct Extr as [Htrx _]=>?? /=. apply Htrx. by case=> [?[??]].
+  Qed.
+  (** Memory copy.
+
+    The original splits a six-way [£] budget here and feeds it to
+    [wp_memcpy_guarded] (which itself wants [£(6*d)] and [⧖d]), to
+    [lc_step_fupdN_elim_later] for [resolve], and to [lc_fupd_elim_laterN] for
+    the write guard.  Later-free [twp_memcpy_guarded] needs nothing. *)
+  Lemma type_memcpy_instr {𝔄 𝔄' 𝔅 𝔅' ℭ ℭ'} (tyw: type 𝔄) (tyw': type 𝔄')
+        (tyr: type 𝔅) (tyr': type 𝔅') (tyb: type ℭ) (tyb': type ℭ')
+        gtw stw gtr str Φ (n: Z) pw pr E L I :
+    typed_write E L tyw tyb tyw' tyb' gtw stw → resolve' E L tyb Φ →
+    typed_read E L tyr tyb' tyr' gtr str → n = tyb'.(ty_size) →
+    typed_instr E L I +[pw ◁ tyw; pr ◁ tyr] (pw <-{n} !pr)
+      (λ _, +[pw ◁ tyw'; pr ◁ tyr'])
+      (λ post '-[a; b], λ mask π, Φ (gtw a) π
+        (∀ zw zr, stw a (gtr b) zw → str b zr → post -[zw; zr] mask π)).
+  Proof.
+    iIntros ([Eq Wrt] Rslv Rd ->????(xw & xr &[]))
+      "/= #LFT #PROPH #UNIQ #E L I (pw & pr &_) Obs".
+    iApply twpw_fupdw_nonval; [done|].
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Ltok_alloc with "L W") as "[W (%γ & tok)]".
+    iDestruct (Ltok_split_1 with "tok") as "[t1 tok2]".
+    iDestruct (Ltok_split_1 with "tok2") as "[t2 t3]". iModIntro. iFrame "W".
+    wp_bind pw. iApply (twp_hasty with "pw"). iIntros (vw dw ?) "tyw".
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Wrt with "LFT UNIQ E t1 tyw W") as
+      "(W & %l & %d' & %Hw & %Heqv & -> & (%vl & ↦ & Own) & Hw' & #Hwpt &
+        Totyw)".
+    inversion Heqv. subst vw.
+    iDestruct "Own" as "[tyb_gho %tyb_phys]". iModIntro. iFrame "W".
+    wp_bind pr. iApply (twp_hasty with "pr"). iIntros (vr dr ?) "tyr".
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Rd with "LFT E t2 tyr W") as
+      "(W & %l0 & %vlb_concrete & %vlb & %Hr & %Heqv2 & %Hleneq & Hr' &
+        #Hrpt' & Retether & _ & Own' & Totyr')".
+    inversion Heqv2. subst vr.
+    iDestruct "Own'" as "[tyb'_gho %tyb'_phys]".
+    assert (length vl = ty_size tyb) as Sz.
+    { rewrite <- tyb_phys. apply ty_size_eq. }
+    assert (length vlb = ty_size tyb') as Sz'.
+    { rewrite <- tyb'_phys. apply ty_size_eq. }
+    iMod (Rslv _ _ ⊤ with "LFT PROPH UNIQ E t3 tyb_gho W")
+      as "(W & #Obs' & t3)"; [solve_ndisj|].
+    iMod (mapsto_vec_untether _ _ ⊤ ∅ with "↦")
+      as (vl_concrete) "[↦ [%Hvlen _]]".
+    iModIntro. iFrame "W".
+    iApply (twp_memcpy_guarded _ l l0 vl_concrete vlb_concrete
+      Hw Hr with "[↦ Hw' Hr']").
+    { congruence. } { congruence. }
+    { iFrame "↦ Hw' Hr'". iFrame "Hwpt Hrpt'". }
+    iIntros "(↦ & Hw' & Hr') W".
+    destruct l as [l₁ c₁].
+    iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (guard_acc with "Hwpt Hw' Wg") as "[prefix back]".
+    iMod (fupd_mask_mono ∅ ⊤ with "(Retether [$prefix $↦])") as "[prefix ↦]";
+      [set_solver|].
+    iDestruct ("back" with "prefix") as "[Wg Hw']".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
+    iMod ("Totyw" $! (gtr xr) dr with "[↦ tyb'_gho] Hw' W")
+      as "(W & %z & tok1 & %Hz & tyw')".
+    { iExists vlb. iFrame "↦". iSplitL.
+      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]".
+        { lia. } { lia. } }
+      done. }
+    iMod ("Totyr'" with "Hr' W") as "(W & %zr & %Hzr & tok3 & tyr')".
+    iDestruct (Ltok_split_2 with "tok3 t3") as "tok2".
+    iDestruct (Ltok_split_2 with "tok1 tok2") as "tok".
+    iMod (Ltok_withdraw with "tok W") as "[W L]". iModIntro. iFrame "W".
+    iExists -[_; _]. iFrame "L I". iSplit; [rewrite right_id|].
+    - iSplitL "tyw'"; (rewrite tctx_hasty_val'; [|done]).
+      + iExists (S (d' `max` dr)). iDestruct "tyw'" as "[gho phys]". iFrame.
+        iDestruct (ty_gho_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
+      + iExists dr. iFrame "tyr'".
+    - iCombine "Obs Obs'" as "Obs2".
+      iApply (proph_obs_impl with "Obs2")=>/= ?[? Imp].
+      generalize Hzr. generalize Hz. generalize zr. generalize z. apply Imp.
+      trivial.
+  Qed.
+
+  Lemma type_memcpy {𝔄 𝔄' 𝔅 𝔅' ℭ ℭ' 𝔄l 𝔅l 𝔇} (tyw: type 𝔄) (tyw': type 𝔄')
+      (tyr: type 𝔅) (tyr': type 𝔅') (tyb: type ℭ) (tyb': type ℭ') gtw stw gtr
+      str Φ (n: Z) pw pr E L (I: invctx) (C: cctx 𝔇) (T: tctx 𝔄l)
+      (T': tctx 𝔅l) e trx tr :
+    Closed [] e → tctx_extract_ctx E L +[pw ◁ tyw; pr ◁ tyr] T T' trx →
+    typed_write E L tyw tyb tyw' tyb' gtw stw → resolve' E L tyb Φ →
+    typed_read E L tyr tyb' tyr' gtr str → n = tyb'.(ty_size) →
+    typed_body E L I C (pw ◁ tyw' +:: pr ◁ tyr' +:: T') e tr -∗
+    typed_body E L I C T (pw <-{n} !pr;; e)
+      (trx ∘ (λ post '(a -:: b -:: bl), λ mask π,
+        Φ (gtw a) π (∀ zw zr, stw a (gtr b) zw → str b zr →
+          tr post (zw -:: zr -:: bl) mask π)))%type.
+  Proof.
+    iIntros (? Extr ????) "?".
+    iApply type_seq; [by eapply type_memcpy_instr|done| |done].
+    destruct Extr as [Htrx _]=>?? /=. apply Htrx. by case=> [?[??]].
   Qed.
 End typing.
 
