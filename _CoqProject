@@ -152,3 +152,7 @@ nola/alerus/lang/races.v
 nola/alerus/frac_guard.v
 nola/alerus/lang/lib/memcpy.v
 nola/alerus/lang/lib/new_delete.v
+nola/alerus/eternal.v
+nola/alerus/prophecy/syn_type.v
+nola/alerus/prophecy/prophecy.v
+nola/alerus/util/cancellable_na_invariants.v
