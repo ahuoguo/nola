@@ -885,7 +885,7 @@ Class Copy `{!typeG FML Σ} {𝔄} (ty: type 𝔄) := {
 Global Existing Instance copy_persistent.
 Global Instance: Params (@Copy) 5 := {}.
 
-Notation ListCopy := (TCHForall (λ 𝔄, @Copy _ _ 𝔄)).
+Notation ListCopy := (TCHForall (λ 𝔄, @Copy _ _ _ 𝔄)).
 
 Class Send `{!typeG FML Σ} {𝔄} (ty: type 𝔄) := {
   send_change_tid_phys tid tid' x x' :
@@ -913,7 +913,7 @@ Class Send `{!typeG FML Σ} {𝔄} (ty: type 𝔄) := {
 }.
 Global Instance: Params (@Send) 5 := {}.
 
-Notation ListSend := (TCHForall (λ 𝔄, @Send _ _ 𝔄)).
+Notation ListSend := (TCHForall (λ 𝔄, @Send _ _ _ 𝔄)).
 
 Class Sync `{!typeG FML Σ} {𝔄} (ty: type 𝔄) :=
   sync_change_tid tid tid' x d g :
@@ -922,7 +922,7 @@ Class Sync `{!typeG FML Σ} {𝔄} (ty: type 𝔄) :=
     (ty.(ty_gho_pers) x d g tid ⊣⊢ ty.(ty_gho_pers) x d g tid').
 Global Instance: Params (@Sync) 5 := {}.
 
-Notation ListSync := (TCHForall (λ 𝔄, @Sync _ _ 𝔄)).
+Notation ListSync := (TCHForall (λ 𝔄, @Sync _ _ _ 𝔄)).
 
 Class JustLoc `{!typeG FML Σ} {𝔄} (ty: type 𝔄) : Prop :=
   just_loc vπ d g tid : ty.(ty_gho) vπ d g tid -∗ ⌜∃l: loc, ty.(ty_phys) vπ tid = [FVal (#l)]⌝.

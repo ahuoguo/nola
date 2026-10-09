@@ -170,3 +170,6 @@ nola/alerus/typing/programs_util.v
 nola/alerus/typing/mod_ty.v
 nola/alerus/typing/bool.v
 nola/alerus/typing/int.v
+nola/alerus/typing/product.v
+nola/alerus/typing/uninit.v
+nola/alerus/typing/base_type.v
