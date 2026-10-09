@@ -37,6 +37,7 @@ Class lrustGS_gen hlc FML Σ : Type := LRustGS {
   #[global] lrustGS_alcGS :: alc_logicG Σ;
   #[global] lrustGS_heapGS :: heapGS FML Σ;
   #[global] lrustGS_naSem :: NaSem FML Σ;
+  #[global] lrustGS_heapSem :: HeapSem FML Σ;
 }.
 
 (** As in [nola.lrust.lifting], we go through [iris'GS_gen] so that the weakest
@@ -309,6 +310,58 @@ Lemma wp_read_sc `{!WsatIncl W na_wsat Wr} s E l v :
 Proof.
   iIntros (?) ">H →Φ". iApply (twp_wp_step with "→Φ").
   iApply (twp_read_sc with "H"). iIntros "? →Φ !>". by iApply "→Φ".
+Qed.
+
+Lemma twp_read_na_guarded_cells `{!WsatIncl W na_wsat Wr} s E l c v Gx :
+  [[{ (na_sem Gx &&{na_wsat}&&> (l ↦[^ c] v)) ∗ na_sem Gx }]][W]
+    Read Na1Ord (Lit $ LitLoc l) @ s; E [[{ RET v; na_sem Gx }]].
+Proof.
+  iIntros (Φ) "[#Gv G] HΦ". iApply twp_lift_base_step; first done.
+  iIntros (????) "[W Hσ]".
+  iDestruct (wsat_split (W':=na_wsat) with "W") as "[Wna Wr]".
+  iDestruct "Hσ" as (hF) "(Hna & HhF & %REL & ato)".
+  iMod (na_read_begin with "Gv G Hna Wna") as (n0) "[%Heq [rim [Hna Wna]]]".
+  replace (n0 + 1)%nat with (S n0) by lia.
+  iMod (fupd_mask_subseteq ∅) as "Hclose"; first set_solver.
+  iModIntro. iSplit.
+  { iPureIntro. eexists _, _, _. by apply ReadNa1S. }
+  iIntros (?????). inv_head_step. iMod "Hclose" as "_". iModIntro.
+  iSplitR; [done|]. iSplitL "Wna Wr Hna HhF ato".
+  { iSplitL "Wna Wr".
+    { iApply (wsat_join (W:=W) (W':=na_wsat) (Wr:=Wr)). iFrame. }
+    iExists hF. iFrame. iPureIntro. eauto using heap_freeable_rel_stable. }
+  iSplitL; [|done].
+  iApply twp_lift_atomic_base_step_no_fork; first done.
+  iIntros (????) "[W Hσ]".
+  iDestruct (wsat_split (W':=na_wsat) with "W") as "[Wna Wr]".
+  iDestruct "Hσ" as (hF') "(Hna & HhF & %REL' & ato)".
+  iMod (na_read_end with "rim Hna Wna") as (n) "([%H1 %H2] & G & Hna & Wna)".
+  destruct n as [|n]; first by lia. replace (S n - 1)%nat with n by lia.
+  iModIntro. iSplit.
+  { iPureIntro. eexists _, _, _. by apply ReadNa2S. }
+  iIntros (?????) "!>". inv_head_step. do 2 (iSplit=>//).
+  iSplitR "G HΦ"; last by iApply "HΦ".
+  iSplitL "Wna Wr".
+  { iApply (wsat_join (W:=W) (W':=na_wsat) (Wr:=Wr)). iFrame. }
+  iExists hF'. iFrame. iPureIntro. eauto using heap_freeable_rel_stable.
+Qed.
+
+Lemma twp_read_na `{!WsatIncl W na_wsat Wr} s E l v :
+  [[{ l ↦ v }]][W] Read Na1Ord (Lit $ LitLoc l) @ s; E [[{ RET v; l ↦ v }]].
+Proof.
+  iIntros (Φ) "pt HΦ".
+  iApply (twp_read_na_guarded_cells s E l [] v
+    (heap_fml (inl l) [] (inr v)) with "[pt]").
+  - rewrite heap_fml_sem. iFrame "pt".
+    rewrite /heap_mapsto_cells_fancy /fv2sum /=. iApply guard_refl.
+  - rewrite heap_fml_sem. rewrite /heap_mapsto /=. iIntros "pt".
+    by iApply "HΦ".
+Qed.
+Lemma wp_read_na `{!WsatIncl W na_wsat Wr} s E l v :
+  {{{ ▷ l ↦ v }}}[W] Read Na1Ord (Lit $ LitLoc l) @ s; E {{{ RET v; l ↦ v }}}.
+Proof.
+  iIntros (?) ">H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_read_na with "H"). iIntros "? →Φ !>". by iApply "→Φ".
 Qed.
 
 End lifting.

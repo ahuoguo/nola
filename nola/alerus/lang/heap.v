@@ -41,6 +41,18 @@ Class heapGS FML Σ := HeapGS {
   atomic_lock_ctr_name: gname
 }.
 
+(** The formula language can express the points-to assertion.
+
+  The Points-To Cell Logic stores the guarded proposition in ghost state, and
+  formulas are syntactic.  So a rule that guards [l ↦ v] *by itself* - the
+  unguarded [twp_read_na], say, which the original derives by instantiating the
+  guarded rule with [guards_refl] - needs [l ↦ v] to be a formula. *)
+Class HeapSem (FML : oFunctor) Σ `{!heapGS FML Σ, !NaSem FML Σ} := {
+  heap_fml : (loc + cell_id) → list cell_id → (cell_id + val) → FML $oi Σ;
+  heap_fml_sem lc cells cv :
+    na_sem (heap_fml lc cells cv) ⊣⊢ (lc @↦[heap_name][^ cells] cv);
+}.
+
 Definition heap_freeable_rel (σ : state) (hF : heap_freeableUR) : Prop :=
   ∀ blk qs, hF !! blk = Some qs →
     qs.2 ≠ ∅ ∧ ∀ i, is_Some (σ.1 !! (blk, i)) ↔ is_Some (qs.2 !! i).
