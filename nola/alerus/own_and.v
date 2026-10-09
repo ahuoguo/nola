@@ -38,3 +38,19 @@ Section own_and.
     own γ a1 ∧ own γ a2 ⊢ False.
   Proof. exact (own_and_discrete_total_False γ a1 a2). Qed.
 End own_and.
+
+Section own_and_discrete.
+  Context `{!inG Σ A, !CmraDiscrete A}.
+  Implicit Type (γ : gname) (a : A).
+
+  (** Leaf's [and_own_discrete]: the inclusions are stated in [option A], so
+    that no [CmraTotal] is needed *)
+  Lemma and_own_discrete γ a1 a2 :
+    own γ a1 ∧ own γ a2 ⊢
+      ∃ c, own γ c ∗ ⌜Some a1 ≼ Some c ∧ Some a2 ≼ Some c⌝.
+  Proof.
+    rewrite own_and. iIntros "[%c[own[in1 in2]]]". iExists c. iFrame "own".
+    rewrite !internal_included_discrete. iDestruct "in1" as %?.
+    iDestruct "in2" as %?. by iPureIntro.
+  Qed.
+End own_and_discrete.
