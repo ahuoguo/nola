@@ -176,3 +176,4 @@ nola/alerus/typing/base_type.v
 nola/alerus/typing/shr_bor.v
 nola/alerus/typing/freeable_util.v
 nola/alerus/typing/cont.v
+nola/alerus/typing/tracked.v
