@@ -247,3 +247,13 @@ Notation "&{ κ , i }" := (idx_bor κ i) (format "&{ κ , i }") : bi_scope.
   the typing layer can write [P &&{Wguard}&&> Q] where VerusBelt writes
   [P &&{↑NllftG}&&> Q]. *)
 Notation Wguard := alerus_WGuard.
+
+(** The mask the typing layer works at.
+
+  VerusBelt uses [↑Nllft ∪ ↑SendN ∪ ↑nainvN ∪ ↑uniqN ∪ ↑timeN].  Of those,
+  [↑Nllft] and [↑nainvN] have become world satisfactions, [↑SendN] is now
+  [send_wsat], and [↑timeN] is gone with the time receipts.  What is left are
+  the two genuinely invariant-based pieces - prophecies and unique borrows -
+  together with the masks the lifetime logic still takes fancy updates at. *)
+Definition NalerusE : coPset :=
+  ↑NllftUsr ∪ ↑NllftUsr2 ∪ ↑prophN ∪ ↑uniqN.
