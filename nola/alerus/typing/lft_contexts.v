@@ -67,29 +67,21 @@ Section lft_contexts.
       + iApply llftl_incl_trans; last done. iApply lft_incl_static.
   Qed.
 
-  (** Split a local lifetime context into two guarded halves.
+  (** Shared access to a local lifetime context.
 
     The original goes through Leaf's [frac_split_guard_in_half] with
-    [guards_refl]; here [llctx_interp L] is deposited directly. *)
+    [guards_refl], storing [llctx_interp L] in a storage protocol; here it is
+    deposited into [frac_key_wsat] and the share is [Ltok] (see
+    [nola.alerus.typing.ctx]). *)
   Lemma llctx_interp_make_guarded (L : llctx) :
     llctx_interp L =[alerus_wsat]=∗ ∃ (γ: gname),
-      frac_half γ ∗ frac_half γ ∗ (frac_half γ &&{Wguard}&&> llctx_interp L) ∗
-      □ (frac_half γ -∗ frac_half γ =[alerus_wsat]=∗ llctx_interp L).
+      Ltok γ L (1/2) ∗ Ltok γ L (1/2) ∗
+      □ (Ltok γ L (1/2) -∗ Ltok γ L (1/2) =[alerus_wsat]=∗ llctx_interp L).
   Proof.
-    iIntros "L W".
-    iDestruct (wsat_split (W':=frac_key_wsat llctx_interp) with "W")
-      as "[Wf Wr]".
-    iMod (frac_key_alloc with "L Wf") as (γ) "(#tok & h & h' & Wf)".
-    iDestruct (wsat_join (W:=alerus_wsat) with "Wf Wr") as "$". iModIntro.
-    iExists γ. iFrame "h h'". iSplitR.
-    { iApply (guard_wsat_incl (W':=frac_key_wsat llctx_interp)).
-      by iApply frac_key_guard. }
-    iIntros "!> h h' W".
-    iDestruct (wsat_split (W':=frac_key_wsat llctx_interp) with "W")
-      as "[Wf Wr]".
-    iMod (frac_key_withdraw with "tok [h h'] Wf") as "[$ Wf]".
-    { rewrite frac_half_add. iFrame. }
-    iDestruct (wsat_join (W:=alerus_wsat) with "Wf Wr") as "$". by iModIntro.
+    iIntros "L W". iMod (Ltok_alloc with "L W") as "[$ [%γ tok]]".
+    iModIntro. iExists γ. rewrite {1}Ltok_split. iDestruct "tok" as "[$$]".
+    iIntros "!> t t' W". iApply (Ltok_withdraw with "[t t'] W").
+    rewrite (Ltok_split (q:=1)). iFrame.
   Qed.
 
   Context (E : elctx) (L : llctx).
@@ -314,14 +306,14 @@ Proof. iIntros (HE') "_ !> H". by iApply big_sepL_submseteq. Qed.
 
 (** The original takes a fancy update at [↑NllftG ⊆ F]; here the guard is
   simply opened against the world satisfaction. *)
-Lemma lctx_lft_alive_get_guards `{!alerusGS FML Σ} (G: iProp Σ) E L κ :
+Lemma lctx_lft_alive_get_guards `{!alerusGS FML Σ, !WsatIncl W Wguard Wr}
+    γ q E L κ :
   lctx_lft_alive E L κ →
-  (G &&{Wguard}&&> llctx_interp L) -∗ ([∗ list] x ∈ E, elctx_elt_interp x) -∗
-    G -∗ alerus_WGuard -∗
-    G ∗ alerus_WGuard ∗ (llctx_interp L &&{Wguard}&&> @[κ]).
+  ([∗ list] x ∈ E, elctx_elt_interp x) -∗ Ltok γ L q -∗ W -∗
+    Ltok γ L q ∗ W ∗ (llctx_interp L &&{Wguard}&&> @[κ]).
 Proof.
-  intros Halive. iIntros "#guards E G W".
-  iDestruct (guard_acc with "guards G W") as "[L back]".
+  intros Halive. iIntros "E tok W".
+  iDestruct (Ltok_acc with "tok W") as "[L back]".
   iDestruct (Halive with "L E") as "#X".
   iDestruct ("back" with "L") as "[$ $]". iFrame "X".
 Qed.

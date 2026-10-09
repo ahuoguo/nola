@@ -177,6 +177,65 @@ Section alerus.
   Definition alerus_wsat : iProp Σ :=
     llft_wsat ∗ cna_wsat alerus_WGuard bor_sem ∗ send_wsat.
 
+  (** ** Shared access to a local lifetime context
+
+    VerusBelt's typing judgments take an arbitrary [Timeless G] together with
+    a guard [G &&{↑NllftG}&&> llctx_interp L], and halve it by storing [G]
+    itself in a fresh storage protocol ([frac_split_guard_in_half]).  A
+    later-free world satisfaction holds syntax, not arbitrary propositions, so
+    that is not available - and it is not needed: the only things a judgment
+    does with [G] are open the guard and halve it, and a *fraction* of a share
+    does both.  So the pair [G ∗ (G &&{↑NllftG}&&> llctx_interp L)] becomes a
+    single [Ltok γ L q]. *)
+  Definition Ltok (γ : gname) (L : llctx) (q : Qp) : iProp Σ :=
+    frac_key_tok γ L ∗ frac_tok γ q.
+
+  #[export] Instance Ltok_timeless {γ L q} : Timeless (Ltok γ L q).
+  Proof. exact _. Qed.
+
+  Lemma Ltok_split {γ L q} : Ltok γ L q ⊣⊢ Ltok γ L (q/2) ∗ Ltok γ L (q/2).
+  Proof.
+    rewrite /Ltok {1}frac_tok_half. iSplit.
+    - by iIntros "[#$ [$$]]".
+    - by iIntros "[[#$ $][_ $]]".
+  Qed.
+
+  Lemma Ltok_guard {γ L q} :
+    Ltok γ L q ⊢ Ltok γ L q &&{alerus_WGuard}&&> llctx_interp L.
+  Proof.
+    iIntros "[#tok _]". iApply guard_lhs_sep_r.
+    iApply (frac_key_guard_wsat llctx_interp with "tok").
+  Qed.
+
+  (** Open a share against the world satisfaction *)
+  Lemma Ltok_acc `{!WsatIncl W alerus_WGuard Wr} {γ L q} :
+    Ltok γ L q -∗ W -∗ llctx_interp L ∗ (llctx_interp L -∗ W ∗ Ltok γ L q).
+  Proof.
+    iIntros "tok W". iDestruct (Ltok_guard with "tok") as "#g".
+    iApply (guard_acc with "[g] tok W").
+    by iApply (guard_wsat_incl (W':=alerus_WGuard)).
+  Qed.
+
+  (** Create and destroy a share *)
+  Lemma Ltok_alloc {L} : llctx_interp L =[alerus_wsat]=∗ ∃ γ, Ltok γ L 1.
+  Proof.
+    iIntros "L W".
+    iDestruct (wsat_split (W':=frac_key_wsat llctx_interp) with "W")
+      as "[Wf Wr]".
+    iMod (frac_key_alloc with "L Wf") as (γ) "(#tok & h & h' & Wf)".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wf Wr") as "$". iModIntro.
+    iExists γ. rewrite /Ltok frac_half_add. iFrame "tok h h'".
+  Qed.
+  Lemma Ltok_withdraw {γ L} :
+    Ltok γ L 1 =[alerus_wsat]=∗ llctx_interp L.
+  Proof.
+    iIntros "[#tok f] W".
+    iDestruct (wsat_split (W':=frac_key_wsat llctx_interp) with "W")
+      as "[Wf Wr]".
+    iMod (frac_key_withdraw with "tok f Wf") as "[$ Wf]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wf Wr") as "$". by iModIntro.
+  Qed.
+
   (** The inclusions the rest of the development needs.  They are given
     explicitly rather than left to the structural instances, which would have
     to unfold [llft_wsat], [llft_wsatG] and the [LlftWG] projections. *)

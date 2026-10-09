@@ -974,10 +974,9 @@ End traits.
   over the world satisfaction. *)
 Definition resolve `{!typeG FML Σ} {𝔄} (E: elctx) (L: llctx) (ty: type 𝔄)
     (Φ: ~~ 𝔄 → proph_asn → Prop) : Prop :=
-  ∀G F x d g tid, Timeless G → NalerusE ⊆ F →
-    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
-    (G &&{Wguard}&&> llctx_interp L) -∗ G -∗
-    ty.(ty_gho) x d g tid =[alerus_wsat]{F}=∗ ⟨π, Φ x π⟩ ∗ G.
+  ∀γ q F x d g tid, NalerusE ⊆ F →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗ Ltok γ L q -∗
+    ty.(ty_gho) x d g tid =[alerus_wsat]{F}=∗ ⟨π, Φ x π⟩ ∗ Ltok γ L q.
 Global Instance: Params (@resolve) 5 := {}.
 
 Definition resolvel `{!typeG FML Σ} {𝔄l} (E: elctx) (L: llctx) (tyl: typel 𝔄l)
@@ -993,15 +992,15 @@ Section resolve.
 
   Lemma resolve_just {𝔄} (ty: type 𝔄) E L : resolve E L ty (const (const True)).
   Proof.
-    move=> > ?. iIntros "_ _ _ _ _ G _ $ !>". iFrame "G".
+    move=> > ?. iIntros "_ _ _ _ tok _ $ !>". iFrame "tok".
     by iApply proph_obs_true.
   Qed.
 
   Lemma resolve_impl {𝔄} (ty: type 𝔄) E L (Φ Φ': ~~𝔄 → proph_asn → Prop) :
     resolve E L ty Φ → (∀a π, Φ a π → Φ' a π) → resolve E L ty Φ'.
   Proof.
-    move=> Rslv Imp > ?. iIntros "LFT PROPH UNIQ E #L G ty W".
-    iMod (Rslv with "LFT PROPH UNIQ E L G ty W") as "($ & Obs & $)"; [done..|].
+    move=> Rslv Imp > ?. iIntros "LFT PROPH UNIQ E tok ty W".
+    iMod (Rslv with "LFT PROPH UNIQ E tok ty W") as "($ & Obs & $)"; [done|].
     iModIntro. iApply proph_obs_impl; [|done]=>/= ?. apply Imp.
   Qed.
 
@@ -1361,16 +1360,14 @@ Section subtyping.
   Lemma resolve_subtype {𝔄 𝔅} E L (ty: type 𝔄) (ty': type 𝔅) f Φ :
     subtype E L ty ty' f → resolve E L ty' Φ → resolve E L ty (Φ ∘ ~~!ₛ f).
   Proof.
-    iIntros (Sub Rslv) "* LFT PROPH UNIQ E #L G ty W".
-    iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
-    iDestruct (guard_acc with "L G Wg") as "[L1 back]".
+    iIntros (Sub Rslv) "* LFT PROPH UNIQ E tok ty W".
+    iDestruct (Ltok_acc with "tok W") as "[L1 back]".
     iDestruct (Sub with "L1") as "#Sub".
-    iDestruct ("back" with "L1") as "[Wg G]".
-    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
+    iDestruct ("back" with "L1") as "[W tok]".
     iDestruct ("Sub" with "E") as "#(_ & _ & #InOwn & _)".
     iDestruct ("InOwn" with "ty") as "[ty' _]".
     unfold "∘".
-    by iApply (Rslv with "LFT PROPH UNIQ E L G ty' W").
+    by iApply (Rslv with "LFT PROPH UNIQ E tok ty' W").
   Qed.
 End subtyping.
 
