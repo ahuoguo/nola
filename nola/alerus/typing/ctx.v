@@ -41,6 +41,48 @@ Import GuardNotation ModwNotation iPropAppNotation.
   layer needs them to state [BorStateFml] and to speak about [box_wsat]. *)
 #[export] Existing Instances llft_logic_inG llft_boxG.
 
+(** Splitting and rejoining a world satisfaction.
+
+  These exist because [rewrite (wsat_incl …)] inside the Iris proof context
+  trips over the [Proper] search for [envs]; going through a lemma and
+  [iDestruct] is robust. *)
+Section wsat_split.
+  Context {PROP : bi}.
+  Lemma wsat_split {W W' Wr : PROP} `{!WsatIncl W W' Wr} : W ⊢ W' ∗ Wr.
+  Proof. by rewrite (wsat_incl W W' Wr). Qed.
+  Lemma wsat_join {W W' Wr : PROP} `{!WsatIncl W W' Wr} : W' -∗ Wr -∗ W.
+  Proof. rewrite (wsat_incl W W' Wr). by iIntros "$$". Qed.
+End wsat_split.
+
+(** ** Lifetime contexts
+
+  These live here, rather than in [typing/lifetime.v] and
+  [typing/lft_contexts.v] where VerusBelt puts them, because the global world
+  satisfaction has to hold fractional shares of [llctx_interp] (see
+  [llctx_interp_make_guarded]) and so must mention it. *)
+
+Definition elctx_elt : Type := lft * lft.
+Notation elctx := (list elctx_elt).
+
+Declare Scope lrust_elctx_scope.
+Delimit Scope lrust_elctx_scope with EL.
+(* We need to define [elctx] and [llctx] as notations to make eauto work.  But
+   then, Coq is not able to bind them to their notations, so we have to use
+   [Arguments] everywhere. *)
+Bind Scope lrust_elctx_scope with elctx_elt.
+
+Notation "κ1 ⊑ₑ κ2" := (@pair lft lft κ1 κ2) (at level 55).
+
+Definition llctx_elt : Type := lft * list lft.
+Notation llctx := (list llctx_elt).
+
+Notation "κ ⊑ₗ κl" := (@pair lft (list lft) κ κl) (at level 55).
+
+Definition static := llft_empty.
+Notation lft_intersect_list l := (foldr (⊓) static l).
+
+Canonical lftO := leibnizO lft.
+
 (** The formula language must have a formula standing for [True].
 
   The Points-To Cell Logic stores it while a write is in progress on a plain
@@ -72,6 +114,7 @@ Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
   #[global] alerus_cnaGS :: cnaGS FML Σ;
   #[global] alerus_fracGS :: fracGuardGS FML Σ;
   #[global] alerus_eternalG :: inG Σ (authUR (gsetUR lft));
+  #[global] alerus_llctxFracGS :: fracKeyGS llctx Σ;
   (** The shared-borrow simple-invariant family, as a bare ghost name *)
   alerus_shr_name : gname;
   (** The eternalized-lifetime family *)
@@ -81,11 +124,26 @@ Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
 Section alerus.
   Context `{!alerusGS FML Σ}.
 
+  (** Local lifetime context *)
+  Definition llctx_elt_interp (x : llctx_elt) : iProp Σ :=
+    let κ' := lft_intersect_list (x.2) in
+    (∃ κ0, ⌜x.1 = κ' ⊓ κ0⌝ ∗ @[κ0] ∗ ⌜κ0 ≠ ∅⌝)%I.
+  Definition llctx_interp (L : llctx) : iProp Σ :=
+    ([∗ list] x ∈ L, llctx_elt_interp x)%I.
+
   (** The user's guarding world satisfaction: Leaf's [↑NllftG] minus the
-    lifetime logic's own invariants.  Eternalized lifetime tokens live here,
-    which is what makes [lft_eternalize] possible. *)
+    lifetime logic's own invariants.
+
+    Everything guarded at [↑NllftG] that is not a borrow lives here:
+    eternalized lifetime tokens ([lft_eternalize]), fractional shares of
+    formulas, and fractional shares of a local lifetime context
+    ([llctx_interp_make_guarded]).  None of these stores a guard, so none of
+    them may refer to [alerus_WGuard] - and none does.  [cna_wsat], which
+    *does* store guards over [alerus_WGuard], is therefore kept outside. *)
   Definition alerus_WG : iProp Σ :=
-    eternal_wsat alerus_eternal_name llft_alive.
+    eternal_wsat alerus_eternal_name llft_alive ∗
+    frac_wsat bor_sem ∗
+    frac_key_wsat llctx_interp.
 
   (** Fix the lifetime logic's two parameters *)
   #[export] Instance alerus_LlftWG : LlftWG Σ :=
@@ -115,50 +173,68 @@ Section alerus.
     lrustGS_heapSem := _;
   |}.
 
-  (** The global world satisfaction.
-
-    [llft_wsat = llft_wsatG ∗ llft_inv_other], so [alerus_WGuard] is included;
-    [cna_wsat] and [frac_wsat] sit *beside* it, since the guards they store
-    are taken over it. *)
+  (** The global world satisfaction *)
   Definition alerus_wsat : iProp Σ :=
-    llft_wsat ∗
-    cna_wsat alerus_WGuard bor_sem ∗
-    frac_wsat bor_sem ∗
-    send_wsat.
+    llft_wsat ∗ cna_wsat alerus_WGuard bor_sem ∗ send_wsat.
 
-  (** The inclusions the rest of the development needs *)
+  (** The inclusions the rest of the development needs.  They are given
+    explicitly rather than left to the structural instances, which would have
+    to unfold [llft_wsat], [llft_wsatG] and the [LlftWG] projections. *)
   #[export] Instance wsat_incl_alerus_llft :
     WsatIncl alerus_wsat llft_wsat
-      (cna_wsat alerus_WGuard bor_sem ∗ frac_wsat bor_sem ∗ send_wsat).
+      (cna_wsat alerus_WGuard bor_sem ∗ send_wsat).
   Proof. done. Qed.
-  #[export] Instance wsat_incl_alerus_cna :
-    WsatIncl alerus_wsat (cna_wsat alerus_WGuard bor_sem ∗ alerus_WGuard)
-      (llft_inv_other ∗ frac_wsat bor_sem ∗ send_wsat).
+  #[export] Instance wsat_incl_alerus_guard :
+    WsatIncl alerus_wsat alerus_WGuard
+      (llft_inv_other ∗ cna_wsat alerus_WGuard bor_sem ∗ send_wsat).
   Proof.
     rewrite /WsatIncl /alerus_wsat /alerus_WGuard /llft_wsat. iSplit.
-    - by iIntros "([$$] & $ & $ & $)".
-    - by iIntros "([$ $] & $ & $ & $)".
+    - by iIntros "([$$] & $ & $)".
+    - by iIntros "([$ $] & $ & $)".
   Qed.
-  #[export] Instance wsat_incl_alerus_frac :
-    WsatIncl alerus_wsat (frac_wsat bor_sem)
-      (llft_wsat ∗ cna_wsat alerus_WGuard bor_sem ∗ send_wsat).
+  #[export] Instance wsat_incl_alerus_cna :
+    WsatIncl alerus_wsat (cna_wsat alerus_WGuard bor_sem ∗ alerus_WGuard)
+      (llft_inv_other ∗ send_wsat).
   Proof.
-    rewrite /WsatIncl /alerus_wsat. iSplit.
-    - by iIntros "($ & $ & $ & $)".
-    - by iIntros "($ & $ & $ & $)".
+    rewrite /WsatIncl /alerus_wsat /alerus_WGuard /llft_wsat. iSplit.
+    - by iIntros "([$$] & $ & $)".
+    - by iIntros "([$ $] & $ & $)".
   Qed.
   #[export] Instance wsat_incl_alerus_send :
     WsatIncl alerus_wsat send_wsat
-      (llft_wsat ∗ cna_wsat alerus_WGuard bor_sem ∗ frac_wsat bor_sem).
+      (llft_wsat ∗ cna_wsat alerus_WGuard bor_sem).
   Proof.
     rewrite /WsatIncl /alerus_wsat. iSplit.
-    - by iIntros "($ & $ & $ & $)".
-    - by iIntros "($ & $ & $ & $)".
+    - by iIntros "($ & $ & $)".
+    - by iIntros "($ & $ & $)".
   Qed.
-  #[export] Instance wsat_incl_alerus_eternal :
+
+  (** [alerus_WG] and its parts sit inside [alerus_WGuard] *)
+  #[export] Instance wsat_incl_alerus_WG :
     WsatIncl alerus_WGuard alerus_WG
       (shr_wsat ∗ box_wsat bor_sem ∗ llft_inv_main).
   Proof. done. Qed.
+  #[export] Instance wsat_incl_alerus_eternal :
+    WsatIncl alerus_WG (eternal_wsat alerus_eternal_name llft_alive)
+      (frac_wsat bor_sem ∗ frac_key_wsat llctx_interp).
+  Proof. done. Qed.
+  #[export] Instance wsat_incl_alerus_fracfml :
+    WsatIncl alerus_WG (frac_wsat bor_sem)
+      (eternal_wsat alerus_eternal_name llft_alive ∗
+        frac_key_wsat llctx_interp).
+  Proof.
+    rewrite /WsatIncl /alerus_WG. iSplit.
+    - by iIntros "($ & $ & $)".
+    - by iIntros "($ & $ & $)".
+  Qed.
+  #[export] Instance wsat_incl_alerus_llctx :
+    WsatIncl alerus_WG (frac_key_wsat llctx_interp)
+      (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem).
+  Proof.
+    rewrite /WsatIncl /alerus_WG. iSplit.
+    - by iIntros "($ & $ & $)".
+    - by iIntros "($ & $ & $)".
+  Qed.
 End alerus.
 
 (** The lifetime logic's notations.  [lifetime_full] cannot export these: the
@@ -167,6 +243,7 @@ Infix "⊑" := llft_incl (at level 70) : bi_scope.
 Notation "&{ κ }" := (full_bor κ) (format "&{ κ }") : bi_scope.
 Notation "&{ κ , i }" := (idx_bor κ i) (format "&{ κ , i }") : bi_scope.
 
-(** Every guard in the typing layer is taken over [alerus_WGuard] *)
-Notation "P &&{ }&&> Q" := (guard alerus_WGuard P Q)
-  (at level 99, Q at level 200, format "P  &&{ }&&>  Q") : bi_scope.
+(** A short name for the world satisfaction every guard is taken over, so that
+  the typing layer can write [P &&{Wguard}&&> Q] where VerusBelt writes
+  [P &&{↑NllftG}&&> Q]. *)
+Notation Wguard := alerus_WGuard.

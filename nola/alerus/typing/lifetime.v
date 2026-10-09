@@ -14,10 +14,9 @@ From nola.bi Require Import guard modw.
 From iris.proofmode Require Import proofmode.
 Import GuardNotation ModwNotation.
 
-Definition static := llft_empty.
-Notation lft_intersect_list l := (foldr (⊓) static l).
-
-Canonical lftO := leibnizO lft.
+(** [static], [lft_intersect_list] and [lftO] are in
+  [nola.alerus.typing.ctx], since the world satisfaction defined there has to
+  mention [llctx_interp]. *)
 
 Global Instance lft_intersect_left_id : LeftId eq static meet.
 Proof. intros κ; unfold llft_intersect; set_solver. Qed.
