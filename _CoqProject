@@ -183,3 +183,4 @@ nola/alerus/typing/sum.v
 nola/alerus/typing/function.v
 nola/alerus/typing/fixpoint.v
 nola/alerus/typing/programs_util_own.v
+nola/alerus/typing/ra.v
