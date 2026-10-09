@@ -892,17 +892,23 @@ Class Send `{!typeG FML Σ} {𝔄} (ty: type 𝔄) := {
       @syn_abstract 𝔄 x = @syn_abstract 𝔄 x' → (ty.(ty_phys) x tid = ty.(ty_phys) x' tid');
   (** The original takes [⧖ d0] with [d + 1 ≤ d0] and returns [⧖(d0+off)],
     and its [|={…}▷=>^d |={…}=>] needs those [d] steps to have elapsed.  Both
-    disappear with the laters they paid for. *)
-  send_change_tid tid tid' x d g G H κs :
-    Timeless G →
-    Timeless H →
+    disappear with the laters they paid for.
+
+    Two further changes follow from the world satisfaction holding syntax.
+    The arbitrary [H] with [H &&{↑NllftG}&&> cna_lifetimes tid κs] is gone:
+    guards are persistent, and [cna_lifetimes] is reached through [send_wsat],
+    which sits in [alerus_WG] permanently - so the guard alone suffices, with
+    nothing to split.  The arbitrary [G] guarding the lifetime tokens becomes
+    [Ktok γ κs q], because [prod_send] has to *halve* it and
+    [frac_split_in_half] cannot store an arbitrary proposition. *)
+  send_change_tid tid tid' x d g γ q κs :
     (llft_ctx -∗ uniq_ctx -∗
-      (H &&{Wguard}&&> cna_lifetimes tid κs) -∗ H -∗
-      (∀ (κ: lft) , ⌜κ ∈ κs⌝ -∗ (G &&{Wguard}&&> @[κ])) -∗ G -∗
+      (True &&{Wguard}&&> cna_lifetimes tid κs) -∗
+      Ktok γ κs q -∗
       ty.(ty_gho) x d g tid =[alerus_wsat]{NalerusE}=∗
       ∃ x' off,
       ty.(ty_gho) x' (d+off) g tid' ∗
-        ⌜@syn_abstract 𝔄 x' = @syn_abstract 𝔄 x⌝ ∗ G ∗ H
+        ⌜@syn_abstract 𝔄 x' = @syn_abstract 𝔄 x⌝ ∗ Ktok γ κs q
      )
 }.
 Global Instance: Params (@Send) 5 := {}.

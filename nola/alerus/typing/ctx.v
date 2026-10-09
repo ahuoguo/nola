@@ -126,6 +126,7 @@ Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
   #[global] alerus_fracGS :: fracGuardGS FML Σ;
   #[global] alerus_eternalG :: inG Σ (authUR (gsetUR lft));
   #[global] alerus_llctxFracGS :: fracKeyGS llctx Σ;
+  #[global] alerus_lftsFracGS :: fracKeyGS (gmultiset lft) Σ;
   (** The shared-borrow simple-invariant family, as a bare ghost name *)
   alerus_shr_name : gname;
   (** The eternalized-lifetime family *)
@@ -151,10 +152,16 @@ Section alerus.
     ([llctx_interp_make_guarded]).  None of these stores a guard, so none of
     them may refer to [alerus_WGuard] - and none does.  [cna_wsat], which
     *does* store guards over [alerus_WGuard], is therefore kept outside. *)
+  (** A multiset of lifetime tokens, the thing [Send] shares *)
+  Definition lfts_interp (κs : gmultiset lft) : iProp Σ :=
+    [∗ mset] κ ∈ κs, llft_alive κ.
+
   Definition alerus_WG : iProp Σ :=
     eternal_wsat alerus_eternal_name llft_alive ∗
     frac_wsat bor_sem ∗
-    frac_key_wsat llctx_interp.
+    frac_key_wsat llctx_interp ∗
+    frac_key_wsat lfts_interp ∗
+    send_wsat.
 
   (** Fix the lifetime logic's two parameters *)
   #[export] Instance alerus_LlftWG : LlftWG Σ :=
@@ -186,7 +193,7 @@ Section alerus.
 
   (** The global world satisfaction *)
   Definition alerus_wsat : iProp Σ :=
-    llft_wsat ∗ cna_wsat alerus_WGuard bor_sem ∗ send_wsat.
+    llft_wsat ∗ cna_wsat alerus_WGuard bor_sem.
 
   (** ** Shared access to a local lifetime context
 
@@ -264,32 +271,32 @@ Section alerus.
     explicitly rather than left to the structural instances, which would have
     to unfold [llft_wsat], [llft_wsatG] and the [LlftWG] projections. *)
   #[export] Instance wsat_incl_alerus_llft :
-    WsatIncl alerus_wsat llft_wsat
-      (cna_wsat alerus_WGuard bor_sem ∗ send_wsat).
+    WsatIncl alerus_wsat llft_wsat (cna_wsat alerus_WGuard bor_sem).
   Proof. done. Qed.
   #[export] Instance wsat_incl_alerus_guard :
     WsatIncl alerus_wsat alerus_WGuard
-      (llft_inv_other ∗ cna_wsat alerus_WGuard bor_sem ∗ send_wsat).
+      (llft_inv_other ∗ cna_wsat alerus_WGuard bor_sem).
   Proof.
     rewrite /WsatIncl /alerus_wsat /alerus_WGuard /llft_wsat. iSplit.
-    - by iIntros "([$$] & $ & $)".
-    - by iIntros "([$ $] & $ & $)".
+    - by iIntros "([$$] & $)".
+    - by iIntros "([$ $] & $)".
   Qed.
   #[export] Instance wsat_incl_alerus_cna :
     WsatIncl alerus_wsat (cna_wsat alerus_WGuard bor_sem ∗ alerus_WGuard)
-      (llft_inv_other ∗ send_wsat).
+      llft_inv_other.
   Proof.
     rewrite /WsatIncl /alerus_wsat /alerus_WGuard /llft_wsat. iSplit.
-    - by iIntros "([$$] & $ & $)".
-    - by iIntros "([$ $] & $ & $)".
+    - by iIntros "([$$] & $)".
+    - by iIntros "([$ $] & $)".
   Qed.
   #[export] Instance wsat_incl_alerus_send :
-    WsatIncl alerus_wsat send_wsat
-      (llft_wsat ∗ cna_wsat alerus_WGuard bor_sem).
+    WsatIncl alerus_WG send_wsat
+      (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem ∗
+        frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp).
   Proof.
-    rewrite /WsatIncl /alerus_wsat. iSplit.
-    - by iIntros "($ & $ & $)".
-    - by iIntros "($ & $ & $)".
+    rewrite /WsatIncl /alerus_WG. iSplit.
+    - by iIntros "($ & $ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
   Qed.
 
   (** [alerus_WG] and its parts sit inside [alerus_WGuard] *)
@@ -299,24 +306,88 @@ Section alerus.
   Proof. done. Qed.
   #[export] Instance wsat_incl_alerus_eternal :
     WsatIncl alerus_WG (eternal_wsat alerus_eternal_name llft_alive)
-      (frac_wsat bor_sem ∗ frac_key_wsat llctx_interp).
+      (frac_wsat bor_sem ∗ frac_key_wsat llctx_interp ∗
+        frac_key_wsat lfts_interp ∗ send_wsat).
   Proof. done. Qed.
   #[export] Instance wsat_incl_alerus_fracfml :
     WsatIncl alerus_WG (frac_wsat bor_sem)
       (eternal_wsat alerus_eternal_name llft_alive ∗
-        frac_key_wsat llctx_interp).
+        frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp ∗ send_wsat).
   Proof.
     rewrite /WsatIncl /alerus_WG. iSplit.
-    - by iIntros "($ & $ & $)".
-    - by iIntros "($ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
   Qed.
   #[export] Instance wsat_incl_alerus_llctx :
     WsatIncl alerus_WG (frac_key_wsat llctx_interp)
-      (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem).
+      (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem ∗
+        frac_key_wsat lfts_interp ∗ send_wsat).
   Proof.
     rewrite /WsatIncl /alerus_WG. iSplit.
-    - by iIntros "($ & $ & $)".
-    - by iIntros "($ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
+  Qed.
+  #[export] Instance wsat_incl_alerus_lfts :
+    WsatIncl alerus_WG (frac_key_wsat lfts_interp)
+      (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem ∗
+        frac_key_wsat llctx_interp ∗ send_wsat).
+  Proof.
+    rewrite /WsatIncl /alerus_WG. iSplit.
+    - by iIntros "($ & $ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
+  Qed.
+
+  (** ** Shares of a multiset of lifetime tokens
+
+    [Send] passes an arbitrary [G] with [∀ κ ∈ κs, G &&{↑NllftG}&&> @[κ]] and
+    halves it with [frac_split_in_half]; the same reasoning as for [Ltok]
+    applies, with the key now the multiset itself. *)
+  Definition Ktok (γ : gname) (κs : gmultiset lft) (q : Qp) : iProp Σ :=
+    frac_key_tok γ κs ∗ frac_tok γ q.
+
+  #[export] Instance Ktok_timeless {γ κs q} : Timeless (Ktok γ κs q).
+  Proof. exact _. Qed.
+
+  Lemma Ktok_split {γ κs q} : Ktok γ κs q ⊣⊢ Ktok γ κs (q/2) ∗ Ktok γ κs (q/2).
+  Proof.
+    rewrite /Ktok {1}frac_tok_half. iSplit.
+    - by iIntros "[#$ [$$]]".
+    - by iIntros "[[#$ $][_ $]]".
+  Qed.
+  Lemma Ktok_split_1 {γ κs q} :
+    Ktok γ κs q -∗ Ktok γ κs (q/2) ∗ Ktok γ κs (q/2).
+  Proof. rewrite Ktok_split. by iIntros "$". Qed.
+  Lemma Ktok_split_2 {γ κs q} :
+    Ktok γ κs (q/2) -∗ Ktok γ κs (q/2) -∗ Ktok γ κs q.
+  Proof. iIntros "t t'". rewrite (Ktok_split (q:=q)). iFrame. Qed.
+
+  Lemma Ktok_guard {γ κs q κ} : κ ∈ κs →
+    frac_key_tok γ κs ⊢ Ktok γ κs q &&{alerus_WGuard}&&> llft_alive κ.
+  Proof.
+    move=> in'. iIntros "#tok". iApply guard_lhs_sep_r.
+    iApply (guard_trans with "[] []").
+    { iApply (frac_key_guard_wsat lfts_interp with "tok"). }
+    iApply guard_intro. iIntros "!> big". rewrite /lfts_interp.
+    by iApply (big_sepMS_elem_of_acc with "big").
+  Qed.
+
+  Lemma Ktok_alloc {κs} : lfts_interp κs =[alerus_wsat]=∗ ∃ γ, Ktok γ κs 1.
+  Proof.
+    iIntros "K W".
+    iDestruct (wsat_split (W':=frac_key_wsat lfts_interp) with "W")
+      as "[Wf Wr]".
+    iMod (frac_key_alloc with "K Wf") as (γ) "(#tok & h & h' & Wf)".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wf Wr") as "$". iModIntro.
+    iExists γ. rewrite /Ktok frac_half_add. iFrame "tok h h'".
+  Qed.
+  Lemma Ktok_withdraw {γ κs} :
+    Ktok γ κs 1 =[alerus_wsat]=∗ lfts_interp κs.
+  Proof.
+    iIntros "[#tok f] W".
+    iDestruct (wsat_split (W':=frac_key_wsat lfts_interp) with "W")
+      as "[Wf Wr]".
+    iMod (frac_key_withdraw with "tok f Wf") as "[$ Wf]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wf Wr") as "$". by iModIntro.
   Qed.
 End alerus.
 
