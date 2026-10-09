@@ -12,3 +12,4 @@ html/
 *.glob
 .*.aux
 *.cache
+.claude/
