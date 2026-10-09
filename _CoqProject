@@ -163,3 +163,4 @@ nola/alerus/typing/lifetime.v
 nola/alerus/typing/lft_contexts.v
 nola/alerus/typing/inv_context.v
 nola/alerus/typing/type.v
+nola/alerus/typing/type_context.v

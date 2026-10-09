@@ -371,7 +371,7 @@ Qed.
   The original takes [£n] and spends it on [lc_fupd_elim_laterN] after
   [leaf_open_laters]; here opening the guard needs nothing but the world
   satisfaction. *)
-Local Lemma proph_eqz_to_obs_with_guard `{!WsatIncl W WG Wr}
+Lemma proph_eqz_to_obs_with_guard `{!WsatIncl W WG Wr}
     {A} (uπ vπ: proph A) E (ξl: list proph_var) G :
     ↑prophN ⊆ E → vπ ./ ξl →
     (∀ ζ : proph_var, ⌜ζ ∈ ξl⌝ -∗ (G &&{WG}&&> 1:[ζ])) -∗

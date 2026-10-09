@@ -200,18 +200,31 @@ Section alerus.
     - by iIntros "[[#$ $][_ $]]".
   Qed.
 
+  (** Directed forms, for [iDestruct]: rewriting an [⊣⊢] inside the Iris
+    context trips over the [Proper] search for [envs]. *)
+  Lemma Ltok_split_1 {γ L q} : Ltok γ L q -∗ Ltok γ L (q/2) ∗ Ltok γ L (q/2).
+  Proof. rewrite Ltok_split. by iIntros "$". Qed.
+  Lemma Ltok_split_2 {γ L q} :
+    Ltok γ L (q/2) -∗ Ltok γ L (q/2) -∗ Ltok γ L q.
+  Proof. iIntros "t t'". rewrite (Ltok_split (q:=q)). iFrame. Qed.
+
+  (** The guard needs only the persistent half of the share *)
   Lemma Ltok_guard {γ L q} :
-    Ltok γ L q ⊢ Ltok γ L q &&{alerus_WGuard}&&> llctx_interp L.
+    frac_key_tok γ L ⊢ Ltok γ L q &&{alerus_WGuard}&&> llctx_interp L.
   Proof.
-    iIntros "[#tok _]". iApply guard_lhs_sep_r.
+    iIntros "#tok". iApply guard_lhs_sep_r.
     iApply (frac_key_guard_wsat llctx_interp with "tok").
   Qed.
+  Lemma Ltok_guard' {γ L q} :
+    Ltok γ L q -∗
+      (Ltok γ L q &&{alerus_WGuard}&&> llctx_interp L) ∗ Ltok γ L q.
+  Proof. iIntros "[#tok $]". iFrame "tok". by iApply Ltok_guard. Qed.
 
   (** Open a share against the world satisfaction *)
   Lemma Ltok_acc `{!WsatIncl W alerus_WGuard Wr} {γ L q} :
     Ltok γ L q -∗ W -∗ llctx_interp L ∗ (llctx_interp L -∗ W ∗ Ltok γ L q).
   Proof.
-    iIntros "tok W". iDestruct (Ltok_guard with "tok") as "#g".
+    iIntros "tok W". iDestruct (Ltok_guard' with "tok") as "[#g tok]".
     iApply (guard_acc with "[g] tok W").
     by iApply (guard_wsat_incl (W':=alerus_WGuard)).
   Qed.
