@@ -364,4 +364,110 @@ Proof.
   iApply (twp_read_na with "H"). iIntros "? →Φ !>". by iApply "→Φ".
 Qed.
 
+(** ** Writes
+
+  The original's [wp_write_sc] is stated with a [£1] in its precondition,
+  flagged in the source as "the extra £1 is the problem".  Later-free there is
+  no credit at all. *)
+Lemma twp_write_sc_guarded `{!WsatIncl W na_wsat Wr} s E l c e v v' Gx :
+  IntoVal e v →
+  [[{ (na_sem Gx &&{na_wsat}&&> ((l,c) #↦_)) ∗ na_sem Gx ∗ (l,c) #↦ v' }]][W]
+    Write ScOrd (Lit $ LitLoc l) e @ s; E
+  [[{ RET LitV LitPoison; (l,c) #↦ v ∗ na_sem Gx }]].
+Proof.
+  iIntros (<- Φ) "[#guards [G Hv]] HΦ".
+  iApply twp_lift_atomic_base_step_no_fork; first done.
+  iIntros (????) "[W Hσ]".
+  iDestruct (wsat_split (W':=na_wsat) with "W") as "[Wna Wr]".
+  iMod (heap_write _ (l,c) v' v with "Hσ guards G Hv Wna")
+    as "(%Hσl & Hσ & G & Hv' & Wna)".
+  iModIntro. iSplit.
+  { iPureIntro. eexists _, _, _. eapply WriteScS; [|apply Hσl].
+    by rewrite to_of_val. }
+  iIntros (?????) "!>". inv_head_step. do 2 (iSplit=>//).
+  iSplitR "G Hv' HΦ"; last by iApply "HΦ"; iFrame.
+  iSplitL "Wna Wr".
+  { iApply (wsat_join (W:=W) (W':=na_wsat) (Wr:=Wr)). iFrame. }
+  iFrame "Hσ".
+Qed.
+
+Lemma twp_write_sc `{!WsatIncl W na_wsat Wr} s E l e v v' :
+  IntoVal e v →
+  [[{ l ↦ v' }]][W] Write ScOrd (Lit $ LitLoc l) e @ s; E
+  [[{ RET LitV LitPoison; l ↦ v }]].
+Proof.
+  iIntros (? Φ) "pt HΦ".
+  iApply (twp_write_sc_guarded s E l [] e v v' na_emptyx with "[pt]").
+  - rewrite na_emptyx_sem heap_cloc1_mapsto_val. iFrame "pt".
+    rewrite /heap_complete_mapsto /=. iApply guard_true.
+  - rewrite na_emptyx_sem heap_cloc1_mapsto_val. iIntros "[pt _]".
+    by iApply "HΦ".
+Qed.
+Lemma wp_write_sc `{!WsatIncl W na_wsat Wr} s E l e v v' :
+  IntoVal e v →
+  {{{ ▷ l ↦ v' }}}[W] Write ScOrd (Lit $ LitLoc l) e @ s; E
+  {{{ RET LitV LitPoison; l ↦ v }}}.
+Proof.
+  iIntros (??) ">H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_write_sc with "H"). iIntros "? →Φ !>". by iApply "→Φ".
+Qed.
+
+Lemma twp_write_na_guarded `{!WsatIncl W na_wsat Wr} s E l c e v v' Gx :
+  IntoVal e v →
+  [[{ (na_sem Gx &&{na_wsat}&&> ((l,c) #↦_)) ∗ na_sem Gx ∗ (l,c) #↦ v' }]][W]
+    Write Na1Ord (Lit $ LitLoc l) e @ s; E
+  [[{ RET LitV LitPoison; (l,c) #↦ v ∗ na_sem Gx }]].
+Proof.
+  iIntros (<- Φ) "[#guards [G Hv]] HΦ".
+  iApply twp_lift_base_step; first done.
+  iIntros (????) "[W Hσ]".
+  iDestruct (wsat_split (W':=na_wsat) with "W") as "[Wna Wr]".
+  iMod (heap_write_na _ (l,c) v' v with "Hσ guards G Hv Wna")
+    as "(%Hσl & Hσ & Wna & Hσclose)".
+  iMod (fupd_mask_subseteq ∅) as "Hclose"; first set_solver.
+  iModIntro. iSplit.
+  { iPureIntro. eexists _, _, _. eapply WriteNa1S; [|apply Hσl].
+    by rewrite to_of_val. }
+  iIntros (?????). inv_head_step. iMod "Hclose" as "_". iModIntro.
+  iSplitR; [done|]. iSplitL "Wna Wr Hσ".
+  { iSplitL "Wna Wr".
+    { iApply (wsat_join (W:=W) (W':=na_wsat) (Wr:=Wr)). iFrame. }
+    iFrame "Hσ". }
+  iSplitL; [|done].
+  iApply twp_lift_atomic_base_step_no_fork; first done.
+  iIntros (????) "[W Hσ]".
+  iDestruct (wsat_split (W':=na_wsat) with "W") as "[Wna Wr]".
+  iMod ("Hσclose" with "Hσ Wna") as "(%Hw & Hσ & G & Hv & Wna)".
+  destruct Hw as [v0 Hw].
+  iModIntro. iSplit.
+  { iPureIntro. eexists _, _, _. eapply WriteNa2S; [|apply Hw].
+    by rewrite to_of_val. }
+  iIntros (?????) "!>". inv_head_step. do 2 (iSplit=>//).
+  iSplitR "G Hv HΦ"; last by iApply "HΦ"; iFrame.
+  iSplitL "Wna Wr".
+  { iApply (wsat_join (W:=W) (W':=na_wsat) (Wr:=Wr)). iFrame. }
+  iFrame "Hσ".
+Qed.
+
+Lemma twp_write_na `{!WsatIncl W na_wsat Wr} s E l e v v' :
+  IntoVal e v →
+  [[{ l ↦ v' }]][W] Write Na1Ord (Lit $ LitLoc l) e @ s; E
+  [[{ RET LitV LitPoison; l ↦ v }]].
+Proof.
+  iIntros (? Φ) "pt HΦ".
+  iApply (twp_write_na_guarded s E l [] e v v' na_emptyx with "[pt]").
+  - rewrite na_emptyx_sem heap_cloc1_mapsto_val. iFrame "pt".
+    rewrite /heap_complete_mapsto /=. iApply guard_true.
+  - rewrite na_emptyx_sem heap_cloc1_mapsto_val. iIntros "[pt _]".
+    by iApply "HΦ".
+Qed.
+Lemma wp_write_na `{!WsatIncl W na_wsat Wr} s E l e v v' :
+  IntoVal e v →
+  {{{ ▷ l ↦ v' }}}[W] Write Na1Ord (Lit $ LitLoc l) e @ s; E
+  {{{ RET LitV LitPoison; l ↦ v }}}.
+Proof.
+  iIntros (??) ">H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_write_na with "H"). iIntros "? →Φ !>". by iApply "→Φ".
+Qed.
+
 End lifting.
