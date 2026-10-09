@@ -38,6 +38,23 @@ Local Open Scope nat_scope.
 
 Definition ReadWriteState := lock_state.
 
+(** The parameters the original took as an invariant namespace.
+
+  - [na_sem] interprets the stored formulas.  The original stored propositions
+    directly, under a [later].
+  - [na_wsat] is the world satisfaction the guards are taken over; the
+    original used the invariant mask [↑naN].
+  - [na_emptyx] is a formula standing for [True]: the original stored the
+    proposition [True%I] in ghost state while a write is in progress on a
+    plain location, and formulas are syntactic. *)
+Class NaSem (FML : oFunctor) (Σ : gFunctors) := {
+  na_sem : FML $oi Σ → iProp Σ;
+  na_sem_ne :: NonExpansive na_sem;
+  na_wsat : iProp Σ;
+  na_emptyx : FML $oi Σ;
+  na_emptyx_sem : na_sem na_emptyx ⊣⊢ True;
+}.
+
 (* The original guarded over an invariant namespace [naN]; guards are now
   taken over an explicit world satisfaction, so no namespace is needed. *)
 
@@ -417,15 +434,13 @@ Section NonAtomicMap.
   Context `{!Inhabited V}.
 
   Context {Σ: gFunctors} {FML : oFunctor}.
-  Context `{!na_logicG L V FML Σ}.
-  (** The semantics of the stored formulas, and the world satisfaction the
-    guards are taken over.  The original took guards over the invariant mask
-    [↑naN] instead. *)
-  Context (sm : FML $oi Σ → iProp Σ) `{!NonExpansive sm} (W : iProp Σ).
-  (** The original stored the proposition [True%I] in ghost state when a write
-    is in progress on a plain location.  Formulas are syntactic, so we ask for
-    a formula standing for [True]. *)
-  Context (emptyx : FML $oi Σ) (emptyx_sem : sm emptyx ⊣⊢ True).
+  Context `{!na_logicG L V FML Σ, !NaSem FML Σ}.
+
+  (** Local names matching the original's section variables *)
+  Local Notation sm := na_sem.
+  Local Notation W := na_wsat.
+  Local Notation emptyx := na_emptyx.
+  Local Notation emptyx_sem := na_emptyx_sem.
 
   (** [point_prop] of a cell chain, so that [guard_and] applies *)
   Local Existing Instance cmap_pt_seq_point_prop.
@@ -818,6 +833,97 @@ Section NonAtomicMap.
     rewrite big_sepM_insert; [|done]. iFrame "big G guard". by iExists v.
   Qed.
 
+  Lemma write_bank_end ι σ l v' Gx :
+      write_bank ι σ -∗
+      points_to_w_intermediate ι l None Gx
+      ==∗ ∃ v1 v2,
+      ⌜σ !! l = Some (WSt, v1)⌝ ∗
+      inl l @↦[ι] inr v2 ∗
+      write_bank ι (<[ l := (RSt 0, v') ]> σ).
+  Proof.
+    rewrite points_to_w_intermediate_unseal /points_to_w_intermediate_def.
+    iIntros "wb wim".
+    iDestruct "wb" as (m) "[oj [%ca big]]".
+    iDestruct "wim" as (i) "wim".
+    iAssert (∃ Gx' v1,
+      ⌜σ !! l = Some (WSt, v1) ∧ m !! (l, i) = Some (None, Gx')⌝
+      ∗ Gx ≡ Gx')%I as (Gx' v1) "[%p #equ]".
+    { iCombine "oj wim" as "oj".
+      iDestruct (own_valid with "oj") as "oj_val".
+      rewrite gmap_view_both_validI_total.
+      iDestruct "oj_val" as (vv) "[%_vf1 [%_vf2 [%sm' [val1 val2]]]]".
+      have [oG' dest_eqn] : ∃ oG', m !! (l, i) = Some oG'.
+      { destruct (m !! (l, i)) as [oG'|] eqn:E'; [by eexists|].
+        exfalso. move: sm'. rewrite lookup_fmap E' /=. by inversion 1. }
+      move: sm'. rewrite lookup_fmap dest_eqn /= => sm'. inversion sm'. subst vv.
+      rewrite to_agree_includedI.
+      destruct (counts_agree_ge1_is_writing σ m l i oG' dest_eqn)
+        as [v0 is_write]; [done|].
+      destruct oG' as [o' Gx']. iExists Gx', v0.
+      rewrite prod_equivI. iDestruct "val2" as "[%val3 #val4]".
+      simpl in val3. subst o'.
+      iSplit; [iPureIntro; by split|]. iFrame "val4". }
+    destruct p as [in_sig in_m].
+    iDestruct (big_sepM_delete with "big") as "[g big]"; [apply in_m|].
+    iCombine "oj wim" as "oj".
+    iMod (@own_update Σ _ na3_inG (ιj ι) _ ((
+      gmap_view_auth (V := wR) (DfracOwn 1) (to_agree <$> (delete (l, i) m))
+    )) with "oj") as "oj".
+    { rewrite fmap_delete. apply (gmap_view_delete (V := wR)). }
+    iDestruct "g" as "[G' pt]". iDestruct "pt" as (v2) "pt".
+    iModIntro. iExists v1, v2. iSplit; [done|]. iFrame "pt oj big".
+    iPureIntro. by eapply (counts_agree_delete_write _ _ _ _ _ _).
+  Qed.
+
+  Lemma write_bank_end_guarded_cells ι σ l cells c v' Gx :
+      write_bank ι σ -∗
+      points_to_w_intermediate ι l (Some (cells, c)) Gx
+      ==∗ ∃ v1 v2,
+      sm Gx ∗
+      (sm Gx &&{W}&&> inl l @↦[ι][^ cells] inl c) ∗
+      ⌜σ !! l = Some (WSt, v1)⌝ ∗
+      inr c @↦[ι] inr v2 ∗
+      write_bank ι (<[ l := (RSt 0, v') ]> σ).
+  Proof.
+    rewrite points_to_w_intermediate_unseal /points_to_w_intermediate_def.
+    iIntros "wb wim".
+    iDestruct "wb" as (m) "[oj [%ca big]]".
+    iDestruct "wim" as (i) "wim".
+    iAssert (∃ Gx' v1,
+      ⌜σ !! l = Some (WSt, v1)
+        ∧ m !! (l, i) = Some (Some (cells, c), Gx')⌝
+      ∗ Gx ≡ Gx')%I as (Gx' v1) "[%p #equ]".
+    { iCombine "oj wim" as "oj".
+      iDestruct (own_valid with "oj") as "oj_val".
+      rewrite gmap_view_both_validI_total.
+      iDestruct "oj_val" as (vv) "[%_vf1 [%_vf2 [%sm' [val1 val2]]]]".
+      have [oG' dest_eqn] : ∃ oG', m !! (l, i) = Some oG'.
+      { destruct (m !! (l, i)) as [oG'|] eqn:E'; [by eexists|].
+        exfalso. move: sm'. rewrite lookup_fmap E' /=. by inversion 1. }
+      move: sm'. rewrite lookup_fmap dest_eqn /= => sm'. inversion sm'. subst vv.
+      rewrite to_agree_includedI.
+      destruct (counts_agree_ge1_is_writing σ m l i oG' dest_eqn)
+        as [v0 is_write]; [done|].
+      destruct oG' as [o' Gx']. iExists Gx', v0.
+      rewrite prod_equivI. iDestruct "val2" as "[%val3 #val4]".
+      simpl in val3. subst o'.
+      iSplit; [iPureIntro; by split|]. iFrame "val4". }
+    destruct p as [in_sig in_m].
+    iDestruct (big_sepM_delete with "big") as "[g big]"; [apply in_m|].
+    iDestruct "g" as "[G gu]". iRewrite -"equ" in "G".
+    iDestruct "gu" as (v2) "[#guard pt]".
+    iAssert (sm Gx &&{W}&&> inl l @↦[ι][^ cells] inl c)%I as "#guard2".
+    { iRewrite "equ". iApply "guard". }
+    iCombine "oj wim" as "oj".
+    iMod (@own_update Σ _ na3_inG (ιj ι) _ ((
+      gmap_view_auth (V := wR) (DfracOwn 1) (to_agree <$> (delete (l, i) m))
+    )) with "oj") as "oj".
+    { rewrite fmap_delete. apply (gmap_view_delete (V := wR)). }
+    iModIntro. iExists v1, v2. iFrame "G guard2 pt oj big".
+    iSplit; [done|].
+    iPureIntro. by eapply (counts_agree_delete_write _ _ _ _ _ _).
+  Qed.
+
   Lemma write_bank_no_op ι σ l n v n' v' :
       σ !! l = Some (RSt n, v) →
       write_bank ι σ ⊢ write_bank ι (<[l:=(RSt n', v')]> σ).
@@ -842,17 +948,471 @@ Section NonAtomicMap.
     iExists m. iFrame. iPureIntro. by apply (counts_agree_w_delete σ m l v).
   Qed.
 
-  (** TODO: still to port from the original, in order:
-    [write_bank_end], [write_bank_end_guarded_cells],
-    [non_atomic_map_alloc_empty], [points_to_heap_agree],
-    [points_to_heap_reading0(_guarded_cells)],
-    [points_to_heap_readingN_guarded_all], [na_write_begin(_guarded_cells)],
-    [na_write_finish(_guarded_cells)], [na_read_begin], [na_read_end],
-    [atomic_write(_guarded_cells)], [atomic_read], [non_atomic_map_insert],
-    [non_atomic_map_delete], [non_atomic_map_alloc_heap], and the [pt_seq_*] /
-    [pt_alloc_cell] / [pt_delete_cell] algebra, which are thin wrappers around
-    [nola.alerus.util.cellmap] and should port near-verbatim.  16 of the
-    original 47 lemmas are done; the two banks, which carry all of the
-    original's laters and later credits, are complete. *)
+  (** ** The non-atomic map *)
+
+  Global Instance points_to_timeless ι lc cells cv :
+    Timeless (lc @↦[ι][^ cells] cv).
+  Proof. unseal. destruct cv; apply _. Qed.
+
+  Lemma non_atomic_map_alloc_empty : ⊢ |==> ∃ ι, non_atomic_map ι ∅.
+  Proof.
+    unseal. iIntros.
+    iMod (cmap_init) as (ιh0) "H".
+    iMod (@own_alloc Σ _ na2_inG (gmap_view_auth (DfracOwn 1) ∅))
+      as (ιi0) "H2". { apply gmap_view_auth_valid. }
+    iMod (@own_alloc Σ _ na3_inG (gmap_view_auth (DfracOwn 1) ∅))
+      as (ιj0) "H3". { apply gmap_view_auth_valid. }
+    iModIntro. iExists (prod_encode ιh0 (prod_encode ιi0 ιj0)).
+    rewrite /non_atomic_map /read_bank /write_bank /ιh /ιi /ιj /ιf1 /ιf2.
+    repeat (rewrite prod_decode_encode_fst || rewrite prod_decode_encode_snd).
+    replace (erase_count_map ∅) with (∅: gmap L V) by done. iFrame "H".
+    iSplitL "H2".
+    - iExists ∅. iFrame. iSplit; [|done]. iPureIntro.
+      rewrite /counts_agree_r /heap_count_r /m_count=> l.
+      by rewrite lookup_empty.
+    - iExists ∅. iFrame. iSplit; [|done]. iPureIntro.
+      rewrite /counts_agree_w /heap_count_w /m_count=> l.
+      by rewrite lookup_empty.
+  Qed.
+
+  Lemma points_to_heap_agree ι l cells v σ :
+    (inl l @↦[ι][^ cells] inr v) -∗ non_atomic_map ι σ -∗
+      ⌜ ∃ st, σ !! l = Some (st, v) ⌝.
+  Proof.
+    unseal. iIntros "pt na". iDestruct "na" as "[oh _]".
+    iApply points_to_heap_agree'. unseal. iFrame.
+  Qed.
+
+  (** The original needed a fancy update here only to run the contradiction
+    lemmas, which were themselves [={E}=∗ False]; later-free they conclude
+    [False] directly, so this is a plain entailment. *)
+  Lemma points_to_heap_reading0 ι l v σ :
+    (inl l @↦[ι] inr v) -∗ non_atomic_map ι σ -∗ W -∗
+      ⌜ σ !! l = Some (RSt 0, v) ⌝
+        ∗ (inl l @↦[ι] inr v) ∗ non_atomic_map ι σ ∗ W.
+  Proof.
+    iIntros "pt na W".
+    iAssert (⌜∃ st, σ !! l = Some (st, v)⌝)%I as (st) "%Hσl".
+    { by iApply (points_to_heap_agree with "pt na"). }
+    unseal. iDestruct "na" as "[h [rb wb]]".
+    destruct st.
+    - iExFalso. iApply (write_bank_contradiction with "wb [pt] W");
+        [apply Hσl|]. unseal. iFrame "pt".
+    - destruct n.
+      + iFrame. done.
+      + iExFalso.
+        iApply (read_bank_contradiction _ _ _ (S n) with "rb [pt] W");
+          [lia|apply Hσl|]. unseal. iFrame "pt".
+  Qed.
+
+  Lemma points_to_heap_reading0_guarded_cells `{!EqDecision V} ι l cells c v σ
+      (G : iProp Σ) :
+    (G &&{W}&&> inl l @↦[ι][^ cells] inl c) -∗ G -∗ (inr c @↦[ι] inr v) -∗
+      non_atomic_map ι σ -∗ W -∗
+      ⌜ σ !! l = Some (RSt 0, v) ⌝
+        ∗ G ∗ (inr c @↦[ι] inr v) ∗ non_atomic_map ι σ ∗ W.
+  Proof.
+    iIntros "#guard G pt na W".
+    iAssert (⌜∃ st, σ !! l = Some (st, v)⌝)%I with "[G pt na W]" as (st) "%Hσl".
+    { iDestruct (guard_acc with "guard G W") as "[prefix _]".
+      iApply (points_to_heap_agree ι l (cells ++ [c]) v σ with "[prefix pt] na").
+      unseal. rewrite cmap_pt_seq_cons_back. iFrame. }
+    unseal. iDestruct "na" as "[h [rb wb]]".
+    destruct st.
+    - iExFalso.
+      iApply (write_bank_contradiction_guarded_cells with "wb [] G [pt] W");
+        [apply Hσl| |]; unseal; iFrame "#"; iFrame.
+    - destruct n.
+      + iFrame. done.
+      + iExFalso.
+        iApply (read_bank_contradiction_guarded_cells _ _ _ (S n)
+          with "rb [] G [pt] W"); [lia|apply Hσl| |];
+          unseal; iFrame "#"; iFrame.
+  Qed.
+
+  Lemma points_to_heap_readingN_guarded_all `{!EqDecision V} ι l cells v σ
+      (G : iProp Σ) :
+    (G &&{W}&&> inl l @↦[ι][^ cells] inr v) -∗ G -∗
+      non_atomic_map ι σ -∗ W -∗
+      ⌜ ∃ n, σ !! l = Some (RSt n, v) ⌝
+        ∗ G ∗ non_atomic_map ι σ ∗ W.
+  Proof.
+    iIntros "#guard G na W".
+    iAssert (⌜∃ st, σ !! l = Some (st, v)⌝)%I with "[G na W]" as (st) "%Hσl".
+    { iDestruct (guard_acc with "guard G W") as "[pt _]".
+      iApply (points_to_heap_agree with "pt na"). }
+    unseal. iDestruct "na" as "[h [rb wb]]".
+    destruct st.
+    - iExFalso.
+      iApply (write_bank_contradiction_guarded_all with "wb [] G W");
+        [apply Hσl|]. unseal. iFrame "#".
+    - iFrame. iPureIntro. by exists n.
+  Qed.
+
+  (** ** The main interface *)
+
+  Lemma na_write_begin ι l v σ :
+    (inl l @↦[ι] inr v) -∗ non_atomic_map ι σ -∗ W ==∗
+        ⌜ σ !! l = Some (RSt 0, v) ⌝
+        ∗ points_to_w_intermediate ι l None emptyx
+        ∗ non_atomic_map ι (<[ l := (WSt, v) ]> σ) ∗ W.
+  Proof.
+    iIntros "pt na W".
+    iDestruct (points_to_heap_reading0 with "pt na W")
+      as "(%is_read & pt & na & W)".
+    unseal. iDestruct "na" as "[oh [rb wb]]".
+    iMod (cmap_write _ _ _ _ _ _ _ v with "oh pt") as "[oh pt]".
+    replace (<[l:=v]> (erase_count_map σ))
+      with (erase_count_map (<[ l := (WSt, v) ]> σ));
+      last by rewrite /erase_count_map fmap_insert.
+    iMod (write_bank_begin with "wb [pt]") as "[wim wb]"; [apply is_read| |].
+    { unseal. iFrame. }
+    iModIntro. unseal. iFrame "wim oh wb W". iSplit; [done|].
+    by iApply read_bank_no_op_to_wst.
+  Qed.
+
+  Lemma na_write_begin_guarded_cells `{!EqDecision V} ι l cells c v σ Gx :
+    (sm Gx &&{W}&&> inl l @↦[ι][^ cells] inl c) -∗ sm Gx -∗
+      (inr c @↦[ι] inr v) -∗ non_atomic_map ι σ -∗ W ==∗
+        ⌜ σ !! l = Some (RSt 0, v) ⌝
+        ∗ points_to_w_intermediate ι l (Some (cells, c)) Gx
+        ∗ non_atomic_map ι (<[ l := (WSt, v) ]> σ) ∗ W.
+  Proof.
+    iIntros "#guard G pt na W".
+    iDestruct (points_to_heap_reading0_guarded_cells
+      with "guard G pt na W") as "(%is_read & G & pt & na & W)".
+    unseal. iDestruct "na" as "[oh [rb wb]]".
+    iDestruct (guard_acc with "guard G W") as "[prefix back]".
+    iCombine "prefix pt" as "pt". rewrite -cmap_pt_seq_cons_back.
+    iMod (cmap_write _ _ _ _ _ _ _ v with "oh pt") as "[oh pt]".
+    rewrite cmap_pt_seq_cons_back. iDestruct "pt" as "[prefix pt]".
+    iDestruct ("back" with "prefix") as "[W G]".
+    replace (<[l:=v]> (erase_count_map σ))
+      with (erase_count_map (<[ l := (WSt, v) ]> σ));
+      last by rewrite /erase_count_map fmap_insert.
+    iMod (write_bank_begin_guarded_cells with "wb [] G [pt]") as "[wim wb]";
+      [apply is_read| | |].
+    { unseal. iApply "guard". } { unseal. iApply "pt". }
+    iModIntro. unseal. iFrame "wim oh wb W". iSplit; [done|].
+    by iApply read_bank_no_op_to_wst.
+  Qed.
+
+  Lemma na_write_finish ι l v' σ Gx :
+    points_to_w_intermediate ι l None Gx -∗ non_atomic_map ι σ ==∗
+        ⌜ ∃ v, σ !! l = Some (WSt, v) ⌝
+        ∗ inl l @↦[ι] inr v'
+        ∗ non_atomic_map ι (<[ l := (RSt 0, v') ]> σ).
+  Proof.
+    iIntros "pt na". unseal. iDestruct "na" as "[oh [rb wb]]".
+    iMod (write_bank_end _ _ l v' with "wb [pt]") as (v1 v2) "[%Hst [pt wb]]".
+    { unseal. iFrame. }
+    unseal. iMod (cmap_write _ _ _ _ _ _ _ _ v' with "oh pt") as "[oh pt]".
+    replace (<[l:=v']> (erase_count_map σ))
+      with (erase_count_map (<[ l := (RSt 0, v') ]> σ));
+      last by rewrite /erase_count_map fmap_insert.
+    iModIntro. iFrame "pt oh wb". iSplit. { by iExists v1. }
+    by iApply read_bank_no_op_to_rst0.
+  Qed.
+
+  (** The original's [▷ |={E}=>] disappears: [write_bank_end_guarded_cells] no
+    longer needs a later to strip the stored agreement. *)
+  Lemma na_write_finish_guarded_cells ι l cells c v' σ Gx :
+    points_to_w_intermediate ι l (Some (cells, c)) Gx -∗
+      non_atomic_map ι σ -∗ W ==∗
+        ⌜ ∃ v, σ !! l = Some (WSt, v) ⌝
+        ∗ sm Gx
+        ∗ inr c @↦[ι] inr v'
+        ∗ non_atomic_map ι (<[ l := (RSt 0, v') ]> σ) ∗ W.
+  Proof.
+    iIntros "wim na W". unseal. iDestruct "na" as "[oh [rb wb]]".
+    iMod (write_bank_end_guarded_cells _ _ l _ _ v' with "wb [wim]")
+      as (v1 v2) "[G [#guard [%Hst [pt wb]]]]". { unseal. iFrame "wim". }
+    iDestruct (guard_acc with "guard G W") as "[prefix back]".
+    unseal. iCombine "prefix pt" as "pt". rewrite -cmap_pt_seq_cons_back.
+    iMod (cmap_write _ _ _ _ _ _ _ _ v' with "oh pt") as "[oh pt]".
+    replace (<[l:=v']> (erase_count_map σ))
+      with (erase_count_map (<[ l := (RSt 0, v') ]> σ));
+      last by rewrite /erase_count_map fmap_insert.
+    rewrite cmap_pt_seq_cons_back. iDestruct "pt" as "[prefix pt]".
+    iDestruct ("back" with "prefix") as "[W G]".
+    iModIntro. iFrame "G pt oh wb W". iSplit. { by iExists v1. }
+    by iApply read_bank_no_op_to_rst0.
+  Qed.
+
+  Lemma na_read_begin `{!EqDecision V} ι l cells v σ Gx :
+    (sm Gx &&{W}&&> (inl l @↦[ι][^ cells] inr v)) -∗ sm Gx -∗
+      non_atomic_map ι σ -∗ W ==∗
+        ∃ n , ⌜ σ !! l = Some (RSt n, v) ⌝
+        ∗ points_to_r_intermediate ι l cells v Gx
+        ∗ non_atomic_map ι (<[ l := (RSt (n + 1), v) ]> σ) ∗ W.
+  Proof.
+    iIntros "#guard G na W".
+    iDestruct (points_to_heap_readingN_guarded_all with "guard G na W")
+      as "(%is_read & G & na & W)".
+    rewrite non_atomic_map_unseal /non_atomic_map_def.
+    iDestruct "na" as "[oh [rb wb]]". destruct is_read as [n is_read].
+    iMod (read_bank_begin with "rb guard G") as "[rim rb]"; [apply is_read|].
+    iModIntro. iExists n. iFrame "rim rb W". iSplit; [done|].
+    rewrite (erase_count_map_same_update_read_count _ _ _ _ _ is_read).
+    iFrame "oh". by iApply (write_bank_no_op with "wb").
+  Qed.
+
+  Lemma na_read_end ι l cells v σ Gx :
+    points_to_r_intermediate ι l cells v Gx -∗ non_atomic_map ι σ -∗ W ==∗
+        ∃ n , ⌜ σ !! l = Some (RSt n, v) ∧ n ≥ 1 ⌝
+        ∗ sm Gx
+        ∗ non_atomic_map ι (<[ l := (RSt (n - 1), v) ]> σ) ∗ W.
+  Proof.
+    rewrite non_atomic_map_unseal /non_atomic_map_def.
+    iIntros "ptr [oh [rb wb]] W".
+    iMod (read_bank_end ι σ l cells v Gx with "rb ptr oh W")
+      as (n) "[G [%Hσ [rb [oh W]]]]".
+    destruct Hσ as [Hn is_read].
+    iModIntro. iExists n. iFrame "G W". iSplit; [by iPureIntro|].
+    rewrite (erase_count_map_same_update_read_count _ _ _ _ _ is_read).
+    iFrame "oh rb". by iApply (write_bank_no_op with "wb").
+  Qed.
+
+  Lemma atomic_write ι l v v' σ :
+    (inl l @↦[ι] inr v) -∗ non_atomic_map ι σ -∗ W ==∗
+        ⌜ σ !! l = Some (RSt 0, v) ⌝
+        ∗ (inl l @↦[ι] inr v')
+        ∗ non_atomic_map ι (<[ l := (RSt 0, v') ]> σ) ∗ W.
+  Proof.
+    iIntros "pt h W".
+    iMod (na_write_begin with "pt h W") as "[%sig [pt [heap W]]]".
+    iMod (na_write_finish _ _ v' with "pt heap") as "[%sig2 [pt heap]]".
+    iModIntro. iFrame "pt W". rewrite insert_insert_eq. iFrame "heap".
+    iPureIntro. apply sig.
+  Qed.
+
+  (** The original was [|={E}=> ▷ |={E}=>]; the step came from
+    [na_write_finish_guarded_cells]. *)
+  Lemma atomic_write_guarded_cells `{!EqDecision V} ι l v cells c v' σ Gx :
+    (sm Gx &&{W}&&> inl l @↦[ι][^ cells] inl c) -∗ sm Gx -∗
+      (inr c @↦[ι] inr v) -∗ non_atomic_map ι σ -∗ W ==∗
+        ⌜ σ !! l = Some (RSt 0, v) ⌝
+        ∗ sm Gx
+        ∗ (inr c @↦[ι] inr v')
+        ∗ non_atomic_map ι (<[ l := (RSt 0, v') ]> σ) ∗ W.
+  Proof.
+    iIntros "#guard G pt h W".
+    iMod (na_write_begin_guarded_cells with "guard G pt h W")
+      as "[%sig [pt [heap W]]]".
+    iMod (na_write_finish_guarded_cells _ _ _ _ v' with "pt heap W")
+      as "[%sig2 [G [pt [heap W]]]]".
+    iModIntro. iFrame "pt G W". rewrite insert_insert_eq. iFrame "heap".
+    iPureIntro. apply sig.
+  Qed.
+
+  Lemma atomic_read `{!EqDecision V} ι l cells v σ (G : iProp Σ) :
+    (G &&{W}&&> (inl l @↦[ι][^ cells] inr v)) -∗ G -∗
+      non_atomic_map ι σ -∗ W -∗
+        ∃ n , ⌜ σ !! l = Some (RSt n, v) ⌝ ∗ G ∗ non_atomic_map ι σ ∗ W.
+  Proof.
+    iIntros "#guard G na W".
+    iDestruct (points_to_heap_readingN_guarded_all with "guard G na W")
+      as "(%is_read & G & na & W)".
+    destruct is_read as [n is_read]. iExists n. by iFrame.
+  Qed.
+
+  Lemma non_atomic_map_insert ι l v σ :
+    (σ !! l = None) →
+    non_atomic_map ι σ ==∗
+      (inl l @↦[ι] inr v) ∗ non_atomic_map ι (<[ l := (RSt 0, v) ]> σ).
+  Proof.
+    unseal. intros not_in. iIntros "[oh [rb wb]]".
+    iDestruct (read_bank_insert ι l v σ with "rb") as "rb"; [done|].
+    iDestruct (write_bank_insert ι l v σ with "wb") as "wb"; [done|].
+    iMod (cmap_alloc _ _ _ _ _ l v with "oh") as "[oh pt]".
+    { by rewrite /erase_count_map lookup_fmap not_in. }
+    replace ((<[l:=v]> (erase_count_map σ)) : gmap L V)
+      with (erase_count_map (<[ l := (RSt 0, v) ]> σ));
+      last by rewrite /erase_count_map fmap_insert.
+    iModIntro. iFrame.
+  Qed.
+
+  Lemma non_atomic_map_delete ι l v σ :
+    (inl l @↦[ι] inr v) -∗ non_atomic_map ι σ -∗ W ==∗
+      ⌜ σ !! l = Some (RSt 0, v) ⌝ ∗ non_atomic_map ι (delete l σ) ∗ W.
+  Proof.
+    iIntros "pt na W".
+    iDestruct (points_to_heap_reading0 with "pt na W")
+      as "(%is_in & pt & na & W)".
+    unseal. iDestruct "na" as "[oh [rb wb]]".
+    iDestruct (read_bank_delete ι l v σ with "rb") as "rb"; [done|].
+    iDestruct (write_bank_delete ι l v σ with "wb") as "wb"; [done|].
+    iMod (cmap_delete with "oh pt") as "oh".
+    replace ((delete l (erase_count_map σ)))
+      with (erase_count_map (delete l σ));
+      last by rewrite /erase_count_map fmap_delete.
+    iModIntro. iFrame. done.
+  Qed.
+
+  (** ** The cell algebra
+
+    These are thin wrappers around [nola.alerus.util.cellmap] and port
+    verbatim; the original's [factoring_props.point_prop] is
+    [nola.iris.point.point_prop]. *)
+
+  Lemma pt_seq_cons ι lc cell cells cv :
+      lc @↦[ι][^ cell :: cells] cv ⊣⊢
+        lc @↦[ι] (inl cell) ∗ (inr cell) @↦[ι][^ cells] cv.
+  Proof. unseal. done. Qed.
+
+  Lemma pt_seq_cons_and ι lc cell cells cv :
+      lc @↦[ι] (inl cell) ∧ (inr cell) @↦[ι][^cells] cv ⊢
+        lc @↦[ι][^ cell :: cells] cv.
+  Proof. unseal. apply cmap_pt_and_cons. Qed.
+
+  Lemma pt_seq_cons_back_and ι lc cell cells cv :
+      lc @↦[ι][^cells] (inl cell) ∧ (inr cell) @↦[ι] cv ⊢
+        lc @↦[ι][^ cells ++ [cell]] cv.
+  Proof.
+      generalize lc. clear lc. induction cells; intro lc.
+        - simpl. apply pt_seq_cons_and.
+        - simpl. iIntros "And". iApply (pt_seq_cons_and). iSplit.
+          + rewrite pt_seq_cons. iDestruct "And" as "[[$ _] _]".
+          + iApply IHcells. iSplit.
+            * rewrite pt_seq_cons. iDestruct "And" as "[[_ $] _]".
+            * iDestruct "And" as "[_ $]".
+  Qed.
+
+  Lemma pt_seq_snoc ι lc cell cells cv :
+    lc @↦[ι][^ cells ++ [cell]] cv ⊣⊢
+      lc @↦[ι][^cells] inl cell ∗ inr cell @↦[ι] cv.
+  Proof.
+    rewrite points_to_seq_unseal /points_to_seq_def.
+    by rewrite cellmap.cmap_pt_seq_cons_back.
+  Qed.
+
+  (** Cell-And *)
+  Lemma pt_seq_app_and ι lc cells1 cell cells2 cv :
+      lc @↦[ι][^cells1] (inl cell) ∧ (inr cell) @↦[ι][^cells2] cv
+          ⊣⊢ lc @↦[ι][^ cells1 ++ cell :: cells2] cv.
+  Proof.
+      iSplit.
+        - iStopProof. generalize lc. clear lc. induction cells1.
+          + iIntros (lc) "_ A". iApply (pt_seq_cons_and with "A").
+          + iIntros (lc) "_ A". simpl. iApply pt_seq_cons_and. iSplit.
+            * iDestruct "A" as "[A _]". rewrite pt_seq_cons.
+              iDestruct "A" as "[$ _]".
+            * iApply IHcells1; first done. iSplit.
+              -- iDestruct "A" as "[A _]". rewrite pt_seq_cons.
+                 iDestruct "A" as "[_ $]".
+              -- iDestruct "A" as "[_ $]".
+        - iIntros "A". iSplit.
+          + iStopProof. generalize lc. clear lc. induction cells1.
+            * iIntros (lc). simpl. rewrite pt_seq_cons. iIntros "[$ _]".
+            * iIntros (lc). simpl. do 2 rewrite pt_seq_cons.
+              iIntros "[A B]". iFrame "A". iApply IHcells1. iFrame "B".
+          + iStopProof. generalize lc. clear lc. induction cells1.
+            * iIntros (lc). simpl. rewrite pt_seq_cons. iIntros "[_ $]".
+            * iIntros (lc). simpl. rewrite pt_seq_cons. iIntros "[_ B]".
+              iApply IHcells1. iFrame "B".
+  Qed.
+
+  (** Cell-Sep *)
+  Lemma pt_seq_app_sep ι lc cells1 cell cells2 cv :
+      lc @↦[ι][^cells1] (inl cell) ∗ (inr cell) @↦[ι][^cells2] cv
+          ⊣⊢ lc @↦[ι][^ cells1 ++ cell :: cells2] cv.
+  Proof.
+      iSplit.
+        - iIntros "[A B]". iApply pt_seq_app_and. iSplit; iFrame.
+        - iIntros "A".
+          iStopProof. generalize lc. clear lc. induction cells1.
+          + iIntros (lc). simpl. rewrite pt_seq_cons. iIntros "$".
+          + iIntros (lc). simpl. do 2 rewrite pt_seq_cons. iIntros "[$ B]".
+            iApply IHcells1. iFrame "B".
+  Qed.
+
+  Lemma pt_seq_andM_sepM ι (rows: gmap L ((list cell_id) * (cell_id + V))) :
+      ([∧ map] l ↦ '(cells, cv) ∈ rows, (inl l) @↦[ι][^cells] cv)%I ⊢
+      [∗ map] l ↦ '(cells, cv) ∈ rows, (inl l) @↦[ι][^cells] cv.
+  Proof. unseal. apply cmap_andM_sepM. Qed.
+
+  Local Lemma pt_untether' ι lc cell :
+      lc @↦[ι] (inl cell) ==∗
+        ∃ (v: V), lc @↦[ι] (inr v)
+          ∗ (∀ l cells, inl l @↦[ι][^ cells] inr v ==∗
+               inl l @↦[ι][^ cells] inl cell).
+  Proof.
+    unseal. iIntros "pts". iMod (cmap_untether with "pts") as (v) "[pts back]".
+    iModIntro. iExists v. rewrite pt_seq_singleton. iFrame "pts".
+    iIntros (l cells) "pt". by iMod (cmap_retether with "pt back").
+  Qed.
+
+  Lemma pt_untether ι lc cells cell :
+      lc @↦[ι][^cells] (inl cell) ==∗
+        ∃ (v: V), lc @↦[ι][^cells] (inr v)
+          ∗ (∀ l cells, inl l @↦[ι][^ cells] inr v ==∗
+               inl l @↦[ι][^ cells] inl cell).
+  Proof.
+      destruct (cellmap.case_last_c cell_id cells)
+        as [[_ Hcells]|[prefix [last [_ Hcells]]]].
+       - subst cells. apply pt_untether'.
+       - subst cells. rewrite pt_seq_snoc. iIntros "[A B]".
+         iMod (pt_untether' with "B") as (v) "[B back]".
+         iModIntro. iExists v. rewrite pt_seq_snoc. iFrame.
+  Qed.
+
+  Lemma pt_seq_point_prop ι lc cells cv :
+      point_prop (lc @↦[ι][^ cells] cv).
+  Proof. unseal. apply cmap_pt_seq_point_prop. Qed.
+
+  (** Cell-Fresh *)
+  Lemma pt_alloc_cell' ι lc cv :
+      lc @↦[ι] cv ==∗ ∃ c, lc @↦[ι][^ [c]] cv.
+  Proof.
+    destruct lc as [l|c].
+    - destruct cv as [c'|v].
+      + (* untether the existing cell; insert the new cell; retether *)
+        iIntros "pt". iMod (pt_untether with "pt") as (v) "[pt retether]".
+        iMod (cmap_alloc_unt _ _ _ (ιh ι) v) as (c) "[pt2 unt]".
+        iMod (cmap_retether with "[pt] unt") as "pt". { unseal. iFrame. }
+        iDestruct ("retether" $! l [c] with "[pt pt2]") as "J".
+          { unseal. rewrite cmap_pt_seq_cons. rewrite pt_seq_singleton. iFrame. }
+        iExists c. done.
+      + (* insert new cell immediately *)
+        iIntros "pt".
+        iMod (cmap_alloc_unt _ _ _ (ιh ι) v) as (c) "[pt2 unt]".
+        iMod (cmap_retether with "[pt] unt") as "pt". { unseal. iFrame. }
+        iModIntro. iExists c. unseal. rewrite pt_seq_singleton. iFrame.
+    - iIntros "pt". unseal.
+      iMod (cmap_alloc_cell_after_cell with "pt") as (new_c) "[pt1 pt2]".
+      iModIntro. iExists new_c. iFrame.
+  Qed.
+
+  Lemma pt_alloc_cell ι lc cells cv :
+      lc @↦[ι][^ cells] cv ==∗ ∃ c, lc @↦[ι][^ c :: cells] cv.
+  Proof.
+      destruct cells as [|cell cells].
+      - apply pt_alloc_cell'.
+      - iIntros "a". rewrite pt_seq_cons. iDestruct "a" as "[pt rest]".
+        iMod (pt_alloc_cell' with "pt") as (c) "pt".
+        iModIntro. iExists c.
+        do 3 rewrite pt_seq_cons. iDestruct "pt" as "[$ $]". iFrame.
+  Qed.
+
+  Lemma pt_delete_cell ι l c cells cv :
+      inl l @↦[ι][^ c :: cells] cv ==∗ inl l @↦[ι][^ cells] cv.
+  Proof.
+      destruct cells as [|cell cells].
+      - iIntros "pt".
+        unseal. rewrite !cmap_pt_seq_cons. rewrite !pt_seq_singleton.
+        iDestruct "pt" as "[pt1 pt2]".
+        by iMod (cmap_delete_cell with "pt1 pt2") as "pt".
+      - iIntros "pt".
+        unseal. rewrite !cmap_pt_seq_cons. rewrite !pt_seq_singleton.
+        iDestruct "pt" as "[pt1 [pt2 pt3]]".
+        iMod (cmap_delete_cell with "pt1 pt2") as "pt".
+        by iFrame.
+  Qed.
 
 End NonAtomicMap.
+
+Global Notation "l @↦[ ι ][^ cells ] v" := (points_to_seq ι l cells v)
+    (at level 20, format "l  @↦[ ι ][^ cells ]  v") : bi_scope.
+
+Global Notation "l @↦[ ι ] v" := (points_to_seq ι l [] v)
+    (at level 20, format "l  @↦[ ι ]  v") : bi_scope.
