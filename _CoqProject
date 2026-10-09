@@ -166,3 +166,4 @@ nola/alerus/typing/type.v
 nola/alerus/typing/type_context.v
 nola/alerus/typing/cont_context.v
 nola/alerus/typing/programs.v
+nola/alerus/typing/programs_util.v
