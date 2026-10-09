@@ -176,3 +176,11 @@ nola/alerus/typing/base_type.v
 nola/alerus/typing/shr_bor.v
 nola/alerus/typing/freeable_util.v
 nola/alerus/typing/cont.v
+nola/alerus/typing/tracked.v
+nola/alerus/typing/own.v
+nola/alerus/typing/ghost.v
+nola/alerus/typing/sum.v
+nola/alerus/typing/function.v
+nola/alerus/typing/fixpoint.v
+nola/alerus/typing/programs_util_own.v
+nola/alerus/typing/ra.v

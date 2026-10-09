@@ -54,6 +54,23 @@ Section wsat_split.
   Proof. rewrite (wsat_incl W W' Wr). by iIntros "$$". Qed.
 End wsat_split.
 
+(** Rewriting a guard along an equivalence.
+
+  VerusBelt does this with [leaf_goal lhs/rhs to …].  [guard_proper] would do
+  it too, but [rewrite] of an [⊣⊢] inside the Iris proof context trips over
+  the [Proper] search for [envs], so these are stated as directed lemmas. *)
+Section guard_iff.
+  Context {PROP : bi}.
+  Lemma guard_rhs_iff {W P Q Q' : PROP} :
+    (Q ⊣⊢ Q') → (P &&{W}&&> Q) ⊢ P &&{W}&&> Q'.
+  Proof. move=> eq. by rewrite eq. Qed.
+  Lemma guard_lhs_iff {W P P' Q : PROP} :
+    (P ⊣⊢ P') → (P' &&{W}&&> Q) ⊢ P &&{W}&&> Q.
+  Proof. move=> eq. by rewrite eq. Qed.
+  Lemma iff_1 {P Q : PROP} : (P ⊣⊢ Q) → P -∗ Q.
+  Proof. move=> eq. rewrite eq. by iIntros "$". Qed.
+End guard_iff.
+
 (** Weaken both the world satisfaction and the mask of a [fupdw].  The
   lifetime logic's updates are over [llft_wsat] at [↑NllftUsr ∪ ↑NllftUsr2];
   the typing layer works over the whole world satisfaction at [⊤]. *)
@@ -104,6 +121,10 @@ Class EmptySem (FML : oFunctor) Σ `{!BorSem FML Σ} := {
   empty_fml_sem : bor_sem empty_fml ⊣⊢ True;
 }.
 
+(** Directed forms, for [iApply]: see [guard_iff] above *)
+Lemma empty_fml_sem_2 `{!BorSem FML Σ, !EmptySem FML Σ} : ⊢ bor_sem empty_fml.
+Proof. by rewrite empty_fml_sem. Qed.
+
 (** ** Guard sources for the Points-To Cell Logic
 
   VerusBelt's [typed_read] and [typed_write] hand the client an arbitrary
@@ -124,27 +145,9 @@ Inductive gsrc : Type :=
 | (** [True] *) GTrue
 | (** Separating conjunction *) GSep (s s' : gsrc)
 | (** A fractional share [frac_tok γ q], as held by [Ltok] and [Ktok] *)
-  GFrac (γ : gname) (q : Qp).
-
-Section gsrc_interp.
-  Context `{!inG Σ frac_shareR}.
-
-  Fixpoint gsrc_interp (s : gsrc) : iProp Σ :=
-    match s with
-    | GTrue => True
-    | GSep s s' => gsrc_interp s ∗ gsrc_interp s'
-    | GFrac γ q => frac_tok γ q
-    end%I.
-
-  #[export] Instance gsrc_interp_timeless {s} : Timeless (gsrc_interp s).
-  Proof. elim s; apply _. Qed.
-End gsrc_interp.
-
-(** The formula language must express every guard source *)
-Class GsrcSem (FML : oFunctor) Σ `{!BorSem FML Σ, !inG Σ frac_shareR} := {
-  gsrc_fml : gsrc → FML $oi Σ;
-  gsrc_fml_sem s : bor_sem (gsrc_fml s) ⊣⊢ gsrc_interp s;
-}.
+  GFrac (γ : gname) (q : Qp)
+| (** A points-to assertion [l ↦!∗ fv] over a vector of fancy values *)
+  GMapstoVec (l : loc) (fv : list fancy_val).
 
 (** All the ghost state of the typing layer.
 
@@ -166,7 +169,6 @@ Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
   #[global] alerus_uniqG :: uniqG Σ;
   #[global] alerus_cnaGS :: cnaGS FML Σ;
   #[global] alerus_fracGS :: fracGuardGS FML Σ;
-  #[global] alerus_gsrcSem :: GsrcSem FML Σ;
   #[global] alerus_eternalG :: inG Σ (authUR (gsetUR lft));
   #[global] alerus_llctxFracGS :: fracKeyGS llctx Σ;
   #[global] alerus_lftsFracGS :: fracKeyGS (gmultiset lft) Σ;
@@ -221,6 +223,15 @@ Section alerus.
     na_emptyx := empty_fml;
     na_emptyx_sem := empty_fml_sem;
   |}.
+
+  (** What a guard-source descriptor stands for *)
+  Fixpoint gsrc_interp (s : gsrc) : iProp Σ :=
+    match s with
+    | GTrue => True
+    | GSep s s' => gsrc_interp s ∗ gsrc_interp s'
+    | GFrac γ q => frac_tok γ q
+    | GMapstoVec l fv => l ↦!∗ fv
+    end%I.
 
   Context `{!HeapSem FML Σ}.
 
@@ -287,12 +298,6 @@ Section alerus.
   Lemma Ltok_guard_frac {γ L q} :
     frac_key_tok γ L ⊢ frac_tok γ q &&{alerus_WGuard}&&> llctx_interp L.
   Proof. iApply (frac_key_guard_wsat llctx_interp). Qed.
-
-  (** Directed forms of [gsrc_fml_sem], for [iDestruct] *)
-  Lemma gsrc_fml_sem_1 {s} : bor_sem (gsrc_fml s) ⊢ gsrc_interp s.
-  Proof. by rewrite gsrc_fml_sem. Qed.
-  Lemma gsrc_fml_sem_2 {s} : gsrc_interp s ⊢ bor_sem (gsrc_fml s).
-  Proof. by rewrite gsrc_fml_sem. Qed.
 
   (** Open a share against the world satisfaction *)
   Lemma Ltok_acc `{!WsatIncl W alerus_WGuard Wr} {γ L q} :
@@ -446,6 +451,26 @@ Section alerus.
     iDestruct (wsat_join (W:=alerus_wsat) with "Wf Wr") as "$". by iModIntro.
   Qed.
 End alerus.
+
+(** The formula language must express every guard source.
+
+  Like [HeapSem] this is *not* a field of [alerusGS]: [gsrc_interp] is stated
+  against the [NaSem] instance that [alerusGS] builds.  Typing files get it
+  through [typeG]. *)
+Class GsrcSem (FML : oFunctor) Σ `{!alerusGS FML Σ} := {
+  gsrc_fml : gsrc → FML $oi Σ;
+  gsrc_fml_sem s : bor_sem (gsrc_fml s) ⊣⊢ gsrc_interp s;
+}.
+
+Section gsrc.
+  Context `{!alerusGS FML Σ, !GsrcSem FML Σ}.
+
+  (** Directed forms of [gsrc_fml_sem], for [iApply] and [iDestruct] *)
+  Lemma gsrc_fml_sem_1 {s} : bor_sem (gsrc_fml s) ⊢ gsrc_interp s.
+  Proof. by rewrite gsrc_fml_sem. Qed.
+  Lemma gsrc_fml_sem_2 {s} : gsrc_interp s ⊢ bor_sem (gsrc_fml s).
+  Proof. by rewrite gsrc_fml_sem. Qed.
+End gsrc.
 
 (** The lifetime logic's notations.  [lifetime_full] cannot export these: the
   argument order it leaves behind after closing its section does not allow it. *)
