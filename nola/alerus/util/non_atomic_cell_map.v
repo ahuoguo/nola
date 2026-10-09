@@ -38,6 +38,23 @@ Local Open Scope nat_scope.
 
 Definition ReadWriteState := lock_state.
 
+(** The parameters the original took as an invariant namespace.
+
+  - [na_sem] interprets the stored formulas.  The original stored propositions
+    directly, under a [later].
+  - [na_wsat] is the world satisfaction the guards are taken over; the
+    original used the invariant mask [↑naN].
+  - [na_emptyx] is a formula standing for [True]: the original stored the
+    proposition [True%I] in ghost state while a write is in progress on a
+    plain location, and formulas are syntactic. *)
+Class NaSem (FML : oFunctor) (Σ : gFunctors) := {
+  na_sem : FML $oi Σ → iProp Σ;
+  na_sem_ne :: NonExpansive na_sem;
+  na_wsat : iProp Σ;
+  na_emptyx : FML $oi Σ;
+  na_emptyx_sem : na_sem na_emptyx ⊣⊢ True;
+}.
+
 (* The original guarded over an invariant namespace [naN]; guards are now
   taken over an explicit world satisfaction, so no namespace is needed. *)
 
@@ -417,15 +434,13 @@ Section NonAtomicMap.
   Context `{!Inhabited V}.
 
   Context {Σ: gFunctors} {FML : oFunctor}.
-  Context `{!na_logicG L V FML Σ}.
-  (** The semantics of the stored formulas, and the world satisfaction the
-    guards are taken over.  The original took guards over the invariant mask
-    [↑naN] instead. *)
-  Context (sm : FML $oi Σ → iProp Σ) `{!NonExpansive sm} (W : iProp Σ).
-  (** The original stored the proposition [True%I] in ghost state when a write
-    is in progress on a plain location.  Formulas are syntactic, so we ask for
-    a formula standing for [True]. *)
-  Context (emptyx : FML $oi Σ) (emptyx_sem : sm emptyx ⊣⊢ True).
+  Context `{!na_logicG L V FML Σ, !NaSem FML Σ}.
+
+  (** Local names matching the original's section variables *)
+  Local Notation sm := na_sem.
+  Local Notation W := na_wsat.
+  Local Notation emptyx := na_emptyx.
+  Local Notation emptyx_sem := na_emptyx_sem.
 
   (** [point_prop] of a cell chain, so that [guard_and] applies *)
   Local Existing Instance cmap_pt_seq_point_prop.
