@@ -470,6 +470,57 @@ Proof.
   iApply (twp_write_na with "H"). iIntros "? →Φ !>". by iApply "→Φ".
 Qed.
 
+(** Derived forms of the guarded read rules *)
+Lemma twp_read_na_guarded_cells_singleton `{!WsatIncl W na_wsat Wr} s E l c v
+    Gx :
+  [[{ (na_sem Gx &&{na_wsat}&&> (l ↦[^ c]∗ [v])) ∗ na_sem Gx }]][W]
+    Read Na1Ord (Lit $ LitLoc l) @ s; E [[{ RET v; na_sem Gx }]].
+Proof.
+  case: c=> >; last first.
+  { setoid_rewrite guard_rhs_sep_l. exact: twp_read_na_guarded_cells. }
+  iIntros "[#gd G] HΦ".
+  iApply twp_lift_atomic_base_step_no_fork; first done.
+  iIntros (????) "[W Hσ]".
+  iDestruct (wsat_split (W':=na_wsat) with "W") as "[Wna Wr]".
+  by iDestruct (guard_acc with "gd G Wna") as "[[] _]".
+Qed.
+
+Lemma twp_read_na_guarded `{!WsatIncl W na_wsat Wr} s E l v Gx :
+  [[{ (na_sem Gx &&{na_wsat}&&> (l ↦ v)) ∗ na_sem Gx }]][W]
+    Read Na1Ord (Lit $ LitLoc l) @ s; E [[{ RET v; na_sem Gx }]].
+Proof.
+  exact: (twp_read_na_guarded_cells s E l [] v Gx).
+Qed.
+
+Lemma twp_write_na_guarded_0 `{!WsatIncl W na_wsat Wr} s E l cells e v v' Gx :
+  IntoVal e v →
+  [[{ (na_sem Gx &&{na_wsat}&&> ((l,cells) #↦_)) ∗ na_sem Gx
+      ∗ (l,cells) #↦ v' }]][W] Write Na1Ord (Lit $ LitLoc l) e @ s; E
+  [[{ RET LitV LitPoison; (l,cells) #↦ v ∗ na_sem Gx }]].
+Proof. exact: twp_write_na_guarded. Qed.
+
+(** ** Moving a cell between locations *)
+Lemma twp_cell_move_na `{!WsatIncl W na_wsat Wr} s E l l' cell v' :
+  [[{ l ↦! (FCell cell) ∗ l' ↦ v' }]][W]
+    Write Na1Ord (Lit $ LitLoc l') (Read Na1Ord (Lit $ LitLoc l)) @ s; E
+  [[{ RET LitV LitPoison; ∃ v, l ↦ v ∗ l' ↦! (FCell cell) }]].
+Proof.
+  iIntros (Φ) "[pt pt'] post". iApply twp_fupd.
+  (* untether the cell from the location, get a concrete value [v] *)
+  iMod (mapsto_vec_untether1 (l, []) (FCell cell) with "pt")
+    as (v) "[pt [retether ?]]".
+  change (Write Na1Ord (Lit (LitLoc l')) (Read Na1Ord (Lit (LitLoc l)))) with
+    (fill_item (WriteRCtx Na1Ord (LitV (LitLoc l')))
+      (Read Na1Ord (Lit (LitLoc l)))).
+  iApply twp_bind. iApply (twp_read_na with "pt"). iIntros "pt".
+  iApply (twp_write_na _ _ _ _ v with "pt'"); [done|]. iIntros "pt'".
+  iMod ("retether" $! (l', []) with "[pt']") as "[? pt']".
+  { iSplitR; [done|].
+    rewrite /heap_complete_mapsto_fancy /split_at_last /rev /=.
+    rewrite /heap_mapsto. iFrame "pt'". }
+  iModIntro. iApply "post". iFrame.
+Qed.
+
 (** ** Compare-and-swap
 
   Every one of these takes [£(3*d+1)] (guarded) or [£1] (plain) in the
@@ -651,6 +702,230 @@ Proof.
   iIntros (Hlen Hf) "Hel HΦ". rewrite -(vec_to_list_to_vec Ql).
   generalize (list_to_vec Ql). rewrite Hlen. clear Hlen Ql=>Ql.
   iApply (twp_app_vec with "Hel"). iIntros (vl) "Hvl".
+  iApply ("HΦ" with "[%] Hvl"). by rewrite length_vec_to_list.
+Qed.
+
+(** ** Partial-weakest-precondition forms of the guarded rules
+
+  Each is the total rule composed with [twp_wp_step]. *)
+Lemma wp_read_sc_guarded_cells `{!WsatIncl W na_wsat Wr} s E l c v
+    (G : iProp Σ) :
+  {{{ (G &&{na_wsat}&&> l ↦[^ c] v) ∗ G }}}[W]
+    Read ScOrd (Lit $ LitLoc l) @ s; E {{{ RET v; G }}}.
+Proof.
+  iIntros (?) "H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_read_sc_guarded_cells with "H"). iIntros "? →Φ !>".
+  by iApply "→Φ".
+Qed.
+
+Lemma wp_read_na_guarded_cells `{!WsatIncl W na_wsat Wr} s E l c v Gx :
+  {{{ (na_sem Gx &&{na_wsat}&&> (l ↦[^ c] v)) ∗ na_sem Gx }}}[W]
+    Read Na1Ord (Lit $ LitLoc l) @ s; E {{{ RET v; na_sem Gx }}}.
+Proof.
+  iIntros (?) "H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_read_na_guarded_cells with "H"). iIntros "? →Φ !>".
+  by iApply "→Φ".
+Qed.
+
+Lemma wp_write_sc_guarded `{!WsatIncl W na_wsat Wr} s E l c e v v' Gx :
+  IntoVal e v →
+  {{{ (na_sem Gx &&{na_wsat}&&> ((l,c) #↦_)) ∗ na_sem Gx ∗ (l,c) #↦ v' }}}[W]
+    Write ScOrd (Lit $ LitLoc l) e @ s; E
+  {{{ RET LitV LitPoison; (l,c) #↦ v ∗ na_sem Gx }}}.
+Proof.
+  iIntros (??) "H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_write_sc_guarded with "H"). iIntros "? →Φ !>". by iApply "→Φ".
+Qed.
+
+Lemma wp_write_na_guarded `{!WsatIncl W na_wsat Wr} s E l c e v v' Gx :
+  IntoVal e v →
+  {{{ (na_sem Gx &&{na_wsat}&&> ((l,c) #↦_)) ∗ na_sem Gx ∗ (l,c) #↦ v' }}}[W]
+    Write Na1Ord (Lit $ LitLoc l) e @ s; E
+  {{{ RET LitV LitPoison; (l,c) #↦ v ∗ na_sem Gx }}}.
+Proof.
+  iIntros (??) "H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_write_na_guarded with "H"). iIntros "? →Φ !>". by iApply "→Φ".
+Qed.
+
+Lemma wp_cas_int_fail_guarded `{!WsatIncl W na_wsat Wr} s E l c z1 e2 lit2 zl
+    Gx :
+  IntoVal e2 (LitV lit2) → z1 ≠ zl →
+  {{{ (na_sem Gx &&{na_wsat}&&> ((l,c) #↦_)) ∗ na_sem Gx
+      ∗ (l,c) #↦ LitV (LitInt zl) }}}[W]
+    CAS (Lit $ LitLoc l) (Lit $ LitInt z1) e2 @ s; E
+  {{{ RET LitV $ LitInt 0; na_sem Gx ∗ (l,c) #↦ LitV (LitInt zl) }}}.
+Proof.
+  iIntros (???) "H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_cas_int_fail_guarded with "H"); [done..|].
+  iIntros "? →Φ !>". by iApply "→Φ".
+Qed.
+
+Lemma wp_cas_suc_guarded `{!WsatIncl W na_wsat Wr} s E l c lit1 e2 lit2 Gx :
+  IntoVal e2 (LitV lit2) → lit1 ≠ LitPoison →
+  {{{ (na_sem Gx &&{na_wsat}&&> ((l,c) #↦_)) ∗ na_sem Gx
+      ∗ (l,c) #↦ LitV lit1 }}}[W]
+    CAS (Lit $ LitLoc l) (Lit lit1) e2 @ s; E
+  {{{ RET LitV $ LitInt 1; na_sem Gx ∗ (l,c) #↦ LitV lit2 }}}.
+Proof.
+  iIntros (???) "H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_cas_suc_guarded with "H"); [done..|].
+  iIntros "? →Φ !>". by iApply "→Φ".
+Qed.
+
+Lemma wp_cell_move_na `{!WsatIncl W na_wsat Wr} s E l l' cell v' :
+  {{{ l ↦! (FCell cell) ∗ l' ↦ v' }}}[W]
+    Write Na1Ord (Lit $ LitLoc l') (Read Na1Ord (Lit $ LitLoc l)) @ s; E
+  {{{ RET LitV LitPoison; ∃ v, l ↦ v ∗ l' ↦! (FCell cell) }}}.
+Proof.
+  iIntros (?) "H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_cell_move_na with "H"). iIntros "? →Φ !>". by iApply "→Φ".
+Qed.
+
+Lemma wp_read_na_guarded_cells_0 `{!WsatIncl W na_wsat Wr} s E l c v Gx :
+  {{{ (na_sem Gx &&{na_wsat}&&> (l ↦[^ c] v)) ∗ na_sem Gx }}}[W]
+    Read Na1Ord (Lit $ LitLoc l) @ s; E {{{ RET v; na_sem Gx }}}.
+Proof. exact: wp_read_na_guarded_cells. Qed.
+
+Lemma wp_read_na_guarded_cells_singleton `{!WsatIncl W na_wsat Wr} s E l c v
+    Gx :
+  {{{ (na_sem Gx &&{na_wsat}&&> (l ↦[^ c]∗ [v])) ∗ na_sem Gx }}}[W]
+    Read Na1Ord (Lit $ LitLoc l) @ s; E {{{ RET v; na_sem Gx }}}.
+Proof.
+  iIntros (?) "H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_read_na_guarded_cells_singleton with "H"). iIntros "? →Φ !>".
+  by iApply "→Φ".
+Qed.
+
+Lemma wp_read_na_guarded `{!WsatIncl W na_wsat Wr} s E l v Gx :
+  {{{ (na_sem Gx &&{na_wsat}&&> (l ↦ v)) ∗ na_sem Gx }}}[W]
+    Read Na1Ord (Lit $ LitLoc l) @ s; E {{{ RET v; na_sem Gx }}}.
+Proof. exact: (wp_read_na_guarded_cells s E l [] v Gx). Qed.
+
+Lemma wp_write_na_guarded_0 `{!WsatIncl W na_wsat Wr} s E l cells e v v' Gx :
+  IntoVal e v →
+  {{{ (na_sem Gx &&{na_wsat}&&> ((l,cells) #↦_)) ∗ na_sem Gx
+      ∗ (l,cells) #↦ v' }}}[W] Write Na1Ord (Lit $ LitLoc l) e @ s; E
+  {{{ RET LitV LitPoison; (l,cells) #↦ v ∗ na_sem Gx }}}.
+Proof. exact: wp_write_na_guarded. Qed.
+
+Lemma wp_cas_int_fail `{!WsatIncl W na_wsat Wr} s E l z1 e2 lit2 zl :
+  IntoVal e2 (LitV lit2) → z1 ≠ zl →
+  {{{ ▷ l ↦ LitV (LitInt zl) }}}[W]
+    CAS (Lit $ LitLoc l) (Lit $ LitInt z1) e2 @ s; E
+  {{{ RET LitV $ LitInt 0; l ↦ LitV (LitInt zl) }}}.
+Proof.
+  iIntros (???) ">H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_cas_int_fail with "H"); [done..|]. iIntros "? →Φ !>".
+  by iApply "→Φ".
+Qed.
+
+Lemma wp_cas_int_suc_guarded `{!WsatIncl W na_wsat Wr} s E l c z1 e2 lit2 Gx :
+  IntoVal e2 (LitV lit2) →
+  {{{ (na_sem Gx &&{na_wsat}&&> ((l,c) #↦_)) ∗ na_sem Gx
+      ∗ (l,c) #↦ LitV (LitInt z1) }}}[W]
+    CAS (Lit $ LitLoc l) (Lit $ LitInt z1) e2 @ s; E
+  {{{ RET LitV $ LitInt 1; na_sem Gx ∗ (l,c) #↦ LitV lit2 }}}.
+Proof.
+  iIntros (??) "H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_cas_int_suc_guarded with "H"). iIntros "? →Φ !>".
+  by iApply "→Φ".
+Qed.
+
+Lemma wp_cas_suc `{!WsatIncl W na_wsat Wr} s E l lit1 e2 lit2 :
+  IntoVal e2 (LitV lit2) → lit1 ≠ LitPoison →
+  {{{ ▷ l ↦ LitV lit1 }}}[W] CAS (Lit $ LitLoc l) (Lit lit1) e2 @ s; E
+  {{{ RET LitV (LitInt 1); l ↦ LitV lit2 }}}.
+Proof.
+  iIntros (???) ">H →Φ". iApply (twp_wp_step with "→Φ").
+  iApply (twp_cas_suc with "H"); [done..|]. iIntros "? →Φ !>".
+  by iApply "→Φ".
+Qed.
+
+Lemma wp_cas_int_suc `{!WsatIncl W na_wsat Wr} s E l z1 e2 lit2 :
+  IntoVal e2 (LitV lit2) →
+  {{{ ▷ l ↦ LitV (LitInt z1) }}}[W]
+    CAS (Lit $ LitLoc l) (Lit $ LitInt z1) e2 @ s; E
+  {{{ RET LitV (LitInt 1); l ↦ LitV lit2 }}}.
+Proof. iIntros (??) "pt HΦ". iApply (wp_cas_suc with "pt") => //. Qed.
+
+Lemma wp_cas_loc_suc `{!WsatIncl W na_wsat Wr} s E l l1 e2 lit2 :
+  IntoVal e2 (LitV lit2) →
+  {{{ ▷ l ↦ LitV (LitLoc l1) }}}[W]
+    CAS (Lit $ LitLoc l) (Lit $ LitLoc l1) e2 @ s; E
+  {{{ RET LitV (LitInt 1); l ↦ LitV lit2 }}}.
+Proof. iIntros (??) "pt HΦ". iApply (wp_cas_suc with "pt") => //. Qed.
+
+Lemma wp_eq_loc `{!WsatIncl W na_wsat Wr} s E (l1 l2 : loc) v1 v2 P Φ :
+  (P ⊢ ▷ l1 ↦ v1) → (P ⊢ ▷ l2 ↦ v2) →
+  (P ⊢ ▷ Φ (LitV (bool_decide (l1 = l2)))) →
+  P ⊢ WP[W] BinOp EqOp (Lit (LitLoc l1)) (Lit (LitLoc l2)) @ s; E {{ Φ }}.
+Proof.
+  iIntros (Hl1 Hl2 Hpost) "P".
+  destruct (bool_decide_reflect (l1 = l2)) as [->|].
+  - iApply (wp_lift_pure_det_base_step_no_fork (Λ:=lrust_ectx_lang));
+      [done|solve_exec_safe|solve_exec_puredet|].
+    rewrite Hpost. iIntros "!>!>!> _". by iApply wp_value.
+  - iApply wp_lift_atomic_base_step_no_fork; subst=>//.
+    iIntros (?????) "[W Hσ1]".
+    iDestruct (wsat_split (W':=na_wsat) with "W") as "[Wna Wr]".
+    inv_head_step. iModIntro. iSplit.
+    { iPureIntro. repeat eexists. econstructor. eapply BinOpEqFalse. by auto. }
+    iAssert (▷ (l1 ↦ v1 ∧ l2 ↦ v2 ∧ Φ (LitV false)))%I with "[P]" as "P".
+    { iSplit; last iSplit; by [iApply Hl1|iApply Hl2|iApply Hpost]. }
+    clear Hl1 Hl2. iIntros (????) "!> _". inv_head_step.
+    iSplitR=>//. inv_bin_op_eval; inv_lit.
+    + iExFalso. iDestruct "P" as "[Hl1 _]".
+      iDestruct (heap_read with "Hσ1 Hl1 Wna") as "(_ & _ & _ & %X)".
+      destruct X as [? X]. by simplify_eq.
+    + iExFalso. iDestruct "P" as "[_ [Hl2 _]]".
+      iDestruct (heap_read with "Hσ1 Hl2 Wna") as "(_ & _ & _ & %X)".
+      destruct X as [? X]. by simplify_eq.
+    + iSplitR "P"; last by iDestruct "P" as "[_ [_ $]]".
+      iSplitL "Wna Wr".
+      { iModIntro. iApply (wsat_join (W:=W) (W':=na_wsat) (Wr:=Wr)). iFrame. }
+      iModIntro. iFrame "Hσ1".
+Qed.
+
+Lemma wp_app_ind W s E f (el : list expr)
+    (Ql : vec (val → iProp Σ) (length el)) vs Φ :
+  AsVal f →
+  ([∗ list] eQ ∈ zip el Ql, WP[W] eQ.1 @ s; E {{ eQ.2 }}) -∗
+    (∀ vl : vec val (length el), ([∗ list] vQ ∈ zip vl Ql, vQ.2 $ vQ.1) -∗
+                    WP[W] App f (of_val <$> vs ++ vl) @ s; E {{ Φ }}) -∗
+    WP[W] App f ((of_val <$> vs) ++ el) @ s; E {{ Φ }}.
+Proof.
+  intros [vf <-]. revert vs Ql.
+  induction el as [|e el IH]=>/= vs Ql; inv_vec Ql; simpl.
+  - iIntros "_ H". iSpecialize ("H" $! [#]). rewrite !app_nil_r /=.
+    by iApply "H".
+  - iIntros (Q Ql) "[He Hl] HΦ".
+    change (App (of_val vf) ((of_val <$> vs) ++ e :: el)) with
+      (fill_item (AppRCtx vf vs el) e).
+    iApply wp_bind. iApply (wp_wand with "He"). iIntros (v) "HQ /=".
+    rewrite cons_middle (assoc app) -(fmap_app _ _ [v]).
+    iApply (IH _ _ with "Hl"). iIntros "%vl Hvl". rewrite -assoc.
+    iApply ("HΦ" $! (v:::vl)). iFrame.
+Qed.
+
+Lemma wp_app_vec W s E f el (Ql : vec (val → iProp Σ) (length el)) Φ :
+  AsVal f →
+  ([∗ list] eQ ∈ zip el Ql, WP[W] eQ.1 @ s; E {{ eQ.2 }}) -∗
+    (∀ vl : vec val (length el), ([∗ list] vQ ∈ zip vl Ql, vQ.2 $ vQ.1) -∗
+                    WP[W] App f (of_val <$> (vl : list val)) @ s; E {{ Φ }}) -∗
+    WP[W] App f el @ s; E {{ Φ }}.
+Proof. iIntros (Hf). by iApply (wp_app_ind _ _ _ _ _ _ []). Qed.
+
+Lemma wp_app (Ql : list (val → iProp Σ)) W s E f el Φ :
+  length Ql = length el → AsVal f →
+  ([∗ list] eQ ∈ zip el Ql, WP[W] eQ.1 @ s; E {{ eQ.2 }}) -∗
+    (∀ vl : list val, ⌜length vl = length el⌝ -∗
+            ([∗ list] k ↦ vQ ∈ zip vl Ql, vQ.2 $ vQ.1) -∗
+             WP[W] App f (of_val <$> (vl : list val)) @ s; E {{ Φ }}) -∗
+    WP[W] App f el @ s; E {{ Φ }}.
+Proof.
+  iIntros (Hlen Hf) "Hel HΦ". rewrite -(vec_to_list_to_vec Ql).
+  generalize (list_to_vec Ql). rewrite Hlen. clear Hlen Ql=>Ql.
+  iApply (wp_app_vec with "Hel"). iIntros (vl) "Hvl".
   iApply ("HΦ" with "[%] Hvl"). by rewrite length_vec_to_list.
 Qed.
 
