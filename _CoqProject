@@ -179,3 +179,4 @@ nola/alerus/typing/cont.v
 nola/alerus/typing/tracked.v
 nola/alerus/typing/own.v
 nola/alerus/typing/ghost.v
+nola/alerus/typing/sum.v
