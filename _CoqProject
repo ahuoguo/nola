@@ -131,6 +131,10 @@ nola/alerus/util/atomic_lock_counter.v
 nola/alerus/util/cellmap.v
 nola/alerus/lang/lang.v
 nola/alerus/util/non_atomic_cell_map.v
+nola/alerus/lang/notation.v
+nola/alerus/lang/tactics.v
+nola/alerus/lang/heap.v
+nola/alerus/lang/lifting.v
 nola/alerus/lifetime/inv.v
 nola/alerus/lifetime/augment_outlives.v
 nola/alerus/lifetime/new_lt.v
@@ -142,3 +146,9 @@ nola/alerus/lifetime/unnest.v
 nola/alerus/lifetime/unborrow.v
 nola/alerus/lifetime/expire_lt.v
 nola/alerus/lifetime/lifetime_full.v
+nola/alerus/lang/proofmode.v
+nola/alerus/lang/adequacy.v
+nola/alerus/lang/races.v
+nola/alerus/frac_guard.v
+nola/alerus/lang/lib/memcpy.v
+nola/alerus/lang/lib/new_delete.v

@@ -217,6 +217,13 @@ Section guard.
     iFrame "T".
   Qed.
 
+  (** A guard on [False] guards anything *)
+  Lemma guard_false {W P Q} : (P &&{W}&&> False) ⊢ P &&{W}&&> Q.
+  Proof.
+    iIntros "g". iApply (guard_trans with "g"). iApply guard_intro.
+    by iIntros "!> []".
+  Qed.
+
   (** Anything guards [True], in an affine logic *)
   Lemma guard_true `{!BiAffine PROP} {W P} : ⊢ P &&{W}&&> True.
   Proof.

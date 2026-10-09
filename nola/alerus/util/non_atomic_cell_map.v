@@ -1416,3 +1416,41 @@ Global Notation "l @↦[ ι ][^ cells ] v" := (points_to_seq ι l cells v)
 
 Global Notation "l @↦[ ι ] v" := (points_to_seq ι l [] v)
     (at level 20, format "l  @↦[ ι ]  v") : bi_scope.
+
+(** ** Allocation independent of the interpretation
+
+  [non_atomic_map ι ∅] is independent of [NaSem]: the read and write banks are
+  indexed by the (empty) heap, so the [na_sem]-carrying big separating
+  conjunctions are vacuous.  Stating the allocation with the [NaSem] instance
+  universally quantified *inside* lets a client fix the interpretation after
+  the ghost names exist - which it must, since the interpretation of a
+  points-to formula mentions the very name allocated here.  Compare
+  [nola.iris.sinv.sinv_wsat_alloc]. *)
+Section NonAtomicMapAlloc.
+  Context `{!EqDecision L, !Countable L}.
+  Context `{!Inhabited V}.
+  Context {Σ: gFunctors} {FML : oFunctor}.
+  Context `{!na_logicG L V FML Σ}.
+
+  Lemma non_atomic_map_alloc_empty_any :
+    ⊢ |==> ∃ ι, ∀ naS : NaSem FML Σ, non_atomic_map (NaSem0:=naS) ι ∅.
+  Proof.
+    iMod (cmap_init) as (ιh0) "H".
+    iMod (@own_alloc Σ _ na2_inG (gmap_view_auth (DfracOwn 1) ∅))
+      as (ιi0) "H2". { apply gmap_view_auth_valid. }
+    iMod (@own_alloc Σ _ na3_inG (gmap_view_auth (DfracOwn 1) ∅))
+      as (ιj0) "H3". { apply gmap_view_auth_valid. }
+    iModIntro. iExists (prod_encode ιh0 (prod_encode ιi0 ιj0)). iIntros (naS).
+    rewrite non_atomic_map_unseal /non_atomic_map_def /read_bank /write_bank
+      /ιh /ιi /ιj /ιf1 /ιf2.
+    repeat (rewrite prod_decode_encode_fst || rewrite prod_decode_encode_snd).
+    replace (erase_count_map ∅) with (∅: gmap L V) by done. iFrame "H".
+    iSplitL "H2".
+    - iExists ∅. iFrame. iSplit; [|done]. iPureIntro.
+      rewrite /counts_agree_r /heap_count_r /m_count=> l.
+      by rewrite lookup_empty.
+    - iExists ∅. iFrame. iSplit; [|done]. iPureIntro.
+      rewrite /counts_agree_w /heap_count_w /m_count=> l.
+      by rewrite lookup_empty.
+  Qed.
+End NonAtomicMapAlloc.
