@@ -104,6 +104,48 @@ Class EmptySem (FML : oFunctor) Σ `{!BorSem FML Σ} := {
   empty_fml_sem : bor_sem empty_fml ⊣⊢ True;
 }.
 
+(** ** Guard sources for the Points-To Cell Logic
+
+  VerusBelt's [typed_read] and [typed_write] hand the client an arbitrary
+  [Timeless] proposition [H] as the source of the read (resp. write) guard.
+  The Points-To Cell Logic parks that source in its read and write banks
+  while the access is in flight (see
+  [nola.alerus.util.non_atomic_cell_map]), and the banks remember *which*
+  proposition they hold with an [agreeR (FML $oi Σ)].  Agreeing on an
+  arbitrary [iProp Σ] instead would be [saved_prop], and reading one back
+  costs a later - exactly what this development is built to avoid.  So a
+  guard source has to be a formula.
+
+  Rather than demand a constructor of [FML] for each source the typing layer
+  happens to use, we collect their shapes in one [Σ]-free datatype and ask
+  for a single constructor interpreting it.  New shapes are added here as
+  new types need them. *)
+Inductive gsrc : Type :=
+| (** [True] *) GTrue
+| (** Separating conjunction *) GSep (s s' : gsrc)
+| (** A fractional share [frac_tok γ q], as held by [Ltok] and [Ktok] *)
+  GFrac (γ : gname) (q : Qp).
+
+Section gsrc_interp.
+  Context `{!inG Σ frac_shareR}.
+
+  Fixpoint gsrc_interp (s : gsrc) : iProp Σ :=
+    match s with
+    | GTrue => True
+    | GSep s s' => gsrc_interp s ∗ gsrc_interp s'
+    | GFrac γ q => frac_tok γ q
+    end%I.
+
+  #[export] Instance gsrc_interp_timeless {s} : Timeless (gsrc_interp s).
+  Proof. elim s; apply _. Qed.
+End gsrc_interp.
+
+(** The formula language must express every guard source *)
+Class GsrcSem (FML : oFunctor) Σ `{!BorSem FML Σ, !inG Σ frac_shareR} := {
+  gsrc_fml : gsrc → FML $oi Σ;
+  gsrc_fml_sem s : bor_sem (gsrc_fml s) ⊣⊢ gsrc_interp s;
+}.
+
 (** All the ghost state of the typing layer.
 
   [HeapSem] is deliberately *not* a field: it is stated against [NaSem], and
@@ -124,6 +166,7 @@ Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
   #[global] alerus_uniqG :: uniqG Σ;
   #[global] alerus_cnaGS :: cnaGS FML Σ;
   #[global] alerus_fracGS :: fracGuardGS FML Σ;
+  #[global] alerus_gsrcSem :: GsrcSem FML Σ;
   #[global] alerus_eternalG :: inG Σ (authUR (gsetUR lft));
   #[global] alerus_llctxFracGS :: fracKeyGS llctx Σ;
   #[global] alerus_lftsFracGS :: fracKeyGS (gmultiset lft) Σ;
@@ -237,6 +280,19 @@ Section alerus.
     Ltok γ L q -∗
       (Ltok γ L q &&{alerus_WGuard}&&> llctx_interp L) ∗ Ltok γ L q.
   Proof. iIntros "[#tok $]". iFrame "tok". by iApply Ltok_guard. Qed.
+
+  (** The share alone, without the persistent key, is a guard source: this is
+    the form [typed_read] and [typed_write] hand out, since only a formula
+    can go into the Points-To Cell Logic's banks. *)
+  Lemma Ltok_guard_frac {γ L q} :
+    frac_key_tok γ L ⊢ frac_tok γ q &&{alerus_WGuard}&&> llctx_interp L.
+  Proof. iApply (frac_key_guard_wsat llctx_interp). Qed.
+
+  (** Directed forms of [gsrc_fml_sem], for [iDestruct] *)
+  Lemma gsrc_fml_sem_1 {s} : bor_sem (gsrc_fml s) ⊢ gsrc_interp s.
+  Proof. by rewrite gsrc_fml_sem. Qed.
+  Lemma gsrc_fml_sem_2 {s} : gsrc_interp s ⊢ bor_sem (gsrc_fml s).
+  Proof. by rewrite gsrc_fml_sem. Qed.
 
   (** Open a share against the world satisfaction *)
   Lemma Ltok_acc `{!WsatIncl W alerus_WGuard Wr} {γ L q} :

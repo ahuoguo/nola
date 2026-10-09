@@ -173,3 +173,4 @@ nola/alerus/typing/int.v
 nola/alerus/typing/product.v
 nola/alerus/typing/uninit.v
 nola/alerus/typing/base_type.v
+nola/alerus/typing/shr_bor.v
