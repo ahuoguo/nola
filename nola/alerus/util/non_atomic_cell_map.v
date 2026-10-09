@@ -1234,11 +1234,170 @@ Section NonAtomicMap.
     iModIntro. iFrame. done.
   Qed.
 
-  (** TODO: still to port from the original, in order:
-    the [pt_seq_*] /
-    [pt_alloc_cell] / [pt_delete_cell] algebra, which are thin wrappers around
-    [nola.alerus.util.cellmap] and should port near-verbatim.  The two banks,
-    which carry all of the original's laters and later credits, are
-    complete. *)
+  (** ** The cell algebra
+
+    These are thin wrappers around [nola.alerus.util.cellmap] and port
+    verbatim; the original's [factoring_props.point_prop] is
+    [nola.iris.point.point_prop]. *)
+
+  Lemma pt_seq_cons ι lc cell cells cv :
+      lc @↦[ι][^ cell :: cells] cv ⊣⊢
+        lc @↦[ι] (inl cell) ∗ (inr cell) @↦[ι][^ cells] cv.
+  Proof. unseal. done. Qed.
+
+  Lemma pt_seq_cons_and ι lc cell cells cv :
+      lc @↦[ι] (inl cell) ∧ (inr cell) @↦[ι][^cells] cv ⊢
+        lc @↦[ι][^ cell :: cells] cv.
+  Proof. unseal. apply cmap_pt_and_cons. Qed.
+
+  Lemma pt_seq_cons_back_and ι lc cell cells cv :
+      lc @↦[ι][^cells] (inl cell) ∧ (inr cell) @↦[ι] cv ⊢
+        lc @↦[ι][^ cells ++ [cell]] cv.
+  Proof.
+      generalize lc. clear lc. induction cells; intro lc.
+        - simpl. apply pt_seq_cons_and.
+        - simpl. iIntros "And". iApply (pt_seq_cons_and). iSplit.
+          + rewrite pt_seq_cons. iDestruct "And" as "[[$ _] _]".
+          + iApply IHcells. iSplit.
+            * rewrite pt_seq_cons. iDestruct "And" as "[[_ $] _]".
+            * iDestruct "And" as "[_ $]".
+  Qed.
+
+  Lemma pt_seq_snoc ι lc cell cells cv :
+    lc @↦[ι][^ cells ++ [cell]] cv ⊣⊢
+      lc @↦[ι][^cells] inl cell ∗ inr cell @↦[ι] cv.
+  Proof.
+    rewrite points_to_seq_unseal /points_to_seq_def.
+    by rewrite cellmap.cmap_pt_seq_cons_back.
+  Qed.
+
+  (** Cell-And *)
+  Lemma pt_seq_app_and ι lc cells1 cell cells2 cv :
+      lc @↦[ι][^cells1] (inl cell) ∧ (inr cell) @↦[ι][^cells2] cv
+          ⊣⊢ lc @↦[ι][^ cells1 ++ cell :: cells2] cv.
+  Proof.
+      iSplit.
+        - iStopProof. generalize lc. clear lc. induction cells1.
+          + iIntros (lc) "_ A". iApply (pt_seq_cons_and with "A").
+          + iIntros (lc) "_ A". simpl. iApply pt_seq_cons_and. iSplit.
+            * iDestruct "A" as "[A _]". rewrite pt_seq_cons.
+              iDestruct "A" as "[$ _]".
+            * iApply IHcells1; first done. iSplit.
+              -- iDestruct "A" as "[A _]". rewrite pt_seq_cons.
+                 iDestruct "A" as "[_ $]".
+              -- iDestruct "A" as "[_ $]".
+        - iIntros "A". iSplit.
+          + iStopProof. generalize lc. clear lc. induction cells1.
+            * iIntros (lc). simpl. rewrite pt_seq_cons. iIntros "[$ _]".
+            * iIntros (lc). simpl. do 2 rewrite pt_seq_cons.
+              iIntros "[A B]". iFrame "A". iApply IHcells1. iFrame "B".
+          + iStopProof. generalize lc. clear lc. induction cells1.
+            * iIntros (lc). simpl. rewrite pt_seq_cons. iIntros "[_ $]".
+            * iIntros (lc). simpl. rewrite pt_seq_cons. iIntros "[_ B]".
+              iApply IHcells1. iFrame "B".
+  Qed.
+
+  (** Cell-Sep *)
+  Lemma pt_seq_app_sep ι lc cells1 cell cells2 cv :
+      lc @↦[ι][^cells1] (inl cell) ∗ (inr cell) @↦[ι][^cells2] cv
+          ⊣⊢ lc @↦[ι][^ cells1 ++ cell :: cells2] cv.
+  Proof.
+      iSplit.
+        - iIntros "[A B]". iApply pt_seq_app_and. iSplit; iFrame.
+        - iIntros "A".
+          iStopProof. generalize lc. clear lc. induction cells1.
+          + iIntros (lc). simpl. rewrite pt_seq_cons. iIntros "$".
+          + iIntros (lc). simpl. do 2 rewrite pt_seq_cons. iIntros "[$ B]".
+            iApply IHcells1. iFrame "B".
+  Qed.
+
+  Lemma pt_seq_andM_sepM ι (rows: gmap L ((list cell_id) * (cell_id + V))) :
+      ([∧ map] l ↦ '(cells, cv) ∈ rows, (inl l) @↦[ι][^cells] cv)%I ⊢
+      [∗ map] l ↦ '(cells, cv) ∈ rows, (inl l) @↦[ι][^cells] cv.
+  Proof. unseal. apply cmap_andM_sepM. Qed.
+
+  Local Lemma pt_untether' ι lc cell :
+      lc @↦[ι] (inl cell) ==∗
+        ∃ (v: V), lc @↦[ι] (inr v)
+          ∗ (∀ l cells, inl l @↦[ι][^ cells] inr v ==∗
+               inl l @↦[ι][^ cells] inl cell).
+  Proof.
+    unseal. iIntros "pts". iMod (cmap_untether with "pts") as (v) "[pts back]".
+    iModIntro. iExists v. rewrite pt_seq_singleton. iFrame "pts".
+    iIntros (l cells) "pt". by iMod (cmap_retether with "pt back").
+  Qed.
+
+  Lemma pt_untether ι lc cells cell :
+      lc @↦[ι][^cells] (inl cell) ==∗
+        ∃ (v: V), lc @↦[ι][^cells] (inr v)
+          ∗ (∀ l cells, inl l @↦[ι][^ cells] inr v ==∗
+               inl l @↦[ι][^ cells] inl cell).
+  Proof.
+      destruct (cellmap.case_last_c cell_id cells)
+        as [[_ Hcells]|[prefix [last [_ Hcells]]]].
+       - subst cells. apply pt_untether'.
+       - subst cells. rewrite pt_seq_snoc. iIntros "[A B]".
+         iMod (pt_untether' with "B") as (v) "[B back]".
+         iModIntro. iExists v. rewrite pt_seq_snoc. iFrame.
+  Qed.
+
+  Lemma pt_seq_point_prop ι lc cells cv :
+      point_prop (lc @↦[ι][^ cells] cv).
+  Proof. unseal. apply cmap_pt_seq_point_prop. Qed.
+
+  (** Cell-Fresh *)
+  Lemma pt_alloc_cell' ι lc cv :
+      lc @↦[ι] cv ==∗ ∃ c, lc @↦[ι][^ [c]] cv.
+  Proof.
+    destruct lc as [l|c].
+    - destruct cv as [c'|v].
+      + (* untether the existing cell; insert the new cell; retether *)
+        iIntros "pt". iMod (pt_untether with "pt") as (v) "[pt retether]".
+        iMod (cmap_alloc_unt _ _ _ (ιh ι) v) as (c) "[pt2 unt]".
+        iMod (cmap_retether with "[pt] unt") as "pt". { unseal. iFrame. }
+        iDestruct ("retether" $! l [c] with "[pt pt2]") as "J".
+          { unseal. rewrite cmap_pt_seq_cons. rewrite pt_seq_singleton. iFrame. }
+        iExists c. done.
+      + (* insert new cell immediately *)
+        iIntros "pt".
+        iMod (cmap_alloc_unt _ _ _ (ιh ι) v) as (c) "[pt2 unt]".
+        iMod (cmap_retether with "[pt] unt") as "pt". { unseal. iFrame. }
+        iModIntro. iExists c. unseal. rewrite pt_seq_singleton. iFrame.
+    - iIntros "pt". unseal.
+      iMod (cmap_alloc_cell_after_cell with "pt") as (new_c) "[pt1 pt2]".
+      iModIntro. iExists new_c. iFrame.
+  Qed.
+
+  Lemma pt_alloc_cell ι lc cells cv :
+      lc @↦[ι][^ cells] cv ==∗ ∃ c, lc @↦[ι][^ c :: cells] cv.
+  Proof.
+      destruct cells as [|cell cells].
+      - apply pt_alloc_cell'.
+      - iIntros "a". rewrite pt_seq_cons. iDestruct "a" as "[pt rest]".
+        iMod (pt_alloc_cell' with "pt") as (c) "pt".
+        iModIntro. iExists c.
+        do 3 rewrite pt_seq_cons. iDestruct "pt" as "[$ $]". iFrame.
+  Qed.
+
+  Lemma pt_delete_cell ι l c cells cv :
+      inl l @↦[ι][^ c :: cells] cv ==∗ inl l @↦[ι][^ cells] cv.
+  Proof.
+      destruct cells as [|cell cells].
+      - iIntros "pt".
+        unseal. rewrite !cmap_pt_seq_cons. rewrite !pt_seq_singleton.
+        iDestruct "pt" as "[pt1 pt2]".
+        by iMod (cmap_delete_cell with "pt1 pt2") as "pt".
+      - iIntros "pt".
+        unseal. rewrite !cmap_pt_seq_cons. rewrite !pt_seq_singleton.
+        iDestruct "pt" as "[pt1 [pt2 pt3]]".
+        iMod (cmap_delete_cell with "pt1 pt2") as "pt".
+        by iFrame.
+  Qed.
 
 End NonAtomicMap.
+
+Global Notation "l @↦[ ι ][^ cells ] v" := (points_to_seq ι l cells v)
+    (at level 20, format "l  @↦[ ι ][^ cells ]  v") : bi_scope.
+
+Global Notation "l @↦[ ι ] v" := (points_to_seq ι l [] v)
+    (at level 20, format "l  @↦[ ι ]  v") : bi_scope.
