@@ -76,6 +76,17 @@ Class ShrBorSem (FML : oFunctor) Σ `{!llft_logicGS Σ, !BorSem FML Σ} := {
       bor_sem Px ∨ ((∃ k, ⌜k ∈ κ⌝ ∗ Dead llft_name k) ∗ CCancel γc);
 }.
 
+(** The shared-borrow ghost name and the user's guarding world satisfaction.
+
+  These used to be section variables, which made *every* lemma below take them
+  as two explicit arguments once the section closed - so a client could not
+  even write [κ ⊑ κ'] without threading them.  As a class they are inferred
+  instead. *)
+Class LlftWG (Σ : gFunctors) : Type := LlftWGS {
+  llft_shr_name : gname;
+  llft_WG : iProp Σ;
+}.
+
 Section LlftLogic.
   #[local] Set Default Proof Using "All".
   Context {Σ: gFunctors} {FML : oFunctor}.
@@ -86,14 +97,15 @@ Section LlftLogic.
     borrows.  The box uses the ambient [sinvGS]; this one is separate.  It is
     introduced as a plain ghost name rather than a [Context] of class type, so
     that it does not become a typeclass instance and get picked up by the box. *)
-  Context (shr_name : gname).
+  Context `{!LlftWG Σ}.
+  Local Notation shr_name := llft_shr_name.
   Local Definition shrGS : sinvGS FML Σ := SinvGS FML Σ sinvGS_pre shr_name.
   Context `{!ShrBorSem FML Σ}.
   (** [unnest] needs the formula language to express borrow-state ownership. *)
   Context `{!BorStateFml llft_name}.
   (** The user's guarding world satisfaction, Leaf's [↑NllftG] minus the
     lifetime logic's own invariants. *)
-  Context (WG : iProp Σ).
+  Local Notation WG := llft_WG.
 
   (*** Lifetime logic ***)
 
@@ -1923,7 +1935,7 @@ Lemma llft_wsat_alloc {Σ : gFunctors} {FML : oFunctor} {hlc}
   `{!llft_logicGpreS Σ, !sinvGpreS FML Σ, !invGS_gen hlc Σ, !BorSem FML Σ}
   (WG : iProp Σ) :
   WG ⊢ |==> ∃ (_ : llft_logicGS Σ) (_ : sinvGS FML Σ) (shr_name : gname),
-    llft_wsat shr_name WG.
+    llft_wsat (LlftWG0 := LlftWGS Σ shr_name WG).
 Proof.
   iIntros "WG".
   iMod lt_alloc as (γ) "[J [Ab Modulo]]".
@@ -1941,7 +1953,7 @@ Proof.
   { iIntros (?). iApply ne_internal_ne. solve_proper. }
   iModIntro. iExists (LlftLogicG _ _ γ γo γd), Hbox, shr_name.
   rewrite /llft_wsat /llft_wsatG /shr_wsat /llft_inv_other /llft_outlives
-    /llft_inv_main /box_wsat.
+    /llft_inv_main /box_wsat /llft_shr_name /llft_WG /=.
   iFrame "WG Wshr Wbox".
   iSplitR "D2 O2"; last first.
   { iExists ∅. iFrame "D2 O2". iIntros (o) "%Ho". set_solver. }
@@ -1972,6 +1984,7 @@ Qed.
 
 Notation "@[ κ ]" := (llft_alive κ) (format "@[ κ ]") : bi_scope.
 Notation "[† κ ]" := (llft_dead κ) (format "[† κ ]") : bi_scope.
-Infix "⊑" := llft_incl (at level 70) : bi_scope.
-Notation "&{ κ }" := (full_bor κ) (format "&{ κ }") : bi_scope.
-Notation "&{ κ , i }" := (idx_bor κ i) (format "&{ κ , i }") : bi_scope.
+
+(** [llft_incl], [full_bor] and [idx_bor] take their arguments in an order the
+  notations cannot express before [LlftWG] is fixed, so the typing layer
+  defines them (see [nola.alerus.typing.ctx]). *)

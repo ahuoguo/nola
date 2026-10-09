@@ -26,7 +26,7 @@
 From nola.bi Require Export guard modw.
 From nola.iris Require Export sinv guard point.
 From nola.alerus Require Import own_and.
-From iris.algebra Require Import frac csum excl.
+From iris.algebra Require Import frac csum excl gmap_view agree.
 From iris.proofmode Require Import proofmode.
 From iris.prelude Require Import options.
 Import iPropAppNotation GuardNotation ModwNotation.
@@ -54,45 +54,22 @@ Definition fracGuardΣ FML `{!oFunctorContractive FML} : gFunctors :=
   `{!oFunctorContractive FML, !subG (fracGuardΣ FML) Σ} : fracGuardGpreS FML Σ.
 Proof. solve_inG. Qed.
 
-Section frac_guard.
-  Context `{!fracGuardGS FML Σ}.
-  Implicit Type (Px Qx : FML $oi Σ) (sm : FML $oi Σ → iProp Σ) (γ : gname)
-    (q : Qp).
-
-  (** The simple-invariant family the shares live in.
-
-    Deliberately a plain definition rather than a [Context] of class type: a
-    [Context (x : C)] on a class [C] registers [x] as an instance, which would
-    silently capture every other [sinvGS FML Σ] in scope. *)
-  Definition frac_sinvGS : sinvGS FML Σ :=
-    SinvGS FML Σ frac_guard_sinvGpreS frac_guard_name.
-  Local Notation sinv_tok' := (sinv_tok (sinvGS0:=frac_sinvGS)).
-  Local Notation sinv_wsat' := (sinv_wsat (sinvGS0:=frac_sinvGS)).
+(** ** The shares themselves, independent of what is shared *)
+Section frac_share.
+  Context `{!inG Σ frac_shareR}.
+  Implicit Type (γ : gname) (q : Qp).
 
   (** A share of [γ], and the death token of [γ] *)
   Definition frac_tok γ q : iProp Σ := own γ (Some (Cinl q) : frac_shareR).
   Definition frac_dead γ : iProp Σ :=
     own γ (Some (Cinr (Excl ())) : frac_shareR).
   (** The half share, as in Leaf *)
-  Definition half γ : iProp Σ := frac_tok γ (1/2)%Qp.
+  Definition frac_half γ : iProp Σ := frac_tok γ (1/2)%Qp.
 
   #[export] Instance frac_tok_timeless {γ q} : Timeless (frac_tok γ q).
   Proof. exact _. Qed.
   #[export] Instance frac_dead_timeless {γ} : Timeless (frac_dead γ).
   Proof. exact _. Qed.
-
-  (** What the world satisfaction holds for each share: either the content, or
-    the death token saying the content has been withdrawn *)
-  Definition frac_body sm γ Px : iProp Σ := frac_dead γ ∨ sm Px.
-  (** World satisfaction for fractional guards *)
-  Definition frac_wsat sm : iProp Σ := sinv_wsat' (frac_body sm).
-
-  (** The token for a share, naming the content *)
-  Definition frac_sinv γ Px : iProp Σ := sinv_tok' γ Px.
-  #[export] Instance frac_sinv_persistent {γ Px} : Persistent (frac_sinv γ Px).
-  Proof. exact _. Qed.
-  #[export] Instance frac_sinv_ne {γ} : NonExpansive (frac_sinv γ).
-  Proof. rewrite /frac_sinv. exact: sinv_tok_ne. Qed.
 
   (** ** Arithmetic of shares *)
 
@@ -102,8 +79,8 @@ Section frac_guard.
   Lemma frac_tok_half {γ q} :
     frac_tok γ q ⊣⊢ frac_tok γ (q/2) ∗ frac_tok γ (q/2).
   Proof. by rewrite -frac_tok_add Qp.div_2. Qed.
-  Lemma half_add {γ} : frac_tok γ 1 ⊣⊢ half γ ∗ half γ.
-  Proof. by rewrite /half -frac_tok_add Qp.half_half. Qed.
+  Lemma frac_half_add {γ} : frac_tok γ 1 ⊣⊢ frac_half γ ∗ frac_half γ.
+  Proof. by rewrite /frac_half -frac_tok_add Qp.half_half. Qed.
 
   (** A share and the death token cannot coexist, even under conjunction.
 
@@ -127,12 +104,62 @@ Section frac_guard.
     - by destruct val.
   Qed.
 
+  (** Allocate a fresh share outside a given finite set of names *)
+  Lemma frac_tok_alloc (I : gset gname) :
+    ⊢ |==> ∃ γ, ⌜γ ∉ I⌝ ∧ (frac_half γ ∗ frac_half γ).
+  Proof.
+    iMod (own_alloc_cofinite
+      (Some (Cinl (1/2)%Qp) ⋅ Some (Cinl (1/2)%Qp) : frac_shareR) I)
+      as (γ) "[% [??]]".
+    { by rewrite -Some_op -Cinl_op frac_op Qp.half_half. }
+    iModIntro. iExists γ. iFrame. by iPureIntro.
+  Qed.
+
+  (** Kill a share, handing out the death token *)
+  Lemma frac_tok_kill {γ} : frac_tok γ 1 ==∗ frac_dead γ.
+  Proof.
+    rewrite /frac_tok /frac_dead. iIntros "tok".
+    iApply (own_update with "tok"). apply option_update.
+    by apply cmra_update_exclusive.
+  Qed.
+End frac_share.
+
+Section frac_guard.
+  Context `{!fracGuardGS FML Σ}.
+  Implicit Type (Px Qx : FML $oi Σ) (sm : FML $oi Σ → iProp Σ) (γ : gname)
+    (q : Qp).
+
+  (** The simple-invariant family the shares live in.
+
+    Deliberately a plain definition rather than a [Context] of class type: a
+    [Context (x : C)] on a class [C] registers [x] as an instance, which would
+    silently capture every other [sinvGS FML Σ] in scope. *)
+  Definition frac_sinvGS : sinvGS FML Σ :=
+    SinvGS FML Σ frac_guard_sinvGpreS frac_guard_name.
+  Local Notation sinv_tok' := (sinv_tok (sinvGS0:=frac_sinvGS)).
+  Local Notation sinv_wsat' := (sinv_wsat (sinvGS0:=frac_sinvGS)).
+
+
+  (** What the world satisfaction holds for each share: either the content, or
+    the death token saying the content has been withdrawn *)
+  Definition frac_body sm γ Px : iProp Σ := frac_dead γ ∨ sm Px.
+  (** World satisfaction for fractional guards *)
+  Definition frac_wsat sm : iProp Σ := sinv_wsat' (frac_body sm).
+
+  (** The token for a share, naming the content *)
+  Definition frac_sinv γ Px : iProp Σ := sinv_tok' γ Px.
+  #[export] Instance frac_sinv_persistent {γ Px} : Persistent (frac_sinv γ Px).
+  Proof. exact _. Qed.
+  #[export] Instance frac_sinv_ne {γ} : NonExpansive (frac_sinv γ).
+  Proof. rewrite /frac_sinv. exact: sinv_tok_ne. Qed.
+
+
   (** ** Allocating, guarding and withdrawing *)
 
   (** Deposit the content and get two halves *)
   Lemma frac_split_in_half {sm} Px :
     sm Px -∗ frac_wsat sm ==∗ ∃ γ,
-      frac_sinv γ Px ∗ half γ ∗ half γ ∗ frac_wsat sm.
+      frac_sinv γ Px ∗ frac_half γ ∗ frac_half γ ∗ frac_wsat sm.
   Proof.
     rewrite /frac_wsat. iIntros "Px W".
     iDestruct (sinv_tok_alloc_suspend (sinvGS0:=frac_sinvGS) Px with "W")
@@ -178,15 +205,15 @@ Section frac_guard.
   (** Leaf's [frac_split_in_half], as a single package *)
   Lemma frac_split_in_half_full {sm} Px :
     sm Px -∗ frac_wsat sm ==∗ ∃ γ,
-      half γ ∗ half γ ∗ (half γ &&{frac_wsat sm}&&> sm Px) ∗
-      □ (half γ -∗ half γ -∗ frac_wsat sm ==∗ sm Px ∗ frac_wsat sm) ∗
+      frac_half γ ∗ frac_half γ ∗ (frac_half γ &&{frac_wsat sm}&&> sm Px) ∗
+      □ (frac_half γ -∗ frac_half γ -∗ frac_wsat sm ==∗ sm Px ∗ frac_wsat sm) ∗
       frac_wsat sm.
   Proof.
     iIntros "Px W".
     iMod (frac_split_in_half with "Px W") as (γ) "(#sinv & h & h' & W)".
     iModIntro. iExists γ. iFrame "h h' W". iSplitR; [by iApply frac_guard|].
     iIntros "!> h h' W". iApply (frac_withdraw with "sinv [h h'] W").
-    rewrite half_add. iFrame.
+    rewrite frac_half_add. iFrame.
   Qed.
 
   (** Leaf's [frac_split_guard_in_half].
@@ -228,3 +255,137 @@ Proof.
   iExists (FracGuardGS FML Σ pre _ γ). iIntros (sm) "Ne".
   rewrite /frac_wsat /frac_sinvGS. iApply "W". by iApply frac_body_ne.
 Qed.
+
+(** ** The same construction over a countable index
+
+  What [typing/lft_contexts.v] shares is [llctx_interp L], which is determined
+  by the *Coq value* [L] rather than by a formula.  A world satisfaction can
+  hold an authoritative map from ghost names to such values, so no formula
+  language is needed - and Leaf's storage protocol over an arbitrary
+  proposition is again avoided. *)
+
+(** The share algebra is *not* a field: a second [inG Σ frac_shareR] beside
+  [fracGuardGS]'s would make [frac_half] ambiguous, and the two instances give
+  genuinely different [own] propositions. *)
+Class fracKeyGS (K : Type) `{!EqDecision K, !Countable K} Σ : Type :=
+  FracKeyGS {
+    #[global] frac_key_viewG ::
+      inG Σ (gmap_viewR gname (agreeR (leibnizO K)));
+    frac_key_name : gname;
+  }.
+Definition fracKeyΣ (K : Type) `{!EqDecision K, !Countable K} : gFunctors :=
+  #[ GFunctor (constRF (gmap_viewR gname (agreeR (leibnizO K)))) ].
+
+Section frac_key.
+  Context `{!EqDecision K, !Countable K, !inG Σ frac_shareR, !fracKeyGS K Σ}.
+  Context (f : K → iProp Σ).
+  Implicit Type (γ : gname) (k : K) (q : Qp).
+
+  Definition frac_key_tok γ k : iProp Σ :=
+    own frac_key_name
+      (gmap_view_frag γ DfracDiscarded (to_agree (k : leibnizO K))).
+  Local Definition frac_key_auth (M : gmap gname K) : iProp Σ :=
+    own frac_key_name (gmap_view_auth (DfracOwn 1)
+      ((λ k, to_agree (k : leibnizO K)) <$> M)).
+  Definition frac_key_wsat : iProp Σ :=
+    ∃ M, frac_key_auth M ∗ [∗ map] γ ↦ k ∈ M, (frac_dead γ ∨ f k).
+
+  #[export] Instance frac_key_tok_persistent {γ k} :
+    Persistent (frac_key_tok γ k).
+  Proof. exact _. Qed.
+
+  Local Lemma frac_key_lookup {M γ k} :
+    frac_key_auth M -∗ frac_key_tok γ k -∗ ⌜M !! γ = Some k⌝.
+  Proof.
+    rewrite /frac_key_auth /frac_key_tok. iIntros "● ◯".
+    iDestruct (own_valid_2 with "● ◯") as "✓".
+    rewrite gmap_view_both_validI_total.
+    iDestruct "✓" as (? _ _ eq) "[_ in]". move: eq.
+    rewrite lookup_fmap. case lk: (M !! γ)=>[k'|]; [|done]. move=> [<-].
+    rewrite to_agree_includedI. iDestruct "in" as %eq.
+    iPureIntro. by rewrite eq.
+  Qed.
+
+  (** Access the stored state *)
+  Lemma frac_key_acc {γ k} :
+    frac_key_tok γ k -∗ frac_key_wsat -∗
+      (frac_dead γ ∨ f k) ∗ ((frac_dead γ ∨ f k) -∗ frac_key_wsat).
+  Proof.
+    iIntros "#◯ [%M[● M]]". iDestruct (frac_key_lookup with "● ◯") as %lk.
+    iDestruct (big_sepM_lookup_acc with "M") as "[$ →M]"; [done|].
+    iIntros "x". iExists M. iFrame "●". by iApply "→M".
+  Qed.
+
+  (** Any share guards the content *)
+  Lemma frac_key_guard {γ k q} :
+    frac_key_tok γ k ⊢ frac_tok γ q &&{frac_key_wsat}&&> f k.
+  Proof.
+    iIntros "#◯".
+    iAssert (frac_tok γ q &&{frac_key_wsat}&&> (frac_dead γ ∨ f k))%I as "g".
+    { rewrite /guard. iIntros "!>" (T) "[tok toWT]".
+      iDestruct ("toWT" with "tok") as "[W T]".
+      iDestruct (frac_key_acc with "◯ W") as "[$ →W]". iIntros "x".
+      iFrame "T". by iApply "→W". }
+    iApply (guard_cancel_or frac_tok_dead_and with "[] g"). iApply guard_refl.
+  Qed.
+
+  (** Deposit the content and get two halves *)
+  Lemma frac_key_alloc {k} :
+    f k -∗ frac_key_wsat ==∗ ∃ γ,
+      frac_key_tok γ k ∗ frac_half γ ∗ frac_half γ ∗ frac_key_wsat.
+  Proof.
+    iIntros "fk [%M[● M]]".
+    iMod (frac_tok_alloc (dom M)) as (γ nin) "[h h']".
+    move: nin=> /not_elem_of_dom nin.
+    iMod (own_update _ _ (gmap_view_auth (DfracOwn 1)
+      ((λ k, to_agree (k : leibnizO K)) <$> <[γ := k]> M) ⋅
+      gmap_view_frag γ DfracDiscarded (to_agree (k : leibnizO K)))
+      with "●") as "[● #◯]".
+    { rewrite fmap_insert. apply gmap_view_alloc; [|done..].
+      by rewrite lookup_fmap nin. }
+    iModIntro. iExists γ. iFrame "◯ h h'". iExists (<[γ := k]> M). iFrame "●".
+    iApply (big_sepM_insert_2 with "[fk] M"). by iRight.
+  Qed.
+
+  (** Withdraw the content with the full share *)
+  Lemma frac_key_withdraw {γ k} :
+    frac_key_tok γ k -∗ frac_tok γ 1 -∗ frac_key_wsat ==∗
+      f k ∗ frac_key_wsat.
+  Proof.
+    iIntros "#◯ tok W". iDestruct (frac_key_acc with "◯ W") as "[x →W]".
+    iDestruct "x" as "[dead|$]".
+    { iDestruct (own_valid_2 with "tok dead") as %[]. }
+    iMod (frac_tok_kill with "tok") as "dead". iModIntro. iApply "→W".
+    by iLeft.
+  Qed.
+
+  (** Leaf's [frac_split_in_half], as a single package *)
+  Lemma frac_key_split_in_half {k} :
+    f k -∗ frac_key_wsat ==∗ ∃ γ,
+      frac_half γ ∗ frac_half γ ∗ (frac_half γ &&{frac_key_wsat}&&> f k) ∗
+      □ (frac_half γ -∗ frac_half γ -∗ frac_key_wsat ==∗ f k ∗ frac_key_wsat) ∗
+      frac_key_wsat.
+  Proof.
+    iIntros "fk W". iMod (frac_key_alloc with "fk W") as (γ) "(#◯ & h & h' & W)".
+    iModIntro. iExists γ. iFrame "h h' W". iSplitR; [by iApply frac_key_guard|].
+    iIntros "!> h h' W". iApply (frac_key_withdraw with "◯ [h h'] W").
+    rewrite frac_half_add. iFrame.
+  Qed.
+
+  (** Leaf's [frac_split_guard_in_half]: a share simply splits *)
+  Lemma frac_key_split_guard_in_half {γ k q} :
+    frac_key_tok γ k -∗ frac_tok γ q -∗
+      frac_tok γ (q/2) ∗ frac_tok γ (q/2) ∗
+      (frac_tok γ (q/2) &&{frac_key_wsat}&&> f k) ∗
+      □ (frac_tok γ (q/2) -∗ frac_tok γ (q/2) -∗ frac_tok γ q).
+  Proof.
+    iIntros "#◯ tok". iEval (rewrite (frac_tok_half (q:=q))) in "tok".
+    iDestruct "tok" as "[$$]". iSplitR; [by iApply frac_key_guard|].
+    iIntros "!> h h'". iEval (rewrite (frac_tok_half (q:=q))). iFrame.
+  Qed.
+
+  (** A guard over a larger world satisfaction *)
+  Lemma frac_key_guard_wsat `{!WsatIncl W frac_key_wsat Wr} {γ k q} :
+    frac_key_tok γ k ⊢ frac_tok γ q &&{W}&&> f k.
+  Proof. rewrite frac_key_guard. iApply guard_wsat_incl. Qed.
+End frac_key.

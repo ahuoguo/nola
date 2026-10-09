@@ -243,7 +243,7 @@ Local Definition proph_sim (S: proph_smryUR) (L: proph_log) :=
 Local Notation "S :~ L" := (proph_sim S L) (at level 70, format "S  :~  L").
 
 Section defs.
-Context `{!invGS Σ, !prophG Σ}.
+Context `{!invGS_gen hlc Σ, !prophG Σ}.
 
 (** Prophecy Context *)
 Local Definition proph_inv: iProp Σ :=
@@ -273,7 +273,7 @@ Notation "⟨ π , φ ⟩" := (proph_obs (λ π, φ%type%stdpp))
 (** * Iris Lemmas *)
 
 Section proph.
-Context `{!invGS Σ, !prophG Σ}.
+Context `{!invGS_gen hlc Σ, !prophG Σ}.
 
 (** Instances *)
 
@@ -603,16 +603,16 @@ Global Opaque proph_ctx proph_tok proph_obs.
 
 (** * Prophecy Equalizer *)
 
-Definition proph_eqz `{!invGS Σ, !prophG Σ} {A} (uπ vπ: proph A) : iProp Σ :=
+Definition proph_eqz `{!invGS_gen hlc Σ, !prophG Σ} {A} (uπ vπ: proph A) : iProp Σ :=
   ∀E ξl q, ⌜↑prophN ⊆ E ∧ vπ ./ ξl⌝ -∗ q:+[ξl] ={E}=∗ ⟨π, uπ π = vπ π⟩ ∗ q:+[ξl].
 
 Notation "uπ :== vπ" := (proph_eqz uπ vπ) (at level 70, format "uπ  :==  vπ") : bi_scope.
 
 Section proph_eqz.
-Context `{!invGS Σ, !prophG Σ}.
+Context `{!invGS_gen hlc Σ, !prophG Σ}.
 
 Global Instance proph_eqz_proper {A} :
-  Proper (pointwise_relation _ (=) ==> pointwise_relation _ (=) ==> (⊣⊢)) (@proph_eqz _ _ _ A).
+  Proper (pointwise_relation _ (=) ==> pointwise_relation _ (=) ==> (⊣⊢)) (@proph_eqz _ _ _ _ A).
 Proof.
   move=> ?? E1 ?? E2.
   unfold ":==".
