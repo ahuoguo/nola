@@ -6,8 +6,8 @@
   Two changes, both forced by later-freeness.
 
   - The original's [ty_gho] of [own_ptr n ty] is
-    [l ↦!∗ … ∗ freeable_sz … ∗ ▷ ty.(ty_gho) …], and its [ty_gho_pers] is
-    [▷ ty.(ty_gho_pers) …].  Those [▷]s are what make [own_ptr] *contractive*,
+    [l ↦!∗ … ∗ freeable_sz … ∗ ▷ (ty_gho ty) …], and its [ty_gho_pers] is
+    [▷ (ty_gho_pers ty) …].  Those [▷]s are what make [own_ptr] *contractive*,
     and the reads below strip them with the [▷] that VerusBelt's [typed_read]
     puts in front of the borrowed contents.  Here [typed_read] hands the
     contents over without a [▷], so the type cannot hide one either: both go,
@@ -36,36 +36,38 @@ Section own.
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
 
-    ty_gho x d g tid := [S(d') := d]
-      ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid) ∗
-      freeable_sz n ty.(ty_size) (fst x) ∗
-      (ty.(ty_gho) (snd x) d' g tid) ;
+    ty_ghox x d g tid := [Sx(d') := d]
+      ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid ∗
+       freeable_fml n ty.(ty_size) (fst x) ∗
+       ty.(ty_ghox) (snd x) d' g tid)%FML ;
 
-    ty_gho_pers x d g tid := [S(d') := d]
-      (ty.(ty_gho_pers) (snd x) d' g tid) ;
+    ty_gho_persx x d g tid := [Sx(d') := d]
+      (ty.(ty_gho_persx) (snd x) d' g tid) ;
 
     ty_phys x tid := [FVal (LitV (fst x))];
-  |}%I.
+  |}.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation.
-    move=> 𝔄 n ty [|d] g d' g' x tid ??; iIntros "H" => //=.
-    iDestruct "H" as "(Hown & Hfree & Hgho)".
-    destruct d'; first lia => /=.
-    iDestruct (ty.(ty_gho_depth_mono) with "Hgho") as "[$ Hwand]" => //;
-      first lia.
+    move=> 𝔄 n ty [|d] g d' g' x tid ??.
+    { rewrite /= false_fml_sem. by iIntros "[]". }
+    destruct d' as [|d']; first lia. fml_simpl'.
+    iIntros "(Hown & Hfree & Hgho)".
+    iDestruct (ty.(ty_gho_depth_mono) with "Hgho") as "[$ Hwand]"; [lia|lia|].
     iFrame. iIntros "($ & $ & Hgho)". by iApply "Hwand".
   Qed.
   Next Obligation.
-    move=> 𝔄 n ty [|d] g d' g' x tid ??; iIntros "H" => //=.
-    destruct d'; first lia => /=.
-    by iDestruct (ty.(ty_gho_pers_depth_mono) with "H") as "$" => //; first lia.
+    move=> 𝔄 n ty [|d] g d' g' x tid ??.
+    { rewrite /= false_fml_sem. by iIntros "[]". }
+    destruct d' as [|d']; first lia. simpl. iIntros "H".
+    iApply (ty.(ty_gho_pers_depth_mono) with "H"); lia.
   Qed.
   Next Obligation.
     move=> 𝔄 n ty κ x d g tid ξ R Hin. iIntros "#LFT #Incl #Pers".
-    destruct d as [|d']; [by iIntros|].
-    iIntros "#Rk #Rg".
+    destruct d as [|d'].
+    { iIntros "_ _". by iDestruct (false_fml_sem_1 with "Pers") as "[]". }
+    fml_simpl'. iIntros "#Rk #Rg".
     iApply (ty_guard_proph _ ty κ (snd x) d' g tid ξ R Hin
       with "LFT Incl Pers Rk").
     iApply (guard_trans with "Rg"). iApply (guard_trans with "[]").
@@ -73,9 +75,37 @@ Section own.
     iApply guard_sep_r.
   Qed.
   Next Obligation.
-    move=> 𝔄 n ty x d g tid. iIntros "A". destruct d as [|d']; [done|].
-    iDestruct "A" as "[_ [_ gho]]". by iApply ty_gho_pers_impl.
+    move=> 𝔄 n ty x d g tid. destruct d as [|d'].
+    { rewrite /= !false_fml_sem. by iIntros "[]". }
+    fml_simpl'. iIntros "A". iDestruct "A" as "[_ [_ gho]]".
+    by iApply ty_gho_pers_impl.
   Qed.
+
+  Lemma own_ptr_gho {𝔄} n (ty: type 𝔄) x d g tid :
+    ty_gho (own_ptr n ty) x d g tid ⊣⊢ [S(d') := d]
+      ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid ∗
+       freeable_sz n ty.(ty_size) (fst x) ∗ ty_gho ty (snd x) d' g tid).
+  Proof.
+    rewrite /ty_gho. destruct d as [|d']; [apply false_fml_sem|].
+    by rewrite /= !bor_sep_sem mapsto_fml_sem freeable_fml_sem.
+  Qed.
+  Lemma own_ptr_gho_pers {𝔄} n (ty: type 𝔄) x d g tid :
+    ty_gho_pers (own_ptr n ty) x d g tid ⊣⊢ [S(d') := d]
+      (ty_gho_pers ty (snd x) d' g tid).
+  Proof.
+    rewrite /ty_gho_pers. destruct d as [|d']; [apply false_fml_sem|done].
+  Qed.
+
+  Global Instance into_sep_own_ptr_gho {𝔄} n (ty: type 𝔄) x d' g tid :
+    IntoSep (ty_gho (own_ptr n ty) x (S d') g tid)
+      ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid)
+      (freeable_sz n ty.(ty_size) (fst x) ∗ ty_gho ty (snd x) d' g tid).
+  Proof. rewrite /IntoSep own_ptr_gho /=. by iIntros "$". Qed.
+  Global Instance from_sep_own_ptr_gho {𝔄} n (ty: type 𝔄) x d' g tid :
+    FromSep (ty_gho (own_ptr n ty) x (S d') g tid)
+      ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid)
+      (freeable_sz n ty.(ty_size) (fst x) ∗ ty_gho ty (snd x) d' g tid).
+  Proof. rewrite /FromSep own_ptr_gho /=. by iIntros "$". Qed.
 
   Global Instance own_ne {𝔄} n : NonExpansive (@own_ptr 𝔄 n).
   Proof. solve_ne_type. Qed.
@@ -101,12 +131,14 @@ Section own.
     move=> [Hphys Hgho]. split.
     - move=> ?? [??] [??] He. by inversion He.
     - move=> tid tid' x d g γ q κs. iIntros "LFT UNIQ #g K A".
-      destruct d as [|d]; [by iIntros|].
+      destruct d as [|d];
+        [by iDestruct (false_fml_sem_1 with "A") as "[]"|].
       iDestruct "A" as "(Hown & Hfree & Hgho)".
       iIntros "W".
       iMod (Hgho with "LFT UNIQ g K Hgho W")
         as "(W & %x' & %off & gho & %Habs & K)".
-      iModIntro. iFrame "W". iExists (x.1, x'), off. iFrame "K". simpl.
+      iModIntro. iFrame "W". iExists (x.1, x'), off. iFrame "K".
+      rewrite own_ptr_gho /=.
       rewrite -(Hphys tid tid' (x.2) x' (eq_sym Habs)).
       iFrame "Hown Hfree gho". iPureIntro. by rewrite Habs.
   Qed.
@@ -114,14 +146,17 @@ Section own.
   Global Instance own_sync {𝔄} n (ty: type 𝔄) : Sync ty → Sync (own_ptr n ty).
   Proof.
     move=> HSync tid tid' x d g. split; [done|].
-    destruct d as [|d]; [done|].
+    destruct d as [|d]; [split; reflexivity|].
     destruct (HSync tid tid' (snd x) d g) as [Hp [Hg Hgp]].
-    split=>/=; [by rewrite Hp Hg|by rewrite Hgp].
+    split.
+    - rewrite !own_ptr_gho /=. by rewrite Hp Hg.
+    - rewrite !own_ptr_gho_pers /=. by rewrite Hgp.
   Qed.
 
   Global Instance own_just_loc {𝔄} n (ty: type 𝔄) : JustLoc (own_ptr n ty).
   Proof.
-    iIntros (x [|] g tid) "Hgho" => //=.
+    iIntros (x [|d] g tid) "Hgho".
+    { by iDestruct (false_fml_sem_1 with "Hgho") as "[]". }
     iDestruct "Hgho" as "(Hown & Hfree & Hgho)". by iExists _.
   Qed.
 
@@ -129,7 +164,8 @@ Section own.
     resolve E L ty Φ → resolve E L (own_ptr n ty) (λ '(l, v), Φ v).
   Proof.
     move=> Rslv γ q F x d g tid ?.
-    iIntros "LFT PROPH UNIQ E tok A". destruct d as [|d]; [by iIntros|].
+    iIntros "LFT PROPH UNIQ E tok A". destruct d as [|d];
+      [by iDestruct (false_fml_sem_1 with "A") as "[]"|].
     iDestruct "A" as "(_ & _ & gho)". iIntros "W".
     iMod (Rslv with "LFT PROPH UNIQ E tok gho W") as "(W & Obs & tok)";
       [done|].
@@ -144,7 +180,9 @@ Section own.
     iIntros "(%Eq & #Incl & #InOwn & #InOwnPers & %Phys)".
     do 2 (iSplit; [done|]).
     iSplit.
-    { iIntros "!>" ([l x0] [|d] g tid) "Hown" => //=.
+    { iIntros "!>" ([l x0] [|d] g tid) "Hown".
+      { by iDestruct (false_fml_sem_1 with "Hown") as "[]". }
+      rewrite !own_ptr_gho /=.
       iDestruct "Hown" as "(Hown & Hfree & Hgho)".
       iDestruct ("InOwn" with "Hgho") as "(Hgho & Hwand)".
       iSplitL "Hown Hfree Hgho".
@@ -152,8 +190,9 @@ Section own.
       - iIntros "(Hown & Hfree & Hgho)". rewrite Eq Phys. iFrame.
         by iApply "Hwand". }
     iSplit.
-    { iIntros "!>" ([l x0] [|d] g tid) "Hown" => //=.
-      by iApply "InOwnPers". }
+    { iIntros "!>" ([l x0] [|d] g tid) "Hown".
+      { by iDestruct (false_fml_sem_1 with "Hown") as "[]". }
+      rewrite !own_ptr_gho_pers /=. by iApply "InOwnPers". }
     { iPureIntro. by move=> [l x0] tid. }
   Qed.
 
@@ -170,6 +209,8 @@ Section own.
     eqtype E L (own_ptr n ty) (own_ptr n ty') (at_loc_mapₛ f) (at_loc_mapₛ g).
   Proof. move=> [??]. split; by apply own_subtype. Qed.
 End own.
+
+Global Hint Rewrite @own_ptr_gho @own_ptr_gho_pers : fml_sem.
 
 Section box.
   Context `{!typeG FML Σ}.
@@ -215,7 +256,8 @@ Section typing.
   Proof.
     move=> Sz. split; [done|].
     move=> [l x0] [|d] v tid γ q;
-      iIntros "LFT UNIQ E tok [Hgho %Hphys]"; [done|].
+      iIntros "LFT UNIQ E tok [Hgho %Hphys]";
+      [by iDestruct (false_fml_sem_1 with "Hgho") as "[]"|].
     iDestruct "Hgho" as "(Hown & Hfree & Hgho)".
     rewrite /own_ptr /= in Hphys. move: Hphys; case=> <-.
     iIntros "$ !>".
@@ -228,10 +270,10 @@ Section typing.
     iSplitR "tok Hfree".
     { iApply (guard_lhs_iff empty_fml_sem).
       iApply (guard_rhs_iff (heap_cloc_mapsto_empty _ _)). iApply guard_true. }
-    iIntros (y db') "Hown _ $ !>". rewrite /ty_own /= -Sz.
+    iIntros (y db') "Hown _ $ !>". rewrite /ty_own.
     iDestruct "Hown" as (vl) "[Pt [Gho %Phys]]".
     iExists (l, y). iFrame "tok". iSplit; [done|].
-    iSplit; [|done]. rewrite -Phys. iFrame "Hfree".
+    iSplit; [|done]. rewrite own_ptr_gho /= -Sz -Phys. iFrame "Hfree".
     replace (length (ty_phys ty x0 tid)) with (length (ty_phys ty' y tid));
       last by do 2 rewrite ty_size_eq.
     rewrite -heap_cloc_mapsto_fancy_empty. iFrame "Pt".
@@ -247,7 +289,8 @@ Section typing.
     Copy ty → typed_read E L (own_ptr n ty) ty (own_ptr n ty) (λ v, snd v) (=).
   Proof.
     move=> Cpy [l x0] [|d] v tid γ q;
-      iIntros "LFT E tok [Hgho %Hphys]"; [done|].
+      iIntros "LFT E tok [Hgho %Hphys]";
+      [by iDestruct (false_fml_sem_1 with "Hgho") as "[]"|].
     iDestruct "Hgho" as "(Hown & Hfree & #Hgho)".
     iDestruct (copy_concrete with "Hgho") as "%Conc".
     rewrite /own_ptr /= in Hphys. move: Hphys; case=> <-.
@@ -271,7 +314,7 @@ Section typing.
     { iSplit; [|done].
       iDestruct (ty_gho_depth_mono with "Hgho") as "[$ _]"; lia. }
     iIntros "Hown $ !>". iExists (l, x0). iSplit; [done|]. iFrame "tok".
-    iSplit; [|done]. iFrame "Hfree Hgho".
+    iSplit; [|done]. rewrite own_ptr_gho /=. iFrame "Hfree Hgho".
     by iApply (gsrc_fml_sem_1 (s := GMapstoVec l (ty_phys ty x0 tid))).
   Qed.
 
@@ -280,7 +323,8 @@ Section typing.
       (λ v, v.2) (λ v z, v.1 = z.1).
   Proof.
     move=> [l x] [|d] v tid γ q;
-      iIntros "LFT E tok [Hgho %Hphys]"; [done|].
+      iIntros "LFT E tok [Hgho %Hphys]";
+      [by iDestruct (false_fml_sem_1 with "Hgho") as "[]"|].
     iDestruct "Hgho" as "(Hown & Hfree & Hgho)".
     rewrite /own_ptr /= in Hphys. move: Hphys; case=> <-.
     iIntros "W".
@@ -306,7 +350,8 @@ Section typing.
       last by apply ty_size_eq.
     rewrite -Hleneq.
     iExists (l, list_to_vec vl_concrete). iSplit; [done|]. iFrame "tok".
-    iSplit; [|done]. simpl. iFrame "Hfree". rewrite vec_to_list_to_vec.
+    iSplit; [|done]. rewrite own_ptr_gho /=. iFrame "Hfree".
+    iSplitL; [|by iApply empty_fml_sem_2]. rewrite vec_to_list_to_vec.
     by iApply (gsrc_fml_sem_1 (s := GMapstoVec l (FVal <$> vl_concrete))).
   Qed.
 
@@ -325,9 +370,11 @@ Section typing.
     iApply twp_new; [lia|done|]. iIntros (l) "(† & ↦)".
     iExists -[(l, vrepeat #☠ (Z.to_nat n))]. iSplit.
     { rewrite /tctx_elt_interp. iSplit=>//=. rewrite /ty_own /=.
-      iExists #l, 1%nat. rewrite/= freeable_sz_full Z2Nat.id; [|lia].
+      iExists #l, 1%nat.
+      rewrite own_ptr_gho /= freeable_sz_full Z2Nat.id; [|lia].
       iSplit=>//. iSplit=>//. rewrite vec_to_list_vrepeat. iFrame.
-      rewrite heap_mapsto_fancy_fmap_eq. iFrame. iSplitL "†"; [|done].
+      rewrite heap_mapsto_fancy_fmap_eq. iFrame.
+      iSplitL "†"; [|by iApply empty_fml_sem_2].
       iDestruct "†" as "[A|%E0]"; [by iLeft; iFrame|iRight; iPureIntro; lia]. }
     iApply proph_obs_impl; last by iFrame "Proph". done.
   Qed.
@@ -369,7 +416,8 @@ Section typing.
   Proof.
     iIntros (?->????[[l x][]]) "_ _ _ _ $$ [p _] #Obs".
     wp_bind p. iApply (twp_hasty with "p"). rewrite /ty_own /=.
-    iIntros (?[|?] _) "[own %]"; [done|].
+    iIntros (?[|?] _) "[own %]";
+      [by iDestruct (false_fml_sem_1 with "own") as "[]"|].
     iDestruct "own" as "(Hown & Hfree & Hgho)".
     move: H; case=> <-.
     have Sz := ty.(ty_size_eq).
@@ -407,7 +455,8 @@ Section typing.
   Proof.
     iIntros (?->????[[l x][]]) "_ _ _ _ $$ [p _] #Obs".
     wp_bind p. iApply (twp_hasty with "p"). rewrite /ty_own /=.
-    iIntros (?[|?] Hpath) "[own %Hv]"; [done|].
+    iIntros (?[|?] Hpath) "[own %Hv]";
+      [by iDestruct (false_fml_sem_1 with "own") as "[]"|].
     iDestruct "own" as "(Hown & Hfree & Hgho)".
     inversion Hv. subst v.
     have Sz := ty.(ty_size_eq).
@@ -421,7 +470,9 @@ Section typing.
     iIntros "_". iExists -[(l, x)]. iSplit=>//; iFrame.
     iSplit; last by done. rewrite /tctx_elt_interp.
     iExists (#l), (S n). iSplit. { iPureIntro. by symmetry. }
-    iSplit. { iFrame "Hgho". simpl. rewrite heap_mapsto_fancy_vec_nil. done. }
+    iSplit.
+    { rewrite own_ptr_gho /=. iFrame "Hgho".
+      rewrite heap_mapsto_fancy_vec_nil. done. }
     iPureIntro. done.
   Qed.
 

@@ -14,7 +14,7 @@ Section bool.
   Program Definition bool_ty: type boolₛ :=
     {|
       pt_size := 1;
-      pt_gho (b: ~~boolₛ) _ := True%I ;
+      pt_ghox (b: ~~boolₛ) _ := empty_fml ;
       pt_phys (b: ~~boolₛ) _ := [ FVal #b ] ;
     |}%I.
   Next Obligation. move=> *. trivial. Qed.
@@ -24,6 +24,11 @@ Section bool.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
   
+  Lemma bool_gho b d g tid : ty_gho bool_ty b d g tid ⊣⊢ True.
+  Proof. apply empty_fml_sem. Qed.
+  Lemma bool_gho_pers b d g tid : ty_gho_pers bool_ty b d g tid ⊣⊢ True.
+  Proof. apply empty_fml_sem. Qed.
+
   Global Instance bool_copy: Copy bool_ty.
   Proof. split. - typeclasses eauto. - iIntros. iPureIntro. done. Qed.
 
@@ -32,11 +37,12 @@ Section bool.
     intros. split; trivial.
      - intros. unfold syn_abstract in H. subst x'. trivial.
      - iIntros (tid tid' x0 d g γ q κs) "_ _ _ tok _ $ !>".
-       iExists x0, 0%nat. iFrame "tok". done.
+       iExists x0, 0%nat. iFrame "tok".
+       iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
   
   Global Instance bool_sync: Sync bool_ty.
-  Proof. split; trivial. split; iSplit; done. Qed.
+  Proof. move=> *. split; [done|]. split; reflexivity. Qed.
 
   Lemma bool_resolve E L : resolve E L bool_ty (const (const True)).
   Proof. apply resolve_just. Qed.
@@ -48,7 +54,8 @@ Section bool.
   Proof.
     iIntros (????????) "_ _ _ _ $$ _ Obs".
     iApply twp_value. iExists -[b]. iFrame "Obs". iSplit; [|done].
-    rewrite tctx_hasty_val'; [|done]. iExists 0%nat. iSplit; done.
+    rewrite tctx_hasty_val'; [|done]. iExists 0%nat.
+    iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
   Lemma type_bool {𝔄l 𝔅} (b: bool) (T: tctx 𝔄l) x e tr E L (I: invctx) (C: cctx 𝔅) :
@@ -64,7 +71,7 @@ Section bool.
   Proof.
     iIntros (?????) "_ _ _ _ $$ _ #?".
     wp_nd_int z. wp_op. iExists -[_]. rewrite right_id tctx_hasty_val'; [|done].
-    iSplit. { iExists 0%nat. iSplit; done. }
+    iSplit. { iExists 0%nat. iSplit; [by iApply empty_fml_sem_2|done]. }
     iApply proph_obs_impl; [|done]=>/= ? Hyp.
     destruct xl; apply Hyp.
   Qed.
@@ -96,5 +103,7 @@ Section bool.
       iApply (proph_obs_impl with "Obs"). intros π.  done.
   Qed.
 End bool.
+
+Global Hint Rewrite @bool_gho @bool_gho_pers : fml_sem.
 
 Global Hint Resolve bool_resolve : lrust_typing.

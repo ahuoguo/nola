@@ -36,6 +36,7 @@ From nola.alerus.typing Require Export base uniq_cmra.
 From iris.algebra Require Import auth gset.
 From iris.proofmode Require Import proofmode.
 Import GuardNotation ModwNotation iPropAppNotation.
+Export iPropAppNotation.
 
 (** [nola.alerus.lifetime.lifetime_full] keeps these [Local], but the typing
   layer needs them to state [BorStateFml] and to speak about [box_wsat]. *)
@@ -513,6 +514,9 @@ End gsrc.
   down its semantics.  A concrete [FML] (a [cif] instance) has to satisfy it;
   see the note on [typing/soundness.v]. *)
 Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ} := {
+  (** Formulas form a COFE: [typing/fixpoint.v] takes the limit of a chain of
+    type interpretations, which is now a chain of formulas. *)
+  #[global] fml_cofe :: Cofe (FML $oi Σ);
   (** [False], for the empty type used in fixpoints *)
   false_fml : FML $oi Σ;
   false_fml_sem : bor_sem false_fml ⊣⊢ False;
@@ -572,6 +576,27 @@ Section type_fml.
     by apply equiv_dist.
   Qed.
 
+  (** Persistence, so that the [Persistent] obligations of the type formers
+    are discharged by type class search as they were before. *)
+  #[export] Instance false_fml_persistent : Persistent (bor_sem false_fml).
+  Proof. rewrite false_fml_sem. exact _. Qed.
+  #[export] Instance empty_fml_persistent : Persistent (bor_sem empty_fml).
+  Proof. rewrite empty_fml_sem. exact _. Qed.
+  #[export] Instance pure_fml_persistent {φ} :
+    Persistent (bor_sem (pure_fml φ)).
+  Proof. rewrite pure_fml_sem. exact _. Qed.
+  #[export] Instance guard_fml_persistent {Px Qx} :
+    Persistent (bor_sem (guard_fml Px Qx)).
+  Proof. rewrite guard_fml_sem. exact _. Qed.
+  #[export] Instance sep_fml_persistent {Px Qx} :
+    Persistent (bor_sem Px) → Persistent (bor_sem Qx) →
+    Persistent (bor_sem (bor_sep Px Qx)).
+  Proof. move=> ??. rewrite bor_sep_sem. exact _. Qed.
+  #[export] Instance empty_fml_timeless : Timeless (bor_sem empty_fml).
+  Proof. rewrite empty_fml_sem. exact _. Qed.
+  #[export] Instance false_fml_timeless : Timeless (bor_sem false_fml).
+  Proof. rewrite false_fml_sem. exact _. Qed.
+
   (** Directed forms of the semantics equations, for [iApply] and
     [iDestruct]: rewriting an [⊣⊢] inside the Iris proof context trips over
     the [Proper] search for [envs]. *)
@@ -588,6 +613,28 @@ Section type_fml.
     bor_sem Px -∗ bor_sem Qx -∗ bor_sem (bor_sep Px Qx).
   Proof. rewrite bor_sep_sem. by iIntros "$$". Qed.
 End type_fml.
+
+(** ** Notation for formulas
+
+  So that a type former's ghost assertion reads the way the original writes
+  it.  [cif] gives Nola these for free; with [FML] abstract they are
+  notations for the constructors of [TypeFml]. *)
+Declare Scope fml_scope.
+Delimit Scope fml_scope with FML.
+Notation "'False'" := false_fml : fml_scope.
+Notation "'True'" := empty_fml : fml_scope.
+Notation "⌜ φ ⌝" := (pure_fml φ%type%stdpp) : fml_scope.
+Notation "Px ∗ Qx" := (bor_sep Px%FML Qx%FML)
+  (at level 80, right associativity) : fml_scope.
+Notation "∃ x .. y , Px" :=
+  (ex_fml (λ x, .. (ex_fml (λ y, Px%FML)) ..))
+  (at level 10, x binder, y binder, Px at level 200) : fml_scope.
+Notation "l ↦[^ cs ]!∗ fv" := (cells_fml l cs fv) (at level 20) : fml_scope.
+Notation "l ↦!∗ fv" := (mapsto_fml l fv) (at level 20) : fml_scope.
+Notation "l #↦!∗ fv" := (ccells_fml l fv) (at level 20) : fml_scope.
+Notation "@[ κ ]" := (alive_fml κ) (format "@[ κ ]") : fml_scope.
+Notation ".PCx[ ξ ]" := (pc_fml ξ) (at level 5, format ".PCx[ ξ ]")
+  : fml_scope.
 
 (** Normalising the semantics of the formula language.
 

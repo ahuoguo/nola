@@ -26,13 +26,28 @@ Section Ra.
 
   Hypothesis (𝔄_const  : ∀ (x : ~~𝔄) π1 π2 , @vπ 𝔄 x π1 = @vπ 𝔄 x π2).
 
+  (** A type's ghost assertion is a formula now (see [TypeFml] in
+    [typing/ctx.v]), so the resource algebra this file is parametric over has
+    to have a formula standing for its ownership.  Like every other
+    constructor in the development this is asked for as a class with the
+    equation pinning down its semantics. *)
+  Class RaFml := {
+    ra_fml : positive → (~~𝔄) → FML $oi Σ;
+    ra_fml_sem γ a : bor_sem (ra_fml γ a) ⊣⊢ @own _ _ G2 γ a;
+  }.
+  Context `{!RaFml}.
+
+  (** Directed form, for [iApply] *)
+  Lemma ra_fml_sem_2 γ a : @own _ _ G2 γ a ⊢ bor_sem (ra_fml γ a).
+  Proof. by rewrite ra_fml_sem. Qed.
+
   Set Printing Coercions.
   Program Definition ra_ty  : type (ghostₛ (positiveₛ * 𝔄)) :=
     ty_of_gt ({|
-          gt_gho v tid :=
+          gt_ghox v tid :=
             let '(z, m) := v in
-            @own _ _ G2 z m;
-        |}%I : ghost_type (ghostₛ (positiveₛ * 𝔄))).
+            ra_fml z m;
+        |} : ghost_type (ghostₛ (positiveₛ * 𝔄))).
   Next Obligation.
     move => v.
     unfold indep_interp_of_syn_type in v.
@@ -46,6 +61,15 @@ Section Ra.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
+
+  (** Unfolding [ra_ty]'s ghost assertion *)
+  Lemma ra_ty_gho (v : ~~ (ghostₛ (positiveₛ * 𝔄))) d g tid :
+    ty_gho ra_ty v d g tid ⊣⊢ @own _ _ G2 v.1 v.2.
+  Proof. destruct v. apply ra_fml_sem. Qed.
+  Lemma ra_ty_gho' (v : ~~ (ghostₛ (positiveₛ * 𝔄))) d g tid :
+    @own _ _ G2 v.1 v.2 ⊣⊢ ty_gho ra_ty v d g tid.
+  Proof. by rewrite ra_ty_gho. Qed.
+
 
   (* Definition ra_ty  : type (at_locₛ (positiveₛ* 𝔄)) := own_ptr 0 (ra_inner). *)
 
@@ -75,6 +99,7 @@ Section RA_type.
 
   Context `{!typeG FML Σ}.
   Context `{G2: !inG Σ (@Ucmra' _ (~~𝔄) 𝔄_equiv 𝔄_dist 𝔄_pcore 𝔄_op 𝔄_valid 𝔄_validn 𝔄_unit 𝔄_mixin1 𝔄_mixin2 𝔄_mixin3) }.
+  Context `{RaFml0 : !RaFml}.
   Hypothesis (𝔄_const  : ∀ (x : ~~𝔄) π1 π2 , @vπ 𝔄 x π1 = @vπ 𝔄 x π2).
 
   Lemma typed_ra_alloc (p : path) (ty : type 𝔄) E L I :
@@ -95,10 +120,11 @@ Section RA_type.
     iFrame "L".
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
     iDestruct "TY" as "((% & %d & % & Hgho & %Hphys) & _)".
-    destruct d => //.
+    destruct d as [|d];
+      [by iDestruct (false_fml_sem_1 with "Hgho") as "[]"|].
     iSplitL.
     - iSplitL; [|done]. iExists _, 1%nat; iSplitR => //=.
-      repeat rewrite heap_mapsto_fancy_vec_nil.
+      rewrite ?own_ptr_gho /= ?ra_ty_gho. repeat rewrite heap_mapsto_fancy_vec_nil.
       by iFrame.
     - iApply (proph_obs_impl with "Obs").
       intros π' [_ ].
@@ -121,7 +147,11 @@ Section RA_type.
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
     iDestruct "H1" as "(%l1 & %d1 & % & Hown1 & %Hphys1)".
     iDestruct "H2" as "(%l2 & %d2 & % & Hown2 & %Hphys2)".
-    destruct d1,d2 => //.
+    destruct d1 as [|d1];
+      [by iDestruct (false_fml_sem_1 with "Hown1") as "[]"|].
+    destruct d2 as [|d2];
+      [by iDestruct (false_fml_sem_1 with "Hown2") as "[]"|].
+    rewrite ?own_ptr_gho /= ?ra_ty_gho.
     iDestruct "Hown1" as "(?&?&Hown1)".
     iDestruct "Hown2" as "(?&?&Hown2)".
     iCombine "Hown1 Hown2" as "Hown".
@@ -131,6 +161,7 @@ Section RA_type.
     iFrame "L".
     iSplitL.
     - iSplitL; [|done]. iExists _, 1%nat; iSplitR => //=.
+      rewrite ?own_ptr_gho /= ?ra_ty_gho.
       repeat rewrite heap_mapsto_fancy_vec_nil.
       by iFrame.
     - iApply (proph_obs_impl with "Obs").
@@ -152,7 +183,9 @@ Section RA_type.
     iDestruct "TY" as "(H & _ & _ & _)".
     iDestruct "H" as "(%pl' & %d & % & Hown & %Hphys)".
     injection Hphys => ? /=; subst pl'.
-    destruct d => //.
+    destruct d as [|d];
+      [by iDestruct (false_fml_sem_1 with "Hown") as "[]"|].
+    rewrite ?own_ptr_gho /= ?ra_ty_gho.
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & -> & %Hpost)" => //.
     iModIntro. iFrame "W".
@@ -161,10 +194,10 @@ Section RA_type.
     iFrame "L".
     iSplitL.
     - iSplitL; [|done]. iExists _, 1%nat; iSplitR => //=.
+      rewrite /ty_own ?own_ptr_gho /= ?prod_ty_gho /= ?ra_ty_gho.
       iDestruct "Hown" as "(?&?&Hown1&Hown2)".
-      iFrame.
       repeat rewrite heap_mapsto_fancy_vec_nil.
-      by rewrite /ty_own/=?heap_mapsto_vec_nil ?freeable_util.freeable_sz_full.
+      iFrame. by rewrite ?freeable_sz_full.
     - iApply (proph_obs_impl with "Obs").
       intros π' [_ ].
       apply H0.
@@ -189,6 +222,7 @@ Section RA_type.
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
     iSplitL.
     - iSplitL; [|done]. iExists _, 1%nat; iSplitR => //=.
+      rewrite ?own_ptr_gho /= ?ra_ty_gho.
       repeat rewrite heap_mapsto_fancy_vec_nil.
       by iFrame.
     - iApply (proph_obs_impl with "Obs").
@@ -208,7 +242,9 @@ Section RA_type.
     simpl in y.
     iDestruct "TY" as "(H & ? & _)".
     iDestruct "H" as "(%pl' & %d & % & Hown & %Hphys)".
-    destruct d => //.
+    destruct d as [|d];
+      [by iDestruct (false_fml_sem_1 with "Hown") as "[]"|].
+    rewrite ?own_ptr_gho /= ?ra_ty_gho.
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & %Hupd & _)" => //=.
     iDestruct "Hown" as "(? & ? & Hown)".
@@ -220,7 +256,7 @@ Section RA_type.
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
     iSplitL.
     - iSplitL; [|done]. iExists _, 1%nat; iSplitR => //=.
-      iFrame. done.
+      rewrite ?own_ptr_gho /= ?ra_ty_gho. iFrame. done.
     - iApply (proph_obs_impl with "Obs").
       intros π' [_ ].
       apply H0.
@@ -240,7 +276,9 @@ Section RA_type.
     simpl in ys.
     iDestruct "TY" as "(H & _ & _)".
     iDestruct "H" as "(%pl' & %d & % & Hown & %Hphys)".
-    destruct d => //.
+    destruct d as [|d];
+      [by iDestruct (false_fml_sem_1 with "Hown") as "[]"|].
+    rewrite ?own_ptr_gho /= ?ra_ty_gho.
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & %Hn & %Hupd & _)" => //=.
     iDestruct "Hown" as "(? & ? & Hown)".
@@ -256,6 +294,7 @@ Section RA_type.
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
     iSplitL.
     - iSplitL; [|done]. iExists _, 1%nat; iSplitR => //=.
+      rewrite ?own_ptr_gho /= ?ra_ty_gho.
       repeat rewrite heap_mapsto_fancy_vec_nil.
       by iFrame.
     - iApply (proph_obs_impl with "Obs").
@@ -283,11 +322,14 @@ Section RA_type.
     iDestruct "H" as "(%pl' & %d & % & Hown & %Hphys)".
     simpl in Hphys.
     injection Hphys => ? /=; subst pl'.
-    destruct d => //.
+    destruct d as [|d];
+      [by iDestruct (false_fml_sem_1 with "Hown") as "[]"|].
+    rewrite ?own_ptr_gho /= ?ra_ty_gho.
     iDestruct "Hown" as "(? & #Hshr & _)".
     (* iMod (proph_obs_sat with "PROPH Obs") as "(%π & %Alv & _)" => //=. *)
     iDestruct (Alv with "L E") as "#Alv".
-    iDestruct (guard_trans with "Alv Hshr") as "#G1".
+    iDestruct (guard_trans with "Alv Hshr") as "#G0".
+    iDestruct (guard_rhs_iff (ra_ty_gho _ _ _ _ _) with "G0") as "#G1".
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
     iDestruct (guard_acc with "G1 L Wg") as "[Hown →Wg]".
@@ -320,10 +362,14 @@ Section RA_type.
     simpl in Hphys1, Hphys2.
     injection Hphys1 => ? /=; subst pl1'.
     injection Hphys2 => ? /=; subst pl2'.
-    destruct d1 => //.
-    destruct d2 => //.
-    iDestruct "Hown1" as "(_ & #Hshr1 & _)".
-    iDestruct "Hown2" as "(_ & #Hshr2 & _)".
+    destruct d1 as [|d1];
+      [by iDestruct (false_fml_sem_1 with "Hown1") as "[]"|].
+    destruct d2 as [|d2];
+      [by iDestruct (false_fml_sem_1 with "Hown2") as "[]"|].
+    iDestruct "Hown1" as "(_ & #Hshr1' & _)".
+    iDestruct "Hown2" as "(_ & #Hshr2' & _)".
+    iDestruct (guard_rhs_iff (ra_ty_gho _ _ _ _ _) with "Hshr1'") as "#Hshr1".
+    iDestruct (guard_rhs_iff (ra_ty_gho _ _ _ _ _) with "Hshr2'") as "#Hshr2".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     destruct (decide (d1 ≤ d2)) as [Hle | Hgt].
@@ -364,10 +410,14 @@ Section RA_type.
     simpl in Hphys1, Hphys2.
     injection Hphys1 => ? /=; subst pl1'.
     injection Hphys2 => ? /=; subst pl2'.
-    destruct d1 => //.
-    destruct d2 => //.
-    iDestruct "Hown1" as "(_ & #Hshr1 & _)".
-    iDestruct "Hown2" as "(_ & #Hshr2 & _)".
+    destruct d1 as [|d1];
+      [by iDestruct (false_fml_sem_1 with "Hown1") as "[]"|].
+    destruct d2 as [|d2];
+      [by iDestruct (false_fml_sem_1 with "Hown2") as "[]"|].
+    iDestruct "Hown1" as "(_ & #Hshr1' & _)".
+    iDestruct "Hown2" as "(_ & #Hshr2' & _)".
+    iDestruct (guard_rhs_iff (ra_ty_gho _ _ _ _ _) with "Hshr1'") as "#Hshr1".
+    iDestruct (guard_rhs_iff (ra_ty_gho _ _ _ _ _) with "Hshr2'") as "#Hshr2".
     iDestruct (Alv with "L E") as "#Alv".
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hy & _)" => //.
@@ -384,10 +434,10 @@ Section RA_type.
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
     iSplitL.
     + iSplitL; [|done]. iExists _, 1%nat; iSplitR => //=.
-      iFrame "#".
-      rewrite heap_mapsto_vec_nil.
-      repeat iSplit => //.
-      iApply guard_true.
+      rewrite shr_bor_gho /=. iSplitR; [|done].
+      iSplitR; [iApply guard_true|].
+      iSplitR; [|by iApply empty_fml_sem_2].
+      by iApply (guard_rhs_iff (ra_ty_gho' _ (γ1, y) _ _ tid) with "Hshr3").
     + iApply (proph_obs_impl with "Obs").
       intros π' [_ [? ?] ].
       apply H2.
@@ -412,8 +462,11 @@ Section RA_type.
     iDestruct "H" as "(%pl' & %d & % & Hown & %Hphys)".
     simpl in Hphys.
     injection Hphys => ? /=; subst pl'.
-    destruct d => //.
-    iDestruct "Hown" as "(_ & #Hshr & _)".
+    destruct d as [|d];
+      [by iDestruct (false_fml_sem_1 with "Hown") as "[]"|].
+    rewrite ?own_ptr_gho /= ?ra_ty_gho.
+    iDestruct "Hown" as "(_ & #Hshr0 & _)".
+    iDestruct (guard_rhs_iff (ra_ty_gho _ _ _ _ _) with "Hshr0") as "#Hshr".
     iDestruct (Alv with "L E") as "#Alv".
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & %Hincl & _)" => //.
@@ -429,10 +482,10 @@ Section RA_type.
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
     iSplitL.
     + iSplitL; [|done]. iExists _, 1%nat; iSplitR => //=.
-      iFrame "#".
-      rewrite heap_mapsto_vec_nil.
-      repeat iSplit => //.
-      iApply guard_true.
+      rewrite shr_bor_gho /=. iSplitR; [|done].
+      iSplitR; [iApply guard_true|].
+      iSplitR; [|by iApply empty_fml_sem_2].
+      by iApply (guard_rhs_iff (ra_ty_gho' _ (γ, y) _ _ tid) with "Hshr'").
     + iApply (proph_obs_impl with "Obs").
       intros π' [_ ? ].
       apply H0.
@@ -458,10 +511,14 @@ Section RA_type.
     simpl in Hphys1, Hphys2.
     injection Hphys1 => ? /=; subst pl1'.
     injection Hphys2 => ? /=; subst pl2'.
-    destruct d1 => //.
-    destruct d2 => //.
+    destruct d1 as [|d1];
+      [by iDestruct (false_fml_sem_1 with "Hown1") as "[]"|].
+    destruct d2 as [|d2];
+      [by iDestruct (false_fml_sem_1 with "Hown2") as "[]"|].
+    rewrite ?own_ptr_gho /= ?ra_ty_gho.
     iDestruct "Hown1" as "(_ & _ & Hx)".
-    iDestruct "Hown2" as "(_ & #Hy & _)".
+    iDestruct "Hown2" as "(_ & #Hy0 & _)".
+    iDestruct (guard_rhs_iff (ra_ty_gho _ _ _ _ _) with "Hy0") as "#Hy".
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (guard_trans with "Alv Hy") as "#G1".
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
@@ -479,7 +536,9 @@ Section RA_type.
     iExists -[(l, (γ1, z))]. iFrame "L".
     iSplit => //=.
     + iSplitL "Hx"; [|done]. iExists _, 1%nat.
-      rewrite /= heap_mapsto_fancy_vec_nil freeable_sz_full.
+      rewrite own_ptr_gho /= ?ra_ty_gho /= heap_mapsto_fancy_vec_nil
+        freeable_sz_full.
+      iDestruct (iff_1 (ra_ty_gho' _ (γ1, z) 0 1 tid) with "Hx") as "Hx".
       iFrame "Hx". repeat iSplit; try done. by iRight.
     + iApply (proph_obs_impl with "Obs").
       intros π' [_ [_ ]].
@@ -507,10 +566,14 @@ Section RA_type.
     simpl in Hphys1, Hphys2.
     injection Hphys1 => ? /=; subst pl1'.
     injection Hphys2 => ? /=; subst pl2'.
-    destruct d1 => //.
-    destruct d2 => //.
+    destruct d1 as [|d1];
+      [by iDestruct (false_fml_sem_1 with "Hown1") as "[]"|].
+    destruct d2 as [|d2];
+      [by iDestruct (false_fml_sem_1 with "Hown2") as "[]"|].
+    rewrite ?own_ptr_gho /= ?ra_ty_gho.
     iDestruct "Hown1" as "(_ & _ & Hx)".
-    iDestruct "Hown2" as "(_ & #Hy & _)".
+    iDestruct "Hown2" as "(_ & #Hy0 & _)".
+    iDestruct (guard_rhs_iff (ra_ty_gho _ _ _ _ _) with "Hy0") as "#Hy".
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (guard_trans with "Alv Hy") as "#G1".
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
@@ -532,7 +595,8 @@ Section RA_type.
     iExists -[(l, (γ1, z))]. iFrame "L".
     iSplit => //=.
     + iSplitL "Hx"; [|done]. iExists _, 1%nat.
-      rewrite /= heap_mapsto_fancy_vec_nil freeable_sz_full.
+      rewrite own_ptr_gho /= heap_mapsto_fancy_vec_nil freeable_sz_full.
+      iDestruct (iff_1 (ra_ty_gho' _ (γ1, z) 0 1 tid) with "Hx") as "Hx".
       iFrame "Hx". repeat iSplit; try done. by iRight.
     + iApply (proph_obs_impl with "Obs").
       intros π' [_ [_ [? Hpost]]].

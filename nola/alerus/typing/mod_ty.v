@@ -30,8 +30,8 @@ Section mod_ty.
     ty_size := ty.(ty_size);
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
-    ty_gho_pers x d g tid := ty.(ty_gho_pers) (fⁱ ~~$ₛ x) d g tid ;
-    ty_gho x d g tid := ty.(ty_gho) (fⁱ ~~$ₛ x) d g tid ;
+    ty_gho_persx x d g tid := ty.(ty_gho_persx) (fⁱ ~~$ₛ x) d g tid ;
+    ty_ghox x d g tid := ty.(ty_ghox) (fⁱ ~~$ₛ x) d g tid ;
     ty_phys x tid := ty.(ty_phys) (fⁱ ~~$ₛ  x) tid ;
   |}%I.
   Next Obligation. intros. apply ty_size_eq. Qed.
@@ -43,9 +43,20 @@ Section mod_ty.
   Next Obligation. intros. apply ty_guard_proph. by rewrite <- syn_type_morphism_ξl. Qed.
   Next Obligation. intros. apply ty_gho_pers_impl. Qed.
 
+  Lemma mod_ty_gho {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) `{!Isoₛ f fⁱ} ty x d g tid :
+    ty_gho (mod_ty f fⁱ ty) x d g tid ⊣⊢ ty_gho ty (fⁱ ~~$ₛ x) d g tid.
+  Proof. done. Qed.
+  Lemma mod_ty_gho_pers {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) `{!Isoₛ f fⁱ}
+    ty x d g tid :
+    ty_gho_pers (mod_ty f fⁱ ty) x d g tid ⊣⊢
+      ty_gho_pers ty (fⁱ ~~$ₛ x) d g tid.
+  Proof. done. Qed.
+
   Global Instance mod_ty_ne {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) `{!Isoₛ f fⁱ} : NonExpansive (mod_ty f fⁱ).
   Proof. solve_ne_type. Qed.
 End mod_ty.
+
+Global Hint Rewrite @mod_ty_gho @mod_ty_gho_pers : fml_sem.
 
 Notation "<{ f ; fⁱ }>" := (mod_ty f fⁱ) (format "<{ f ; fⁱ }>"): lrust_type_scope.
 
@@ -87,7 +98,7 @@ Section typing.
        iMod (Hgho with "LFT UNIQ Hg tok Gho W")
          as "($ & %x' & %off & gho & %Habs & tok)".
        iModIntro. iExists (f ~~$ₛ x'), off. iFrame "tok".
-       unfold mod_ty. simpl. rewrite semi_iso'. iFrame "gho". iPureIntro.
+       rewrite mod_ty_gho semi_iso'. iFrame "gho". iPureIntro.
        have Hs := syn_abstract_consistent1 _ _ Habs. rewrite semi_iso' in Hs.
        trivial.
   Qed.
@@ -125,7 +136,7 @@ Section typing.
   Lemma mod_ty_in {𝔄 𝔅} E L `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty : subtype E L ty (<{f;fⁱ}> ty) f.
   Proof.
     iIntros "*_!>_". iSplit; [done|]. iSplit; [by iApply lft_incl_refl|].
-    unfold mod_ty; simpl.
+    rewrite /ty_gho /ty_gho_pers. unfold mod_ty; simpl.
     iSplit. { iModIntro. iIntros. rewrite semi_iso'. iFrame. iIntros. done. }
     iSplit. { iModIntro. iIntros. rewrite semi_iso'. done. }
     iPureIntro; intros; rewrite semi_iso'; done.
@@ -135,7 +146,7 @@ Section typing.
     subtype E L (<{f;fⁱ}> ty) ty fⁱ.
   Proof.
     iIntros "*_!>_". iSplit; [done|]. iSplit; [by iApply lft_incl_refl|].
-    unfold mod_ty; simpl.
+    rewrite /ty_gho /ty_gho_pers. unfold mod_ty; simpl.
     iSplit. { iModIntro. iIntros. iFrame. iIntros. done. }
     iSplit. { iModIntro. iIntros. done. }
     iPureIntro; intros; done.

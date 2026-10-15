@@ -73,6 +73,10 @@ Lemma by_succx_sem `{!typeG FML Σ} d Φ :
 Proof. case d=>//=. apply false_fml_sem. Qed.
 Global Hint Rewrite @by_succx_sem : fml_sem.
 
+Global Instance by_succx_persistent `{!typeG FML Σ} d Φ :
+  (∀d', Persistent (bor_sem (Φ d'))) → Persistent (bor_sem (by_succx d Φ)).
+Proof. move=> ?. case d; exact _. Qed.
+
 Global Instance by_succx_ne `{!typeG FML Σ} n :
   Proper ((=) ==> pointwise_relation _ (dist n) ==> dist n) by_succx.
 Proof. move=> d ? <- ?? Eq. by case d. Qed.
@@ -207,8 +211,8 @@ Definition ty_gho_pers `{!typeG FML Σ} {𝔄} (ty: type 𝔄)
   bor_sem (ty.(ty_gho_persx) x d g tid).
 Global Instance: Params (@ty_gho) 5 := {}.
 Global Instance: Params (@ty_gho_pers) 5 := {}.
-Arguments ty_gho {_ _ _ _} _ _ _ _ / : simpl nomatch.
-Arguments ty_gho_pers {_ _ _ _} _ _ _ _ / : simpl nomatch.
+Arguments ty_gho {_ _ _ _} _ _ _ _ : simpl never.
+Arguments ty_gho_pers {_ _ _ _} _ _ _ _ : simpl never.
 
 Notation ty_lft ty := (lft_intersect_list ty.(ty_lfts)).
 
@@ -334,7 +338,7 @@ Arguments st_ghox {_ _ _ _} _ _ _ _ / : simpl nomatch.
 Definition st_gho `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄)
   (x: ~~𝔄) (d g: nat) (tid: thread_id) : iProp Σ :=
   bor_sem (st.(st_ghox) x d g tid).
-Arguments st_gho {_ _ _ _} _ _ _ _ / : simpl nomatch.
+Arguments st_gho {_ _ _ _} _ _ _ _ : simpl never.
 Arguments st_phys {_ _ _ _} _ _ / : simpl nomatch.
 
 Program Definition ty_of_st `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) : type 𝔄 := {|
@@ -357,6 +361,20 @@ Next Obligation. intros FML Σ typeG0 𝔄 st κ x d g tid ξ R.
     try iFrame. Qed.
 Next Obligation. move=> >. iIntros. iFrame "#". Qed.
 
+(** Unfolding the ghost assertion of a derived type.
+
+  A type's ghost assertion is a formula, so [simpl] no longer turns
+  [ty_gho (F ty) x d g tid] into the proposition the original development
+  works with: [ty_gho] is [simpl nomatch], and a type former's body is stuck
+  on a projection of the type it is applied to.  Each type former therefore
+  comes with an unfolding lemma, collected in the [fml_sem] rewrite database
+  so that [fml_simpl] does the whole job. *)
+Lemma ty_of_st_gho `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) x d g tid :
+  ty_gho (ty_of_st st) x d g tid ⊣⊢ st_gho st x d g tid.
+Proof. done. Qed.
+Lemma ty_of_st_gho_pers `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) x d g tid :
+  ty_gho_pers (ty_of_st st) x d g tid ⊣⊢ st_gho st x d g tid.
+Proof. done. Qed.
 Coercion ty_of_st: simple_type >-> type.
 
 (** Plain Type *)
@@ -381,7 +399,7 @@ Arguments pt_size {_ _ _ _} _ / : simpl nomatch.
 Arguments pt_ghox {_ _ _ _} _ _ _ / : simpl nomatch.
 Definition pt_gho `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄)
   (x: ~~𝔄) (tid: thread_id) : iProp Σ := bor_sem (pt.(pt_ghox) x tid).
-Arguments pt_gho {_ _ _ _} _ _ _ / : simpl nomatch.
+Arguments pt_gho {_ _ _ _} _ _ _ : simpl never.
 Arguments pt_phys {_ _ _ _} _ _ _ / : simpl nomatch.
 
 Program Definition st_of_pt `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄) : simple_type 𝔄 := {|
@@ -399,6 +417,9 @@ Next Obligation. move=> >. intros Hin.
   rewrite (pt_non_prophetic) in Hin; trivial. set_solver. Qed.
 Next Obligation. intros. apply pt_concrete. Qed.
 
+Lemma st_of_pt_gho `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄) x d g tid :
+  st_gho (st_of_pt pt) x d g tid ⊣⊢ pt_gho pt x tid.
+Proof. done. Qed.
 Coercion st_of_pt: plain_type >-> simple_type.
 
 Declare Scope lrust_type_scope.
@@ -418,7 +439,7 @@ Global Instance: Params (@gt_ghox) 5 := {}.
 Arguments gt_ghox {_ _ _ _} _ _ / : simpl nomatch.
 Definition gt_gho `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄)
   (x: ~~𝔄) (tid: thread_id) : iProp Σ := bor_sem (gt.(gt_ghox) x tid).
-Arguments gt_gho {_ _ _ _} _ _ _ / : simpl nomatch.
+Arguments gt_gho {_ _ _ _} _ _ _ : simpl never.
 
 Program Definition ty_of_gt `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄) : type 𝔄 := {|
   ty_size := 0;
@@ -431,12 +452,17 @@ Program Definition ty_of_gt `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄) : type
 Next Obligation. move=> * //=. Qed.
 Next Obligation. move=> * //=. by rewrite gt_size0. Qed.
 Next Obligation. move=> * //=. by rewrite gt_phys0. Qed.
-Next Obligation. iIntros "**". iFrame. iIntros. done. Qed.
-Next Obligation. iIntros "**". iFrame. Qed.
+Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
+Next Obligation. move=> *. by iIntros "$". Qed.
 Next Obligation. move=> >. intros Hin. rewrite gt_non_prophetic in Hin; trivial. set_solver. Qed.
-Next Obligation. move=> *. rewrite empty_fml_sem. apply _. Qed.
 Next Obligation. move=> *. iIntros "_". by iApply empty_fml_sem_2. Qed.
 
+Lemma ty_of_gt_gho `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄) x d g tid :
+  ty_gho (ty_of_gt gt) x d g tid ⊣⊢ gt_gho gt x tid.
+Proof. done. Qed.
+Lemma ty_of_gt_gho_pers `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄) x d g tid :
+  ty_gho_pers (ty_of_gt gt) x d g tid ⊣⊢ True.
+Proof. apply empty_fml_sem. Qed.
 Coercion ty_of_gt: ghost_type >-> type.
 
 (** * OFE Structures on Types *)
@@ -554,6 +580,22 @@ Section ofe_lemmas.
   Global Instance ty_gho_pers_proper {𝔄} :
     Proper ((≡) ==> (=) ==> (=) ==> (=) ==> (=) ==> (≡)) (ty_gho_persx (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->??->??->. apply Eqv. Qed.
+  (** The semantic views inherit the record's persistence.  These are needed
+    because type class search keys on the head of the goal, and the record
+    fields are stated about [bor_sem …]. *)
+  Global Instance ty_gho_pers_persistent {𝔄} (ty: type 𝔄) x d g tid :
+    Persistent (ty_gho_pers ty x d g tid).
+  Proof. rewrite /ty_gho_pers. apply ty_gho_pers_pers. Qed.
+  Global Instance ty_of_st_gho_persistent {𝔄} (st: simple_type 𝔄) x d g tid :
+    Persistent (ty_gho (ty_of_st st) x d g tid).
+  Proof. rewrite /ty_gho. apply st_gho_persistent. Qed.
+  Global Instance st_gho_persistent' {𝔄} (st: simple_type 𝔄) x d g tid :
+    Persistent (st_gho st x d g tid).
+  Proof. rewrite /st_gho. apply st_gho_persistent. Qed.
+  Global Instance pt_gho_persistent' {𝔄} (pt: plain_type 𝔄) x tid :
+    Persistent (pt_gho pt x tid).
+  Proof. rewrite /pt_gho. apply pt_gho_persistent. Qed.
+
   (** The semantic views inherit the formula-level properness *)
   Global Instance ty_gho_sem_ne {𝔄} n:
     Proper (dist n ==> (=) ==> (=) ==> (=) ==> (=) ==> dist n) (ty_gho (𝔄:=𝔄)).

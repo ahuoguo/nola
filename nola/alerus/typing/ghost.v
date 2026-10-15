@@ -22,7 +22,7 @@ Section ghost.
       st_size := 0;
       st_lfts := ty.(ty_lfts);
       st_E := [];
-      st_gho x d g tid := True%I;
+      st_ghox x d g tid := empty_fml;
       st_phys x tid := [];
     |}%I : simple_type (ghostₛ 𝔄)).
   Next Obligation. move=> *. trivial. Qed.
@@ -34,20 +34,28 @@ Section ghost.
   Qed.
   Next Obligation. done. Qed.
 
+  Lemma ghost_ty_gho {𝔄} (ty: type 𝔄) x d g tid :
+    ty_gho (ghost_ty ty) x d g tid ⊣⊢ True.
+  Proof. apply empty_fml_sem. Qed.
+  Lemma ghost_ty_gho_pers {𝔄} (ty: type 𝔄) x d g tid :
+    ty_gho_pers (ghost_ty ty) x d g tid ⊣⊢ True.
+  Proof. apply empty_fml_sem. Qed.
+
   Global Instance ghost_ne {𝔄} : NonExpansive (@ghost_ty 𝔄).
   Proof. solve_ne_type. Qed.
 
   Global Instance ghost_send {𝔄} (ty : type 𝔄) : Send (ghost_ty ty).
   Proof.
     split; [done|]. move=> tid tid' x d g γ q κs.
-    iIntros "_ _ _ K _ $ !>". iExists x, 0. rewrite Nat.add_0_r. by iFrame "K".
+    iIntros "_ _ _ K _ $ !>". iExists x, 0. rewrite Nat.add_0_r. iFrame "K".
+    iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
   Global Instance ghost_sync {𝔄} (ty : type 𝔄) : Sync (ghost_ty ty).
-  Proof. done. Qed.
+  Proof. move=> *. split; [done|]. split; reflexivity. Qed.
 
   Global Instance ghost_copy {𝔄} (ty : type 𝔄) : Copy (ghost_ty ty).
-  Proof. split; [typeclasses eauto|done]. Qed.
+  Proof. split; [exact _|]. move=> *. by iIntros "_". Qed.
 
   Lemma ghost_resolve {𝔄} (ty: type 𝔄) E L :
     resolve E L (ghost_ty ty) (const (const True)).
@@ -64,8 +72,10 @@ Section ghost.
     iApply (twp_new 0); [lia|done|]. iIntros (l) "(† & ↦)".
     iExists -[(l, c)]. iFrame. iSplitL.
     - iExists #l, 1%nat. iSplit; [done|].
-      rewrite /ty_own /= heap_mapsto_fancy_vec_nil freeable_sz_full.
-      iSplit; [|done]. iSplit; [done|]. iSplit; [|done]. by iRight.
+      rewrite /ty_own own_ptr_gho /= heap_mapsto_fancy_vec_nil
+        freeable_sz_full.
+      iSplit; [|done]. iSplit; [done|].
+      iSplit; [by iRight|by iApply empty_fml_sem_2].
     - iApply (proph_obs_impl with "Obs"). done.
   Qed.
 
@@ -81,8 +91,10 @@ Section ghost.
     iApply (twp_new 0); [lia|done|]. iIntros (l) "(† & ↦)".
     iExists -[x; (l, x)]. iFrame "T". iFrame. iSplitL.
     - iExists #l, 1%nat. iSplit; [done|].
-      rewrite /ty_own /= heap_mapsto_fancy_vec_nil freeable_sz_full.
-      iSplit; [|done]. iSplit; [done|]. iSplit; [|done]. by iRight.
+      rewrite /ty_own own_ptr_gho /= heap_mapsto_fancy_vec_nil
+        freeable_sz_full.
+      iSplit; [|done]. iSplit; [done|].
+      iSplit; [by iRight|by iApply empty_fml_sem_2].
     - iApply (proph_obs_impl with "Obs"). done.
   Qed.
 
@@ -99,10 +111,14 @@ Section ghost.
     iApply (twp_new 0); [lia|done|]. iIntros (l) "(† & ↦)".
     iExists -[x; y; (l, f x y)]. iFrame "T1 T2". iFrame. iSplitL.
     - iExists #l, 1%nat. iSplit; [done|].
-      rewrite /ty_own /= heap_mapsto_fancy_vec_nil freeable_sz_full.
-      iSplit; [|done]. iSplit; [done|]. iSplit; [|done]. by iRight.
+      rewrite /ty_own own_ptr_gho /= heap_mapsto_fancy_vec_nil
+        freeable_sz_full.
+      iSplit; [|done]. iSplit; [done|].
+      iSplit; [by iRight|by iApply empty_fml_sem_2].
     - iApply (proph_obs_impl with "Obs"). done.
   Qed.
 End ghost.
+
+Global Hint Rewrite @ghost_ty_gho @ghost_ty_gho_pers : fml_sem.
 
 Global Hint Resolve ghost_resolve : lrust_typing.

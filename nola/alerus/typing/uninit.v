@@ -19,23 +19,28 @@ Section uninit.
     ty_size := n;
     ty_lfts := [];
     ty_E := [];
-    ty_gho vπ _ _ _ := True;
-    ty_gho_pers vπ _ _ _ := True;
+    ty_ghox vπ _ _ _ := empty_fml;
+    ty_gho_persx vπ _ _ _ := empty_fml;
     ty_phys x _ := fmap FVal (vec_to_list x);
   |}%I.
   Next Obligation. intros. rewrite length_fmap. rewrite length_vec_to_list. trivial. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. by iIntros. Qed.
-  Next Obligation. set_solver. Qed.
-  Next Obligation. intros. set_solver. Qed.
-  Next Obligation. by iIntros. Qed.
+  Next Obligation. intros; first [set_solver|iIntros "$"; by iIntros "$"]. Qed.
+  Next Obligation. intros; first [set_solver|iIntros "$"; by iIntros "$"]. Qed.
+  Next Obligation. intros; first [set_solver|iIntros "$"; by iIntros "$"]. Qed.
+  Next Obligation. intros; first [set_solver|iIntros "$"; by iIntros "$"]. Qed.
 End uninit.
 
 Notation "↯" := uninit : lrust_type_scope.
 
 Section typing.
   Context `{!typeG FML Σ}.
+
+  Lemma uninit_gho n x d g tid : ty_gho (uninit n) x d g tid ⊣⊢ True.
+  Proof. apply empty_fml_sem. Qed.
+  Lemma uninit_gho_pers n x d g tid : ty_gho_pers (uninit n) x d g tid ⊣⊢ True.
+  Proof. apply empty_fml_sem. Qed.
 
   Global Instance uninit_copy n : Copy (↯ n).
   Proof. split; [apply _|]=>/= *. iIntros. iPureIntro. apply all_concrete_fmap_fval. Qed.
@@ -45,11 +50,12 @@ Section typing.
     intros. split.
       - intros tid tid' x x' Hsyn. unfold syn_abstract in Hsyn. subst x'. trivial.
       - iIntros (tid tid' x0 d g γ q κs) "_ _ _ tok _ $ !>".
-        iExists x0, 0%nat. iFrame "tok". done.
+        iExists x0, 0%nat. iFrame "tok".
+        iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
   
   Global Instance uninit_sync n : Sync (↯ n).
-  Proof. split => //=. Qed.
+  Proof. move=> *. split; [done|]. split; reflexivity. Qed.
 
   Lemma uninit_resolve n E L : resolve E L (↯ n) (const (const True)).
   Proof. apply resolve_just. Qed.
@@ -135,12 +141,17 @@ Section typing.
         rewrite <- vsepat_app. trivial.
     }
     iIntros "_!>_". iSplit; [done|]. iSplit; [iApply lft_equiv_refl|].
-    iSplit; first iModIntro=>/=.
-    - iIntros (????). naive_solver. 
-    - iPureIntro. split.
-      + intuition.
-      + rewrite /ty_phys /= .
-        intros x tid. rewrite <- fmap_app. rewrite <- vec_to_list_app. rewrite <- vsepat_app. trivial.
+    iSplit.
+    { iModIntro. iIntros (????).
+      rewrite uninit_gho prod_ty_gho !uninit_gho.
+      iSplit; iIntros "_"; first [done|by iSplit]. }
+    iSplit.
+    { iModIntro. iIntros (????).
+      rewrite uninit_gho_pers prod_ty_gho_pers !uninit_gho_pers.
+      iSplit; iIntros "_"; first [done|by iSplit]. }
+    iPureIntro. rewrite /ty_phys /=.
+    intros x tid. rewrite <- fmap_app. rewrite <- vec_to_list_app.
+    rewrite <- vsepat_app. trivial.
   Qed.
   Lemma uninit_plus_prod_1 E L m n :
     subtype E L (↯ (m + n) ) (↯ m  * ↯ n ) uninit_splitₛ.
@@ -149,6 +160,8 @@ Section typing.
     subtype E L (↯ m * ↯ n) (↯ (m + n)) uninit_joinₛ.
   Proof. eapply proj2, uninit_plus_prod. Qed.
 End typing.
+
+Global Hint Rewrite @uninit_gho @uninit_gho_pers : fml_sem.
 
 Global Hint Resolve uninit_resolve (*uninit_unit_1 uninit_unit_2*)
   uninit_plus_prod_1 uninit_plus_prod_2 : lrust_typing.

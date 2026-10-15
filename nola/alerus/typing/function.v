@@ -95,6 +95,42 @@ Section fn.
   Notation boxed_predl 𝔄l := (pred' (plist (indep_interp_of_syn_type ∘ at_locₛ) 𝔄l)).
   Notation boxed_predl_trans' 𝔄l 𝔅 := (pred' (~~𝔅) → boxed_predl 𝔄l).
   
+End fn.
+
+(** The formula standing for a function type's specification.
+
+  A type's ghost assertion is a formula now (see [TypeFml] in
+  [typing/ctx.v]), and [fn]'s is the whole typing judgment of the function's
+  body - a [□ ∀ … typed_body …], which mentions the weakest precondition and
+  therefore the world satisfaction that interprets formulas.  Expressing it
+  needs a formula language closed under exactly that, i.e. a genuinely
+  guarded-recursive domain equation; Nola's [cif] provides one for its own
+  constructors, which is why [rust_halt] has no function type to begin with.
+  It is stated here the way every other constructor in this development is -
+  a constructor plus the equation pinning down its semantics - and it is the
+  one whose realisability is *not* justified by the shapes already in
+  [TypeFml].  See the note on [typing/soundness.v]. *)
+Class FnFml `{!typeG FML Σ} := {
+  fn_fml {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
+    (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) : FML $oi Σ;
+  fn_fml_sem {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
+    (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) :
+    bor_sem (fn_fml fp spec x) ⊣⊢
+      (∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
+        □ ∀y ϝ k (wl: plistc _ _),
+          typed_body (fp_E (fp y) ϝ) [ϝ ⊑ₗ []]
+            (InvCtx [] ϝ (fp_atomic_state (fp y)))
+            [k ◁cont{[ϝ ⊑ₗ []], (InvCtx [] ϝ (fp_atomic_state (fp y))),
+              λ v: vec _ 1, +[vhd v ◁ own.box (fp y).(fp_oty)] } tr_ret]
+            (hzip_with (λ _ boxty (w: val), w ◁ boxty)
+              (box_typel (fp y).(fp_ityl)) wl)
+            (subst' fb (RecV fb (kb :: bl) e) $ subst' kb k $ subst_plv bl wl e)
+            (spec (snd x)))%I;
+}.
+
+Section fn.
+  Context `{!typeG FML Σ} `{FnFml0 : !FnFml} {A: Type} {𝔄l 𝔅}.
+
   Program Definition fn {ℭ} (fp: A → fn_params) (spec: fn_spec 𝔄l 𝔅 ℭ)
     : type (exec_funₛ ℭ) :=
     {| (* FIXME : The definition of ty_lfts is less restrictive than the one
@@ -113,24 +149,31 @@ Section fn.
               (subst' fb (RecV fb (kb :: bl) e) $ subst' kb k $ subst_plv bl wl e)
               tr)
               *)
-      pt_gho (x: ~~ (exec_funₛ ℭ)) tid := tc_opaque
-        (∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
-              □ ∀y ϝ k (wl: plistc _ _),
-                typed_body (fp_E (fp y) ϝ) [ϝ ⊑ₗ []] (InvCtx [] ϝ (fp_atomic_state (fp y)))
-                  [k ◁cont{[ϝ ⊑ₗ []], (InvCtx [] ϝ (fp_atomic_state (fp y))), λ v: vec _ 1, +[vhd v ◁ own.box (fp y).(fp_oty)] } tr_ret]
-                  (hzip_with (λ _ boxty (w: val), w ◁ boxty) (box_typel (fp y).(fp_ityl)) wl)
-                  (subst' fb (RecV fb (kb :: bl) e) $ subst' kb k $ subst_plv bl wl e)
-                  (spec (snd x))
-        );
+      pt_ghox (x: ~~ (exec_funₛ ℭ)) tid := fn_fml fp spec x;
       pt_phys (x: ~~ (exec_funₛ ℭ)) tid := [FVal (fst x)];
-    |}%I.
-  Next Obligation. rewrite /tc_opaque. apply _. Qed.
+    |}.
+  Next Obligation. move=> *. rewrite fn_fml_sem. apply _. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
+
+  (** Unfolding [fn]'s ghost assertion *)
+  Lemma fn_gho {ℭ} (fp: A → fn_params) (spec: fn_spec 𝔄l 𝔅 ℭ) x d g tid :
+    ty_gho (fn fp spec) x d g tid ⊣⊢
+      (∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
+        □ ∀y ϝ k (wl: plistc _ _),
+          typed_body (fp_E (fp y) ϝ) [ϝ ⊑ₗ []]
+            (InvCtx [] ϝ (fp_atomic_state (fp y)))
+            [k ◁cont{[ϝ ⊑ₗ []], (InvCtx [] ϝ (fp_atomic_state (fp y))),
+              λ v: vec _ 1, +[vhd v ◁ own.box (fp y).(fp_oty)] } tr_ret]
+            (hzip_with (λ _ boxty (w: val), w ◁ boxty)
+              (box_typel (fp y).(fp_ityl)) wl)
+            (subst' fb (RecV fb (kb :: bl) e) $ subst' kb k $ subst_plv bl wl e)
+            (spec (snd x))).
+  Proof. apply fn_fml_sem. Qed.
 
   (*
   Global Instance fn_ne n :
@@ -169,7 +212,7 @@ Notation "fn( E ) → oty" := (fn (λ _: (), FP E%EL +[] oty%T AtomicClosed))
   (at level 99, oty at level 200, format "fn( E )  →  oty") : lrust_type_scope.
 
 Section typing.
-  Context `{!typeG FML Σ}.
+  Context `{!typeG FML Σ} `{FnFml0 : !FnFml}.
 
   (*
   Global Instance fn_type_contractive {A 𝔄l 𝔅 ℭ} E
@@ -317,6 +360,7 @@ Section typing.
   Proof.
     apply subtype_plain_type. iIntros "_ !> _ /=". iSplit; [done|].
     iSplit; [iApply lft_incl_refl|]. iSplit; last by done. iIntros "*".
+    rewrite /pt_gho /= !fn_fml_sem.
     iIntros "#A". iFrame "A". iSplit; last by (iIntros "_"; done).
     iDestruct "A" as (fb kb bl e H) "[A #B]". iExists fb, kb, bl, e, H. iFrame "A".
     iModIntro. iIntros (y ϝ k wl). iApply "B".
@@ -432,7 +476,7 @@ Section typing.
       iApply llftl_intersect_incl_r. }
     iModIntro. iFrame "W".
     wp_bind p. iApply (twp_hasty with "p"). iIntros (?? _) "[gho %phys]".
-    iDestruct "gho" as (fb kb bl e Hclosed) "[%Hrec #e]".
+    rewrite fn_gho. iDestruct "gho" as (fb kb bl e Hclosed) "[%Hrec #e]".
     inversion phys as [Eqv].
     have ->: (λ: ["_r"], Skip;; k' ["_r"])%E = (λ: ["_r"], Skip;; k' ["_r"])%V
       by unlock.
@@ -594,7 +638,7 @@ Section typing.
     iExists -[((@RecV BAnon ("return" :: bl')%binder e Cl)%V, tr)].
     iFrame "Obs". iSplit; [|done]. iExists _, 0%nat.
     iSplit; [by rewrite/= decide_True_pi|]. iSplit; last by done.
-    iExists BAnon, "return", bl', e, _. iSplit; [done|].
+    rewrite fn_gho. iExists BAnon, "return", bl', e, _. iSplit; [done|].
     iIntros "!>" (y ϝ k wl). iApply Body.
   Qed.
 End typing.

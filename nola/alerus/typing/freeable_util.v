@@ -12,13 +12,8 @@ From nola.alerus.typing Require Export type ctx.
 Section freeable.
   Context `{!typeG FML Σ}.
 
-  Definition freeable_sz (n sz: nat) (l: loc) : iProp Σ :=
-    match sz, n with 0%nat, _ => True | _, 0%nat => False |
-      sz, n => †{pos_to_Qp (Pos.of_nat sz) / pos_to_Qp (Pos.of_nat n)}l…sz end.
-  Arguments freeable_sz: simpl never.
-
-  Global Instance freeable_sz_timeless n sz l : Timeless (freeable_sz n sz l).
-  Proof. case sz, n; apply _. Qed.
+  (** [freeable_sz] itself lives in [typing/ctx.v]: the formula language has
+    to be able to express it, for [own_ptr]. *)
 
   Lemma freeable_sz_full n l : freeable_sz n n l ⊣⊢ †{1}l…n ∨ ⌜Z.of_nat n = 0⌝.
   Proof.
