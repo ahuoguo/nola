@@ -301,6 +301,73 @@ Section uniq_bor_sem.
       (l, x0, ξi, _, _, _), (l', x0', ξi', _, _, _) =>
         l = l' ∧ x0' = new ∧ ξi' = ξi
     end.
+
+  (** Writing through a unique reference.
+
+    The original takes a [Timeless G] with [G &&{↑NllftG}&&> llctx_interp L]
+    and halves it with [frac_split_guard_in_half]; here the halves are
+    fractions of an [Ltok], and the half handed to the client is named as a
+    formula, since the Points-To Cell Logic parks it in its write bank. *)
+  Lemma write_uniq {𝔄} E L κ (ty: type 𝔄) :
+    lctx_lft_alive E L κ →
+    typed_write E L (&uniq{κ} ty) ty (&uniq{κ} ty) ty uniq_bor_current
+      uniq_bor_update.
+  Proof.
+    move=> Alv. split; [done|].
+    move=> [[[[[l x0] ξi] d'] g'] idx] d v tid γ q.
+    iIntros "#LFT #UNIQ #E [#key f] [gho %Phys]". rewrite uniq_bor_gho.
+    iDestruct "gho" as "(#Incl & %Hle & (ξVo & Tok & #Bor) & #PtBase & #Pers)".
+    iIntros "W".
+    iDestruct (Ltok_acc (W:=alerus_wsat) with "[$key $f] W") as "[L →W]".
+    iDestruct (Alv with "L E") as "#Lkg".
+    iDestruct ("→W" with "L") as "[W [_ f]]".
+    iAssert (frac_tok γ (q/2) &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "[] Lkg"). iApply (Ltok_guard_frac with "key"). }
+    iAssert (bor_sem (gsrc_fml (GFrac γ (q/2))) &&{Wguard}&&> @[κ])%I as "#Gκ'".
+    { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ (q/2)))). iApply "Gκ". }
+    iDestruct (Ltok_split_1 with "[$key $f]") as "[[_ fa] [_ fb]]".
+    iDestruct (llftl_bor_idx_acc_guarded ⊤ (gsrc_fml (GFrac γ (q/2))) κ idx
+      with "LFT Bor Tok Gκ' [fa]") as "A";
+      [by iApply (gsrc_fml_sem_2 (s := GFrac γ (q/2)))|].
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "A") as "A'";
+      [done|].
+    iMod ("A'" with "W") as "[W [P Gback]]".
+    iEval (rewrite uniq_body_fml_sem) in "P".
+    iDestruct "P" as (x1 d1 g1) "(ξPc & gho & pt)".
+    iDestruct (uniq_agree with "ξVo ξPc") as %[<- Heq]. inversion Heq.
+    subst d1 g1. destruct d as [|d]; [lia|].
+    iModIntro. iFrame "W". iExists l, d, (gsrc_fml (GFrac γ (q/2))).
+    inversion Phys as [Eqv]. iSplit; [done|]. iSplit; [done|].
+    iSplitL "pt gho".
+    { iExists (ty_phys ty x0 tid). iFrame "pt". rewrite /ty_own.
+      iSplit; [|done].
+      by iDestruct (ty_gho_depth_mono ty d' g' d (S d) x0 tid with "gho")
+        as "[$ _]"; [lia|lia]. }
+    iSplitL "fb"; [by iApply (gsrc_fml_sem_2 (s := GFrac γ (q/2)))|].
+    iSplit; [iApply (guard_trans with "Gκ' PtBase")|].
+    iIntros (y db') "pt fb W".
+    iDestruct "pt" as (lv) "[pt [gho %phys]]". subst lv.
+    iDestruct (ty_gho_pers_impl with "gho") as "#ghopers".
+    iMod (uniq_update (PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi) y (vπ y)
+      (db', S db') with "UNIQ ξVo ξPc") as "[ξVo ξPc]"; [set_solver|].
+    iDestruct ("Gback" with "[pt gho ξPc]") as "B".
+    { iApply (uniq_body_fml_sem_2 with "ξPc gho pt"). }
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "B") as "B'";
+      [done|].
+    iMod ("B'" with "W") as "[W [Tok fa]]".
+    iDestruct (gsrc_fml_sem_1 (s := GFrac γ (q/2)) with "fa") as "fa".
+    iDestruct (gsrc_fml_sem_1 (s := GFrac γ (q/2)) with "fb") as "fb".
+    iModIntro. iFrame "W". iExists (l, y, ξi, db', S db', idx).
+    iDestruct (Ltok_split_2 with "[$key $fa] [$key $fb]") as "$".
+    iSplit; [done|]. rewrite /ty_own uniq_bor_gho.
+    rewrite (uniq_body_pers_component_irrel ty x0 y ξi d' g' db' (S db') idx κ
+      tid l (proof_irrel _ _)).
+    rewrite (proof_irrel (prval_to_inh (vπ x0)) (prval_to_inh (vπ y))).
+    iSplitL; [|done]. rewrite /uniq_body.
+    iSplitR; [iApply "Incl"|]. iSplitR; [iPureIntro; lia|].
+    iSplitL "ξVo Tok"; [iFrame "ξVo Tok Bor"|].
+    iSplitR; [iApply "PtBase"|]. iRight. iApply "ghopers".
+  Qed.
 End uniq_bor_sem.
 
 Global Hint Rewrite @uniq_bor_gho @uniq_bor_gho_pers : fml_sem.

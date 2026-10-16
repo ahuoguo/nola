@@ -584,4 +584,20 @@ Section uniq_util.
     move=> Hg Hp. rewrite !uniq_body_fml_sem.
     do 3 (apply bi.exist_proper=> ?). by rewrite Hg Hp.
   Qed.
+
+  (** The body formula depends on the refinement only through the prophecy
+    variable's inhabitant witness, which is proof-irrelevant. *)
+  Lemma uniq_body_fml_irrel {𝔄} (ty: type 𝔄) x y ξi tid l :
+    prval_to_inh (vπ x) = prval_to_inh (vπ y) →
+    uniq_body_fml ty x ξi tid l = uniq_body_fml ty y ξi tid l.
+  Proof. rewrite /uniq_body_fml /uniq_body_at_fml=> ->. done. Qed.
+  Lemma uniq_body_pers_component_irrel {𝔄} (ty: type 𝔄) x y ξi d g d2 g2 idx
+      κ tid l :
+    prval_to_inh (vπ x) = prval_to_inh (vπ y) →
+    uniq_body_pers_component ty x ξi d g idx κ tid l =
+      uniq_body_pers_component ty y ξi d2 g2 idx κ tid l.
+  Proof.
+    rewrite /uniq_body_pers_component=> Heq.
+    by rewrite (uniq_body_fml_irrel ty x y ξi tid l Heq).
+  Qed.
 End uniq_util.
