@@ -300,4 +300,242 @@ Section uniq_util.
     iDestruct (gsrc_fml_sem_1 (s := GFrac γ q) with "tok") as "tok".
     iModIntro. iFrame "key tok ξVo ξTok ξBor".
   Qed.
+
+  (** Resolving the prophecy of a unique borrow.
+
+    The original's proof is mostly credit arithmetic: it buys
+    [d*(g+1) + d*(g+1) + 2] later credits out of the time receipt
+    [⧖(S d `max` g)] and spends them stripping the [▷]s in front of the
+    borrowed contents, of the [∀ζ] guard and of the resolution itself.  None
+    of those [▷]s exist here, so all of it goes; what is left is the
+    skeleton - halve the share, lend one half to a fresh lifetime [κ'],
+    reborrow the contents to [κ'], resolve under it, then let [κ'] die. *)
+  Lemma resolve_uniq_body {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E L γ q F :
+    lctx_lft_alive E L κ → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ F →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ κ ⊑ ty_lft ty -∗ elctx_interp E -∗
+    Ltok γ L q -∗ uniq_body ty x ξi d g idx κ tid l =[alerus_wsat]{F}=∗
+      ⟨π, π (PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi) = vπ x π⟩ ∗ Ltok γ L q ∗
+      (@[κ] &&{Wguard}&&>
+        (ty_gho ty x d g tid ∗ l #↦!∗ ty_phys ty x tid)).
+  Proof.
+    move=> Alv HF.
+    have ? : Inhabited (~~𝔄) := populate x.
+    iIntros "#LFT #PROPH #UNIQ #In #E [#key f] (ξVo & ξTok & #ξBor) W".
+    (* The share guards [@[κ]]. *)
+    iDestruct (Ltok_acc (W:=alerus_wsat) with "[$key $f] W") as "[L →W]".
+    iDestruct (Alv with "L E") as "#Lkg".
+    iDestruct ("→W" with "L") as "[W [_ f]]".
+    iAssert (frac_tok γ (q/2) &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "[] Lkg").
+      iApply (Ltok_guard_frac with "key"). }
+    (* Halve the share; one half goes to a fresh lifetime [κ']. *)
+    iDestruct (Ltok_split_1 with "[$key $f]") as "[[_ fa] [_ fb]]".
+    iDestruct (llftl_begin' with "LFT") as "B".
+    iDestruct (bupdw_incl (W:=alerus_wsat) with "B") as "B'".
+    iMod ("B'" with "W") as "[W (%κ' & κ'tok & %κ'ne)]".
+    iDestruct (llftl_borrow_shared κ' (gsrc_fml (GFrac γ (q/2))) with "[fa]")
+      as "Sh"; [by iApply (gsrc_fml_sem_2 (s := GFrac γ (q/2)))|].
+    iDestruct (bupdw_incl (W:=alerus_wsat) with "Sh") as "Sh'".
+    iMod ("Sh'" with "W") as "[W [#Sh0 ToF1]]".
+    iAssert (κ' ⊑ κ)%I as "#Incl".
+    { iApply (guard_trans with "[] Gκ").
+      iApply (guard_rhs_iff (gsrc_fml_sem (GFrac γ (q/2)))). iApply "Sh0". }
+    (* Freeze the three existentials away. *)
+    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "Bor".
+    iDestruct (llftl_bor_freeze F κ
+      (λ y, ex_fml (λ e, ex_fml (λ h, uniq_body_at_fml ty x ξi y e h tid l)))
+      (uniq_body_fml ty x ξi tid l) (ex_fml_sem _) with "LFT Bor") as "Fr".
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Fr") as "Fr'";
+      [done|].
+    iMod ("Fr'" with "W") as "[W (%x1 & Bor)]".
+    iDestruct (llftl_bor_freeze F κ
+      (λ e, ex_fml (λ h, uniq_body_at_fml ty x ξi x1 e h tid l)) _
+      (ex_fml_sem _) with "LFT Bor") as "Fr".
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Fr") as "Fr'";
+      [done|].
+    iMod ("Fr'" with "W") as "[W (%d1 & Bor)]".
+    iDestruct (llftl_bor_freeze F κ
+      (λ h, uniq_body_at_fml ty x ξi x1 d1 h tid l) _
+      (ex_fml_sem _) with "LFT Bor") as "Fr".
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Fr") as "Fr'";
+      [done|].
+    iMod ("Fr'" with "W") as "[W (%g1 & Bor)]".
+    (* Reborrow to [κ'] and open. *)
+    iDestruct (llftl_reborrow F κ κ' _ with "LFT Incl Bor") as "Rb".
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Rb") as "Rb'";
+      [done|].
+    iMod ("Rb'" with "W") as "[W [Bor' Back]]".
+    iDestruct (llftl_bor_acc' F _ κ' κ' with "LFT [] Bor' κ'tok") as "Acc";
+      [iApply guard_refl|].
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Acc") as "Acc'";
+      [done|].
+    iMod ("Acc'" with "W") as "[W [Inner ForallQ]]".
+    iEval (rewrite uniq_body_at_fml_sem) in "Inner".
+    iDestruct "Inner" as "(ξPc & Gho & Phys)".
+    iDestruct (uniq_agree with "ξVo ξPc") as %[<- Heq]. inversion Heq.
+    subst d1 g1.
+    (* Resolve. *)
+    iDestruct (ty_gho_pers_impl with "Gho") as "#GhoPers".
+    iAssert (∀ ζ, ⌜ζ ∈ ξl x⌝ -∗
+      ((frac_tok γ (q/2) ∗ ty_gho ty x d g tid) &&{Wguard}&&> 1:[ζ]))%I
+      as "#Hallζ".
+    { iIntros (ζ) "%Hin".
+      iApply (ty_guard_proph _ ty κ x d g tid ζ
+        (frac_tok γ (q/2) ∗ ty_gho ty x d g tid) Hin with "LFT In GhoPers").
+      - iApply (guard_trans with "[] Gκ"). iApply guard_sep_l.
+      - iApply guard_sep_r. }
+    iMod (uniq_resolve_guarded (W:=alerus_wsat)
+      (PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi) (ξl x) x (d, g) x (vπ x) (d, g)
+      with "Hallζ UNIQ PROPH ξVo ξPc [$fb $Gho] W")
+      as "[W (#Obs & ξPc & [fb Gho])]";
+      [solve_ndisj|apply syn_indep|].
+    (* Close the borrow and let [κ'] die. *)
+    iDestruct ("ForallQ" $! (uniq_body_at_fml ty x ξi x d g tid l)
+      with "[] [ξPc Gho Phys]") as "Cl".
+    { by iIntros "$". }
+    { rewrite uniq_body_at_fml_sem. iFrame. }
+    iDestruct (bupdw_incl (W:=alerus_wsat) with "Cl") as "Cl'".
+    iMod ("Cl'" with "W") as "[W [_ κ'tok]]".
+    iDestruct (llftl_end' κ' κ'ne with "LFT κ'tok") as "End".
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "End") as "End'";
+      [solve_ndisj|].
+    iMod ("End'" with "W") as "[W #†κ']".
+    iDestruct ("Back" with "†κ'") as "Bk".
+    iDestruct (bupdw_incl (W:=alerus_wsat) with "Bk") as "Bk'".
+    iMod ("Bk'" with "W") as "[W Bor]".
+    iDestruct ("ToF1" with "†κ'") as "ToF1'".
+    iDestruct (bupdw_incl (W:=alerus_wsat) with "ToF1'") as "ToF1''".
+    iMod ("ToF1''" with "W") as "[W fa]".
+    iDestruct (gsrc_fml_sem_1 (s := GFrac γ (q/2)) with "fa") as "fa".
+    iMod (shr_bor_from_finalized_uniq_bor with "LFT Bor W") as "[W #G]".
+    iModIntro. iFrame "W Obs".
+    iDestruct (Ltok_split_2 with "[$key $fa] [$key $fb]") as "$".
+    iApply "G".
+  Qed.
+
+  (** The value observer pins down the witnesses of the borrowed body. *)
+  Lemma uniq_body_at_agree {𝔄} (ty: type 𝔄) x ξi d g tid l y e h :
+    (.VO[PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi] x (d, g) ∧
+      (.PC[PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi] y (vπ y) (e, h) ∗
+        ty_gho ty y e h tid ∗ l #↦!∗ ty_phys ty y tid))
+    ⊢ ⌜y = x ∧ e = d ∧ h = g⌝.
+  Proof.
+    iIntros "And".
+    iDestruct (uniq_and_agree (PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi)
+      with "[And]") as %[Heq1 Heq2].
+    { iSplit; [by iDestruct "And" as "[$ _]"|].
+      by iDestruct "And" as "[_ [$ _]]". }
+    iPureIntro. inversion Heq2. by subst y e h.
+  Qed.
+
+  (** Reading the physical contents off a guard to the body *)
+  Lemma uniq_guards_get_guards_pt {𝔄} (ty: type 𝔄) (P Q R : iProp Σ)
+      x d g ξi tid l :
+    ((P ∗ .VO[PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi] x (d, g) ∗ R)
+      &&{Wguard}&&> (Q ∗ bor_sem (uniq_body_fml ty x ξi tid l))) ⊢
+    ((P ∗ .VO[PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi] x (d, g) ∗ R)
+      &&{Wguard}&&> l #↦!∗ ty_phys ty x tid).
+  Proof.
+    iIntros "#G".
+    iDestruct (guard_rhs_sep_r with "G") as "#G2".
+    iDestruct (guard_rhs_iff (uniq_body_fml_sem ty x ξi tid l) with "G2")
+      as "#G3".
+    iDestruct (guard_exist_eq x d g _ _ _ (uniq_body_at_agree ty x ξi d g tid l)
+      with "[] G3") as "#G4".
+    { iApply guard_intro. iIntros "!> (A & B & C)". iFrame "B".
+      iIntros "B". iFrame. }
+    iDestruct (guard_rhs_sep_r with "G4") as "#G5".
+    iApply (guard_rhs_sep_r with "G5").
+  Qed.
+
+  (** A guard to the whole [uniq_body] gives one to its contents *)
+  Lemma guard_inner_from_guard_uniq_body {𝔄} (ty: type 𝔄) x ξi d g ξidx κ
+      tid l G :
+    llft_ctx -∗
+    uniq_body_pers_component ty x ξi d g ξidx κ tid l -∗
+    (G &&{Wguard}&&> uniq_body ty x ξi d g ξidx κ tid l) -∗
+    (G &&{Wguard}&&> @[κ]) -∗
+    (G &&{Wguard}&&> (ty_gho ty x d g tid ∗ l #↦!∗ ty_phys ty x tid)).
+  Proof.
+    iIntros "#LFT #Bor #Guniq #Gk".
+    iDestruct (guard_rhs_sep_l with "Guniq") as "#Gvo".
+    iDestruct (guard_rhs_sep_r with "Guniq") as "#Guniq2".
+    iDestruct (guard_rhs_sep_l with "Guniq2") as "#Gtok".
+    iDestruct (llftl_idx_bor_guard' with "LFT Bor Gk Gtok") as "#Ginner".
+    iDestruct (guard_rhs_sep_r with "Ginner") as "#Ginner2".
+    iDestruct (guard_rhs_iff (uniq_body_fml_sem ty x ξi tid l) with "Ginner2")
+      as "#Ginner3".
+    iDestruct (guard_exist_eq x d g _ _ _ (uniq_body_at_agree ty x ξi d g tid l)
+      with "Gvo Ginner3") as "#G'".
+    iApply (guard_rhs_sep_r with "G'").
+  Qed.
+
+  (** Moving a unique borrow to another type, along a prophecy-level
+    injection.  The original's [▷]s in front of the ghost assertions and its
+    [⧖] witnesses go with the time receipts; the arbitrary [Timeless G]
+    guarding [@[κ]] is the fraction inside an [Ltok]. *)
+  Lemma uniq_body_transform {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) x x' d g ξi ξidx
+      κ tid l l' E γ L q (f: 𝔅 →ₛ 𝔄) :
+    Inj eq eq ((!ₛ) f) → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗
+    (ty_gho ty x d g tid ∗ l #↦!∗ ty_phys ty x tid
+      ={E}=∗ ty_gho ty' x' d g tid ∗ l' #↦!∗ ty_phys ty' x' tid ∗
+      (∀ y e h, ty_gho ty' y e h tid ∗ l' #↦!∗ ty_phys ty' y tid
+        ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ∃ e2 h2,
+          ty_gho ty (f ~~$ₛ y) e2 h2 tid ∗
+          l #↦!∗ ty_phys ty (f ~~$ₛ y) tid)) -∗
+    (frac_tok γ q &&{Wguard}&&> @[κ]) -∗ Ltok γ L q -∗
+    uniq_body ty x ξi d g ξidx κ tid l =[alerus_wsat]{E}=∗
+      ∃ ζi ζidx,
+        ⟨π, π (PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi) =
+            (!ₛ) f (π (PrVar (𝔅 ↾ prval_to_inh (vπ x')) ζi))⟩ ∗
+        uniq_body ty' x' ζi d g ζidx κ tid l' ∗ Ltok γ L q.
+  Proof.
+    move=> ? HE.
+    iIntros "#LFT #PROPH #UNIQ wand #Gκ [#key f] (ξVo & ξTok & #ξBor) W".
+    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "Bor".
+    iAssert (bor_sem (gsrc_fml (GFrac γ q)) &&{Wguard}&&> @[κ])%I as "#Gκ'".
+    { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ q))). iApply "Gκ". }
+    iDestruct (llftl_bor_acc_guarded E (gsrc_fml (GFrac γ q)) κ
+      with "LFT Bor Gκ' [f]") as "A";
+      [by iApply (gsrc_fml_sem_2 (s := GFrac γ q))|].
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=E) with "A") as "A'";
+      [done|].
+    iMod ("A'" with "W") as "[W [P ToBor]]".
+    iEval (rewrite uniq_body_fml_sem) in "P".
+    iDestruct "P" as (x1 d1 g1) "(ξPc & Gho & Pt)".
+    iDestruct (uniq_agree with "ξVo ξPc") as %[<- Heq]. inversion Heq.
+    subst d1 g1.
+    iMod (uniq_intro x' (vπ x') (d, g) with "PROPH UNIQ") as (ζi) "[ζVo ζPc]";
+      [set_solver|].
+    iDestruct (uniq_proph_tok with "ζVo ζPc") as "(ζVo & ζ & ToζPc)".
+    rewrite proph_tok_singleton.
+    set ξ := PrVar (𝔄 ↾ prval_to_inh (@vπ 𝔄 x)) ξi.
+    set ζ := PrVar (𝔅 ↾ prval_to_inh (@vπ 𝔅 x')) ζi.
+    iMod (uniq_preresolve ξ _ (λ π, f $ₛ (π ζ)) with "UNIQ PROPH ξVo ξPc ζ")
+      as "(#EqObs & ζ & ToξPc)";
+      [set_solver|apply proph_dep_constr, (proph_dep_one ζ)|].
+    iDestruct ("ToζPc" with "ζ") as "ζPc".
+    iCombine "Gho Pt" as "GhoPt". iMod ("wand" with "GhoPt") as "(Gho & Pt & R)".
+    iDestruct ("ToBor" $! (uniq_body_fml ty' x' ζi tid l')
+      with "[ToξPc R] [ζPc Gho Pt]") as "A".
+    { iIntros "H". iEval (rewrite uniq_body_fml_sem) in "H".
+      iDestruct "H" as (y e h) "(ζPc & Gho2 & Pt2)".
+      iCombine "Gho2 Pt2" as "GhoPt2".
+      iMod ("R" with "GhoPt2") as (e2 h2) "[Gho1 Pt1]". iModIntro.
+      iApply (uniq_body_fml_sem_2 with "[ζPc ToξPc] Gho1 Pt1").
+      iApply "ToξPc".
+      iDestruct (proph_ctrl_eqz with "PROPH ζPc") as "Eqz".
+      iDestruct (proph_eqz_constr ((!ₛ) f) with "Eqz") as "Eqz".
+      iApply (proph_eqz_eq with "Eqz"); [done|].
+      fun_ext=> ?. by rewrite /= syn_type_morphism_commutes. }
+    { by iApply (uniq_body_fml_sem_2 with "ζPc Gho Pt"). }
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=E) with "A") as "A'";
+      [etrans; [|exact HE]; solve_ndisj|].
+    iMod ("A'" with "W") as "[W [Bor2 f]]".
+    iDestruct (gsrc_fml_sem_1 (s := GFrac γ q) with "f") as "f".
+    iModIntro. iFrame "W".
+    rewrite llftl_bor_idx. iDestruct "Bor2" as (ζidx) "[ζBor ζTok]".
+    iExists ζi, ζidx. iFrame "EqObs key f ζVo ζTok ζBor".
+  Qed.
 End uniq_util.
