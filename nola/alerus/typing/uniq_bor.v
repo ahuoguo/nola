@@ -368,6 +368,213 @@ Section uniq_bor_sem.
     iSplitL "ξVo Tok"; [iFrame "ξVo Tok Bor"|].
     iSplitR; [iApply "PtBase"|]. iRight. iApply "ghopers".
   Qed.
+
+  (** Reading a [Copy] type out of a unique reference.
+
+    The original takes [£(d+1)] and spends it on
+    [guards_extract_persistent_later] to get the inner ghost state out from
+    under a [▷]; there is no later here, so opening the guard once is
+    enough.  The guard source is a formula, as everywhere: the value
+    observer, the share and the borrow token. *)
+  Lemma read_uniq {𝔄} E L κ (ty: type 𝔄) :
+    Copy ty → lctx_lft_alive E L κ →
+    typed_read E L (&uniq{κ} ty) ty (&uniq{κ} ty) uniq_bor_current (=).
+  Proof.
+    move=> Cpy Alv [[[[[l x0] ξi] d'] g'] idx] d v tid γ q.
+    iIntros "#LFT #E [#key f] [gho %Phys] W". rewrite uniq_bor_gho.
+    iDestruct "gho" as "(#Incl & %Hle & (ξVo & Tok & #Bor) & #PtBase & #Pers)".
+    set ξ := PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi.
+    set Hx := (vo_fml ξ x0 (d', g') ∗ gsrc_fml (GFrac γ q) ∗
+      idx_bor_tok_fml idx)%FML.
+    have HxS : bor_sem Hx ⊣⊢
+      .VO[ξ] x0 (d', g') ∗ frac_tok γ q ∗ idx_bor_tok idx.
+    { rewrite /Hx !bor_sep_sem vo_fml_sem idx_bor_tok_fml_sem
+        (gsrc_fml_sem (GFrac γ q)) /= //. }
+    iDestruct (Ltok_acc (W:=alerus_wsat) with "[$key $f] W") as "[L →W]".
+    iDestruct (Alv with "L E") as "#Alv".
+    iDestruct ("→W" with "L") as "[W [_ f]]".
+    iAssert (frac_tok γ q &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "[] Alv"). iApply (Ltok_guard_frac with "key"). }
+    iAssert (bor_sem Hx &&{Wguard}&&> @[κ])%I as "#HGκ".
+    { iApply (guard_trans with "[] Gκ"). iApply (guard_lhs_iff HxS).
+      iApply guard_intro. iIntros "!> (A & B & C)". iFrame "B".
+      iIntros "B". iFrame. }
+    iAssert (bor_sem Hx &&{Wguard}&&> idx_bor_tok idx)%I as "#HGtok".
+    { iApply (guard_lhs_iff HxS). iApply guard_intro.
+      iIntros "!> (A & B & C)". iFrame "C". iIntros "C". iFrame. }
+    iAssert (bor_sem Hx &&{Wguard}&&> .VO[ξ] x0 (d', g'))%I as "#HGvo".
+    { iApply (guard_lhs_iff HxS). iApply guard_intro.
+      iIntros "!> (A & B & C)". iFrame "A". iIntros "A". iFrame. }
+    iDestruct (llftl_idx_bor_guard' κ idx _ (bor_sem Hx)
+      with "LFT Bor HGκ HGtok") as "#Ginner".
+    iDestruct (guard_rhs_sep_r with "Ginner") as "#Ginner2".
+    iDestruct (guard_rhs_iff (uniq_body_fml_sem ty x0 ξi tid l) with "Ginner2")
+      as "#Ginner3".
+    iDestruct (guard_exist_eq x0 d' g' _ _ _
+      (uniq_body_at_agree ty x0 ξi d' g' tid l) with "HGvo Ginner3") as "#Gin".
+    iDestruct (guard_rhs_sep_r with "Gin") as "#Gin2".
+    iDestruct (guard_rhs_sep_l with "Gin2") as "#Ggho".
+    iDestruct (guard_rhs_sep_r with "Gin2") as "#Gpt".
+    iAssert (bor_sem Hx) with "[ξVo f Tok]" as "Hx".
+    { iApply (bi.equiv_entails_1_2 _ _ HxS). iFrame. }
+    iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (guard_acc with "Ggho Hx Wg") as "[#T →Wg]".
+    iDestruct ("→Wg" with "T") as "[Wg Hx]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
+    iDestruct (copy_concrete with "T") as "%Conc".
+    iModIntro. iFrame "W".
+    iExists l, (to_concrete (ty_phys ty x0 tid)), (ty_phys ty x0 tid), Hx.
+    inversion Phys. iSplit; [done|].
+    iSplit; [iPureIntro; apply length_to_concrete|].
+    iFrame "Hx". iSplit.
+    { iApply (guard_cloc_combine with "[] []").
+      - iApply (guard_trans with "HGκ PtBase").
+      - iApply (guard_rhs_iff with "Gpt").
+        rewrite -heap_complete_mapsto_fancy_fmap_eq fmap_to_concrete //. }
+    iSplitR.
+    { iIntros (l₁ c₁) "↦". rewrite -heap_complete_mapsto_fancy_fmap_eq.
+      rewrite (fmap_to_concrete _ Conc). by iFrame. }
+    iSplit. { iPureIntro=> _. rewrite fmap_to_concrete //. }
+    iSplitR.
+    { iSplit; [|done].
+      iDestruct (ty_gho_depth_mono ty d' g' d d x0 tid with "T") as "[$ _]";
+        lia. }
+    iIntros "Hx W". iEval (rewrite HxS) in "Hx".
+    iDestruct "Hx" as "(ξVo & f & Tok)".
+    iModIntro. iFrame "W". iExists (l, x0, ξi, d', g', idx).
+    iSplit; [done|]. iFrame "key f". rewrite /ty_own uniq_bor_gho.
+    iSplitL "ξVo Tok"; [|done]. rewrite /uniq_body.
+    iSplitR; [iApply "Incl"|]. iSplitR; [iPureIntro; lia|].
+    iSplitL "ξVo Tok"; [iFrame "ξVo Tok Bor"|].
+    iSplitR; [iApply "PtBase"|]. iApply "Pers".
+  Qed.
 End uniq_bor_sem.
 
 Global Hint Rewrite @uniq_bor_gho @uniq_bor_gho_pers : fml_sem.
+
+Section uniq_bor_typing.
+  Context `{!typeG FML Σ}.
+
+  Lemma tctx_uniq_mod_ty_out {𝔄 𝔅 ℭl} κ (f : 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) ty
+      (T: tctx ℭl) p E L `{!Isoₛ f fⁱ} :
+    lctx_lft_alive E L κ →
+    tctx_incl E L (p ◁ &uniq{κ} (<{f;fⁱ}> ty) +:: T) (p ◁ &uniq{κ} ty +:: T)
+      (λ post '(bor -:: cl), λ mask π,
+        ∀ bor', uniq_bor_loc bor' = uniq_bor_loc bor →
+        uniq_bor_current bor' = fⁱ ~~$ₛ (uniq_bor_current bor) →
+        uniq_bor_future bor' π = fⁱ $ₛ (uniq_bor_future bor π) →
+        post (bor' -:: cl) mask π).
+  Proof.
+    move=> Alv. split.
+    { move=> ?? Eq [[??]?] ??. do 2 apply forall_proper=> ?.
+      split=> ???; apply Eq; auto. }
+    iIntros (γ q tid [x y] mask post) "#LFT #PROPH #UNIQ #E tok [p T] Obs W".
+    destruct x as [[[[[l x0] ξi] d'] g'] ξidx].
+    iDestruct "p" as (v d) "[%Hp [gho %Hphys]]". rewrite uniq_bor_gho.
+    iDestruct "gho" as "(#Incl & %Hle & UniqBody & #PtBase & #Pers)".
+    iDestruct (Ltok_acc (W:=alerus_wsat) with "tok W") as "[L →W]".
+    iDestruct (Alv with "L E") as "#Lkg".
+    iDestruct ("→W" with "L") as "[W [#key f]]".
+    iAssert (frac_tok γ q &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "[] Lkg"). iApply (Ltok_guard_frac with "key"). }
+    have Hmask : (↑Nllft ∪ ↑prophN ∪ ↑uniqN : coPset) ⊆ ⊤ by set_solver.
+    iMod (uniq_body_transform (<{f;fⁱ}> ty) ty x0 (fⁱ ~~$ₛ x0) d' g' ξi ξidx κ
+      tid l l ⊤ γ L q f _ Hmask
+      with "LFT PROPH UNIQ [] Gκ [$key $f] UniqBody W")
+      as "[W (%ζi & %ζidx & #Obs2 & UniqBody & tok)]".
+    { iIntros "[gho pt]". rewrite mod_ty_gho /=. iModIntro. iFrame "gho pt".
+      iIntros (z e h) "[gho pt]". iModIntro. iExists e, h.
+      rewrite mod_ty_gho /=
+        !(semi_iso' (syn_type_morphism_fn f) (syn_type_morphism_fn fⁱ)).
+      iFrame. }
+    iCombine "Obs Obs2" as "#Obs3".
+    iModIntro. iFrame "W".
+    iExists ((l, (fⁱ ~~$ₛ x0), ζi, d', g', ζidx) -:: y).
+    iFrame "tok T". iSplitL "UniqBody".
+    { iExists v, d. iSplit; [done|]. rewrite /ty_own uniq_bor_gho.
+      iSplitL; [|by rewrite /= -Hphys].
+      iSplitR.
+      { iApply (guard_trans with "Incl []").
+        iApply (guard_intro (W:=Wguard)). by iIntros "!> $ $". }
+      iSplitR; [iPureIntro; lia|]. iFrame "UniqBody".
+      iSplitR; [iApply "PtBase"|].
+      iDestruct "Pers" as "[Dead|P]"; [by iLeft|iRight].
+      iApply "P". }
+    iApply (proph_obs_impl with "Obs3")=> π [Ha Hb]. apply Ha; [done|done|].
+    rewrite /uniq_bor_future /=. by rewrite Hb semi_iso'.
+  Qed.
+
+  Lemma tctx_uniq_eqtype {𝔄 𝔅 ℭl} κ (f: 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) ty ty'
+      (T: tctx ℭl) p E L :
+    eqtype E L ty ty' f fⁱ → Isoₛ f fⁱ → lctx_lft_alive E L κ →
+    tctx_incl E L (p ◁ &uniq{κ} ty +:: T) (p ◁ &uniq{κ} ty' +:: T)
+      (λ post '(bor -:: cl), λ mask π,
+        ∀ bor', uniq_bor_loc bor' = uniq_bor_loc bor →
+        uniq_bor_current bor' = f ~~$ₛ (uniq_bor_current bor) →
+        uniq_bor_future bor' π = f $ₛ (uniq_bor_future bor π) →
+        post (bor' -:: cl) mask π).
+  Proof.
+    move=> Heqtype Hiso Alv. split.
+    { move=> ?? Eq [[??]?] ??. do 2 apply forall_proper=> ?.
+      split=> ???; apply Eq; auto. }
+    iIntros (γ q tid [x y] mask post) "#LFT #PROPH #UNIQ #E tok [p T] Obs W".
+    rewrite -eqtype_unfold in Heqtype.
+    destruct x as [[[[[l x0] ξi] d'] g'] ξidx].
+    iDestruct "p" as (v d) "[%Hp [gho %Hphys]]". rewrite uniq_bor_gho.
+    iDestruct "gho" as "(#Incl & %Hle & UniqBody & #PtBase & #Pers)".
+    iDestruct (Ltok_acc (W:=alerus_wsat) with "tok W") as "[L →W]".
+    iDestruct (Heqtype with "L E")
+      as "(%Hsz & #[Hl1 Hl2] & #EqGho & #EqPers & %EqPhys)".
+    iDestruct (Alv with "L E") as "#Lkg".
+    iDestruct ("→W" with "L") as "[W [#key f]]".
+    iAssert (frac_tok γ q &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "[] Lkg"). iApply (Ltok_guard_frac with "key"). }
+    have Hmask : (↑Nllft ∪ ↑prophN ∪ ↑uniqN : coPset) ⊆ ⊤ by set_solver.
+    iMod (uniq_body_transform ty ty' x0 (f ~~$ₛ x0) d' g' ξi ξidx κ tid l l ⊤
+      γ L q fⁱ _ Hmask with "LFT PROPH UNIQ [] Gκ [$key $f] UniqBody W")
+      as "[W (%ζi & %ζidx & #Obs2 & UniqBody & tok)]".
+    { iIntros "[gho pt]". iModIntro.
+      iDestruct ("EqGho" $! x0 d' g' tid) as "[G1 _]".
+      iDestruct ("G1" with "gho") as "$". rewrite EqPhys. iFrame "pt".
+      iIntros (z e h) "[gho pt]". iModIntro. iExists e, h.
+      rewrite EqPhys
+        (semi_iso' (syn_type_morphism_fn fⁱ) (syn_type_morphism_fn f)).
+      iFrame "pt". iDestruct ("EqGho" $! (fⁱ ~~$ₛ z) e h tid) as "[_ G2]".
+      iApply "G2".
+      rewrite (semi_iso' (syn_type_morphism_fn fⁱ) (syn_type_morphism_fn f)).
+      iFrame "gho". }
+    iCombine "Obs Obs2" as "#Obs3".
+    iModIntro. iFrame "W".
+    iExists ((l, (f ~~$ₛ x0), ζi, d', g', ζidx) -:: y).
+    iFrame "tok T". iSplitL "UniqBody".
+    { iExists v, d. iSplit; [done|]. rewrite /ty_own uniq_bor_gho.
+      iSplitL; [|by rewrite /= -Hphys].
+      iSplitR; [iApply (guard_trans with "Incl Hl1")|].
+      iSplitR; [iPureIntro; lia|]. iFrame "UniqBody".
+      iSplitR; [iApply "PtBase"|].
+      iDestruct "Pers" as "[Dead|P]"; [by iLeft|iRight].
+      by iDestruct ("EqPers" $! x0 d' g' tid) as "[G _]"; iApply "G". }
+    iApply (proph_obs_impl with "Obs3")=> π [Ha Hb]. apply Ha; [done|done|].
+    rewrite /uniq_bor_future /=. by rewrite Hb semi_iso'.
+  Qed.
+
+  Lemma tctx_extract_uniq_eqtype {𝔄 𝔅 ℭl} κ (f: 𝔅 →ₛ 𝔄) (fⁱ: 𝔄 →ₛ 𝔅) ty ty'
+      (T: tctx ℭl) p E L :
+    lctx_lft_alive E L κ → eqtype E L ty' ty f fⁱ → Isoₛ f fⁱ →
+    tctx_extract_elt E L (p ◁ &uniq{κ} ty) (p ◁ &uniq{κ} ty' +:: T) T
+      (λ post '(bor -:: cl), λ mask π,
+        ∀ bor', uniq_bor_loc bor' = uniq_bor_loc bor →
+        uniq_bor_current bor' = f ~~$ₛ (uniq_bor_current bor) →
+        uniq_bor_future bor' π = f $ₛ (uniq_bor_future bor π) →
+        post (bor' -:: cl) mask π).
+  Proof. move=> ???. by eapply tctx_uniq_eqtype. Qed.
+End uniq_bor_typing.
+
+Global Hint Resolve uniq_resolve uniq_subtype uniq_eqtype : lrust_typing.
+
+(* Registering [write_uniq]/[read_uniq] with [Hint Resolve] doesn't help
+  automation in some situations, but these hints let it work. *)
+Global Hint Extern 0 (typed_write _ _ (&uniq{_} _) _ _ _ _ _) =>
+  simple apply write_uniq : lrust_typing.
+Global Hint Extern 0 (typed_read _ _ (&uniq{_} _) _ _ _ _) =>
+  simple apply read_uniq : lrust_typing.
