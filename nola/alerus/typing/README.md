@@ -123,3 +123,50 @@ provides `lrust_adequacy` and, beyond what the original can state,
    Either way, `fn_fml` needs derivability regardless: a function type's
    ghost assertion is its own typing judgment, and `rust_halt` has no
    function type, so there is no worked precedent for it in Nola.
+
+## The route being taken
+
+Nola's `deriv` ([`nola/bi/deriv.v`](../../bi/deriv.v)), as used by
+`nola/iris/inv_deriv.v`.  The pieces, in order; each is meant to leave the
+build green.
+
+1. **Tokenise what can be tokenised.**  *Done.*  The two closers are now
+   `cna_otok` / `na_otok`, after Nola's `obor_tok`.
+2. **The `AltSem` interface.**  *Done.*  `ctx.v` now carries `AltSem`:
+   `alt_sem sem` says `sem` is a derivability candidate, `alt_WGuard sem` is
+   the guarding world satisfaction at it, `alt_into sem` is Nola's
+   `dinto bor_sem sem`, and the `_at` fields repeat the equations of the
+   non-judgment constructors at an arbitrary candidate.  On top of it:
+   `dguard Px Qx` (a guard held as a formula) with `dguard_sem` for
+   elimination, `dguard_of_all` (`Deriv_factor'`) for introduction, and the
+   combinators — `dguard_trans`, `dguard_{lhs,rhs}_iff`,
+   `dguard_{lhs,rhs}_sep_{l,r}`, `dguard_and`, `dguard_intro`,
+   `dguard_borrow_shared` — each of which is `Deriv_map` in the model; plus
+   `dincl` and `dbasically_dead`.
+
+   `TypeFml.guard_fml_sem` is **still there**, marked as having no model, so
+   that the files that have not been migrated still build.  Everything that
+   rests on it is exactly what steps 3–5 remove.
+3. **`ty_gho_depth_mono` at a candidate.**  A guard's right-hand side is a
+   type's ghost assertion, and the one thing the development does to it
+   while rebuilding a guard is weaken its depth.  So the `type` record needs
+   `ty_gho_depth_mono_at : ∀ sem, alt_sem sem → …`, proved for each type
+   former (~30 of them); the ambient law then follows by `alt_here`.  This is
+   the same shape as Nola's `Ty` class, whose laws are all `∀ δ`
+   (`nola/examples/rust_halt/type.v:128-145`).
+4. **Migrate the stored guards.**  `shr_bor`, `uniq_bor`, `uniq_util`'s
+   `basically_dead`, and `borrow.v`'s mid-formulas state their unfolding
+   lemmas with `dguard` instead of a raw guard; the ~20 files downstream use
+   `dguard_*` where they currently use `guard_*` on a guard that is about to
+   be stored, and `dguard_sem` where they actually open one.  Then
+   `guard_fml_sem` goes.
+5. **The same for `idxbor_fml` and `fn_fml`.**  `idx_bor` carries
+   `□ (bor_sem Px' ↔ bor_sem Px)`, which is a judgment in the same sense -
+   compare `nola/iris/borrow_deriv.v`.  `fn_fml` is the function type's own
+   typing judgment; its introduction rule takes the body's typing at every
+   candidate, which is how `soundness.v` already states its premise
+   (`∀ `{!typeG Σ}, typed_val main main_type c`).
+6. **The model.**  A `cif` with the remaining ~25 leaf constructors, a `JUDG`
+   with the three judgments, `bor_sem := ⟦⟧ᶜ(der)`, the `AltSem` instance
+   with `alt_sem := Deriv ih`, and the world-satisfaction allocation (plus
+   the `llft_wsat_alloc` reordering above).  Then `soundness.v`.

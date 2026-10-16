@@ -47,6 +47,7 @@ Class typeG (FML : oFunctor) Σ : Type := TypeG {
   #[global] type_heapSem :: HeapSem FML Σ;
   #[global] type_gsrcSem :: GsrcSem FML Σ;
   #[global] type_typeFml :: TypeFml FML Σ;
+  #[global] type_altSem :: AltSem FML Σ;
 }.
 
 Definition lrustN := nroot .@ "lrust".
