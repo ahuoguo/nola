@@ -527,4 +527,155 @@ Section type_sum.
     iSplitR; [iPureIntro; lia|]. iFrame "ζVo ζTok ζBor".
     iFrame "PtBase2". by iRight.
   Qed.
+
+  (** [type_case_uniq_outer]'s guard source.  The original's is
+    [uniq_body … ∗ llctx_interp L]; here both halves have to be formulas. *)
+  Definition case_uniq_src {𝔄} (ty: type 𝔄) (x: ~~𝔄) (ξi: positive)
+      (d g: nat) (idx: Idx) (κ: lft) (tid: thread_id) (l: cloc) (γ: gname)
+      : FML $oi Σ :=
+    (uniq_body_fmlx ty x ξi d g idx κ tid l ∗ gsrc_fml (GFrac γ 1))%FML.
+
+  Lemma case_uniq_src_sem {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l γ :
+    bor_sem (case_uniq_src ty x ξi d g idx κ tid l γ) ⊣⊢
+      uniq_body ty x ξi d g idx κ tid l ∗ frac_tok γ 1.
+  Proof.
+    rewrite /case_uniq_src bor_sep_sem uniq_body_fmlx_sem
+      (gsrc_fml_sem (GFrac γ 1)) //.
+  Qed.
+  Lemma case_uniq_src_sem_1 {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l γ :
+    bor_sem (case_uniq_src ty x ξi d g idx κ tid l γ) ⊢
+      uniq_body ty x ξi d g idx κ tid l ∗ frac_tok γ 1.
+  Proof. by rewrite case_uniq_src_sem. Qed.
+  Lemma case_uniq_src_sem_2 {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l γ :
+    uniq_body ty x ξi d g idx κ tid l ∗ frac_tok γ 1 ⊢
+      bor_sem (case_uniq_src ty x ξi d g idx κ tid l γ).
+  Proof. by rewrite case_uniq_src_sem. Qed.
+
+  Lemma type_case_uniq_outer {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
+      (T': tctx ℭl) κ p el el' trx E L I (C: cctx 𝔇) :
+    IntoPlistc el el' →
+    tctx_extract_ctx E L +[p ◁ &uniq{κ} (Σ! tyl)] T T' trx →
+    lctx_lft_alive E L κ →
+    ([∗ hlist] ty;- e; tr ∈ tyl;- el'; trl,
+      typed_body E L I C (p ◁ &uniq{κ} (Σ! tyl) +:: T') e tr) -∗
+    typed_body E L I C T (case: !p of el)
+      (trx ∘ (λ post '(m -:: cl),
+        let 'xinj i _ := to_xsum (uniq_bor_current m).1 in
+        (trl -!! i) post (m -:: cl)))%type.
+  Proof.
+    move=> ->. iIntros (? Alv) "el". iApply typed_body_tctx_incl; [done|].
+    iIntros (tid [s ?] mask post iκs)
+      "#LFT #PROPH #UNIQ #E L I C /=[p T] #Obs".
+    destruct s as [[[[[l [x pad]] ξi] d'] g'] idx].
+    replace x with (@of_xsum _ (~~) 𝔄l (to_xsum x));
+      last by rewrite semi_iso'.
+    refine (match to_xsum x with xinj i x0 => _ end).
+    wp_bind p. iApply (twp_hasty with "p"). iIntros (v d) "%Hpath [gho %phys]".
+    inversion phys. subst v.
+    rewrite uniq_bor_gho.
+    iDestruct "gho" as "(#Incl & %Hle & uniq & #pt & #pers)".
+    iDestruct (Alv with "L E") as "#LguardsK".
+    iDestruct (uniq_body_pers_component_impl with "uniq") as "#uniq_pers".
+    wp_bind (!(LitV l.1))%E.
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Ltok_alloc with "L W") as "[W (%γ & [#key f])]".
+    iAssert (bor_sem (case_uniq_src (Σ! tyl) (pinj i x0, pad) ξi d' g' idx κ
+      tid l γ) &&{Wguard}&&> @[κ])%I as "#GκS".
+    { iApply (guard_lhs_iff (case_uniq_src_sem (Σ! tyl) (pinj i x0, pad) ξi
+        d' g' idx κ tid l γ)).
+      iApply guard_lhs_sep_r. iApply (guard_trans with "[] LguardsK").
+      iApply (Ltok_guard_frac with "key"). }
+    iAssert (bor_sem (case_uniq_src (Σ! tyl) (pinj i x0, pad) ξi d' g' idx κ
+      tid l γ) &&{Wguard}&&>
+      uniq_body (Σ! tyl) (pinj i x0, pad) ξi d' g' idx κ tid l)%I as "#GuS".
+    { iApply (guard_lhs_iff (case_uniq_src_sem (Σ! tyl) (pinj i x0, pad) ξi
+        d' g' idx κ tid l γ)).
+      iApply guard_sep_l. }
+    iDestruct (guard_inner_from_guard_uniq_body _ _ _ _ _ _ _ _ _ _
+      with "LFT uniq_pers GuS GκS") as "#Gu".
+    iDestruct (guard_rhs_sep_r with "Gu") as "#Gu2".
+    iDestruct (guard_cloc_combine_fancy with "[] Gu2") as "#Gpt".
+    { iApply (guard_trans with "GκS pt"). }
+    iDestruct (guard_rhs_iff
+      (split_pt_xsum_cells i tyl x0 pad tid l.1 l.2) with "Gpt") as "#Gpt2".
+    iDestruct (guard_rhs_sep_l with "Gpt2") as "#Gdisc".
+    iModIntro. iFrame "W".
+    iApply (twp_read_na_guarded_cells_singleton _ _ _ _ _
+      (case_uniq_src (Σ! tyl) (pinj i x0, pad) ξi d' g' idx κ tid l γ)
+      with "[uniq f]").
+    { iFrame "Gdisc". iApply case_uniq_src_sem_2. iFrame "uniq f". }
+    iIntros "S". iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iDestruct (case_uniq_src_sem_1 with "S") as "[uniq f]".
+    iMod (Ltok_withdraw with "[$key $f] W") as "[W L]".
+    iModIntro. iFrame "W".
+    wp_case.
+    { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
+    iDestruct (big_sepHL_2_lookup with "el") as "el".
+    iApply ("el" $! _ (_ -:: _) with "LFT PROPH UNIQ E L I C [-] []");
+      last first.
+    { iApply (proph_obs_impl with "Obs")=> ?. by rewrite to_xsum_pinj. }
+    iFrame "T". iExists _, d. iSplit; [done|].
+    rewrite /ty_own uniq_bor_gho. iSplit; [|done].
+    by iFrame "pers Incl uniq pt".
+  Qed.
+
+  Lemma type_case_uniq {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
+      (T': tctx ℭl) κ p el el' trx E L I (C: cctx 𝔇) :
+    IntoPlistc el el' →
+    tctx_extract_ctx E L +[p ◁ &uniq{κ} (Σ! tyl)] T T' trx →
+    lctx_lft_alive E L κ →
+    ([∗ hlist] ty;- e; tr ∈ tyl;- el'; trl, match tr with
+      | inl otr => typed_body E L I C (p ◁ &uniq{κ} (Σ! tyl) +:: T') e otr
+      | inr itr => typed_body E L I C (p +ₗ #1 ◁ &uniq{κ} ty +:: T') e itr
+      end) -∗
+    typed_body E L I C T (case: !p of el) (trx ∘ (λ post '(m -:: cl), λ mask π,
+      let 'xinj i a := to_xsum (uniq_bor_current m).1 in
+      match trl -!! i with
+      | inl otr => otr post (m -:: cl) mask π
+      | inr itr => ∀a': 𝔄l !!ₗ i, (uniq_bor_future m π).1 = pinj i a' →
+        ∀ m': ~~ (uniq_borₛ (𝔄l !!ₗ i)),
+          uniq_bor_current m' = a → uniq_bor_future m' π = a' →
+          itr post (m' -:: cl) mask π
+      end))%type.
+  Proof.
+    iIntros (???) "el". iApply typed_body_tctx_incl; [done|]. via_tr_impl.
+    { iApply (type_case_uniq_outer _ (pbyidx (λ i post '(m -:: cl), λ mask π,
+        match trl -!! i with
+        | inl otr => otr post (m -:: cl) mask π
+        | inr itr => _ end : Prop)));
+        [apply tctx_incl_refl|done|].
+      rewrite !big_sepHL_2_big_sepN. iApply (big_sepN_impl with "el").
+      iIntros "!>" (i) "?". rewrite pbyidx_plookup.
+      case (trl -!! i)=> ?; [by via_tr_impl; [done|]=> ?[[??]?]?|].
+      via_tr_impl.
+      { iApply typed_body_tctx_incl; [by apply tctx_unwrap_uniq_xsum|done]. }
+      move=>/= ?[??]??. exact id. }
+    move=> ?[m ?]/= ??. case (to_xsum (uniq_bor_current m).1) as [i ?] eqn: Eq.
+    rewrite pbyidx_plookup. move: (trl -!! i). case; [done|]=>/= ??.
+    eexists _. split; [|done].
+    move: Eq=> /(f_equal of_xsum)=>/= <-. by rewrite semi_iso'.
+  Qed.
+
+  Lemma type_case_uniq_inner {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
+      (T': tctx ℭl) κ p el el' trx E L I (C: cctx 𝔇) :
+    IntoPlistc el el' →
+    tctx_extract_ctx E L +[p ◁ &uniq{κ} (Σ! tyl)] T T' trx →
+    lctx_lft_alive E L κ →
+    ([∗ hlist] ty;- e; tr ∈ tyl;- el'; trl,
+      typed_body E L I C (p +ₗ #1 ◁ &uniq{κ} ty +:: T') e tr) -∗
+    typed_body E L I C T (case: !p of el) (trx ∘ (λ post '(m -:: cl), λ mask π,
+      let 'xinj i a := to_xsum (uniq_bor_current m).1 in
+      ∀a': 𝔄l !!ₗ i, (uniq_bor_future m π).1 = pinj i a' →
+        ∀ m': ~~ (uniq_borₛ (𝔄l !!ₗ i)),
+          uniq_bor_current m' = a → uniq_bor_future m' π = a' →
+          (trl -!! i) post (m' -:: cl) mask π))%type.
+  Proof.
+    iIntros (???) "el". iApply typed_body_tctx_incl; [done|]. via_tr_impl.
+    { iApply (type_case_uniq _ (pbyidx (λ i, inr (trl -!! i))));
+        [apply tctx_incl_refl|done|].
+      rewrite !big_sepHL_2_big_sepN. iApply (big_sepN_impl with "el").
+      iIntros "!>" (?) "?". by rewrite pbyidx_plookup. }
+    move=> ?[m ?]/=. case (to_xsum (uniq_bor_current m).1)=>/= ??.
+    by rewrite pbyidx_plookup.
+  Qed.
 End type_sum.
