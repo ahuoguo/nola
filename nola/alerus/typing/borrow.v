@@ -818,4 +818,99 @@ Section borrow.
     by iApply type_let;
       [by eapply type_deref_uniq_uniq_instr|solve_typing| |done].
   Qed.
+
+  (** Dereferencing a shared borrow of a unique borrow.
+
+    The original buys [d*(g+1)] later credits out of [⧖] to strip the [▷]s
+    in front of the borrow's ghost assertion; there are none here.  What is
+    left is one [guard_acc] against the local context, needed because the
+    guard to [l1 #↦∗_] sits inside that ghost assertion. *)
+  Lemma type_deref_shr_uniq_instr {𝔄} {E L I} κ κ' p (ty : type 𝔄) :
+    lctx_lft_alive E L κ → lctx_lft_incl E L κ κ' →
+    typed_instr_ty E L I +[p ◁ &shr{κ} (&uniq{κ'} ty)] (!p) (&shr{κ} ty)
+      (λ post '-[(l, m)], λ mask π,
+        post (uniq_bor_loc m, uniq_bor_current m) mask π).
+  Proof.
+    move=> Alv In. apply typed_instr_of_memload.
+    move=> [l [[[[[l1 x1] ξi] d1] g1] ξidx]] v d tid post mask.
+    iIntros "#LFT #PROPH #UNIQ #E L %Hp [gho %phys] #Obs W".
+    iDestruct (Alv with "L E") as "#Alv".
+    iDestruct (In with "L E") as "#Incl".
+    destruct d as [|d'];
+      [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
+    rewrite shr_bor_gho /=. iDestruct "gho" as "#(G↦ & Ggho & Pers)".
+    rewrite (uniq_bor_gho_pers κ' ty l1 x1 ξi d1 g1 ξidx d' (S d') tid).
+    iDestruct "Pers" as "(%Hineq & #InnerPers & #UBPers)".
+    (* The guard to [l1 #↦∗_] lives inside the borrow's ghost assertion, so
+      the only way to it is to open the outer guard once. *)
+    iDestruct (guard_trans with "Alv Ggho") as "#Lgho".
+    iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (guard_acc with "Lgho L Wg") as "[H Lback]".
+    iAssert (@[κ'] &&{Wguard}&&> l1 #↦∗_)%I as "#InnerPtBase".
+    { iEval (rewrite (uniq_bor_gho κ' ty l1 x1 ξi d1 g1 ξidx d' (S d') tid))
+        in "H". by iDestruct "H" as "(_ & _ & _ & $ & _)". }
+    iDestruct ("Lback" with "H") as "[Wg L]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
+    iMod (Ltok_alloc with "L W") as "[W (%γ & [#key f])]".
+    iAssert (frac_tok γ 1 &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "[] Alv"). iApply (Ltok_guard_frac with "key"). }
+    inversion phys.
+    iModIntro. iFrame "W". iExists l, l1.1, (gsrc_fml (GFrac γ 1)).
+    iSplit; [done|].
+    iSplitL "f"; [by iApply (gsrc_fml_sem_2 (s := GFrac γ 1))|].
+    iSplit.
+    { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ 1))).
+      rewrite /= -heap_mapsto_cells_fancy_fmap_eq.
+      iApply (guard_trans with "Gκ G↦"). }
+    iIntros "f W".
+    iDestruct (gsrc_fml_sem_1 (s := GFrac γ 1) with "f") as "f".
+    iMod (Ltok_withdraw with "[$key $f] W") as "[W L]".
+    iDestruct "InnerPers" as "[Dead|#InnerPers2]".
+    { (* [κ'] is already dead, but [κ ⊑ κ'] is alive *)
+      iDestruct (guard_trans with "Alv Incl") as "#Alv'".
+      iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+      iDestruct (guard_trans with "Alv' Incl'") as "#G2".
+      iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+      iDestruct (guard_acc with "G2 L Wg") as "[Alive _]".
+      iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
+    iDestruct (guard_rhs_iff
+      (uniq_bor_gho κ' ty l1 x1 ξi d1 g1 ξidx d' (S d') tid) with "Ggho")
+      as "#Ggho2".
+    iDestruct (guard_rhs_sep_r with "Ggho2") as "#Ggho3".
+    iDestruct (guard_rhs_sep_r with "Ggho3") as "#Ggho4".
+    iDestruct (guard_rhs_sep_l with "Ggho4") as "#GUB".
+    iDestruct (guard_inner_from_guard_uniq_body ty x1 ξi d1 g1 ξidx κ' tid l1
+      (@[κ])%I with "LFT UBPers GUB Incl") as "#Gghopt".
+    iDestruct (guard_rhs_sep_l with "Gghopt") as "#Ggho5".
+    iDestruct (guard_rhs_sep_r with "Gghopt") as "#Gpt1".
+    iModIntro. iFrame "W". iExists (l1, x1). iFrame "L". iSplit; last first.
+    { iApply (proph_obs_impl with "Obs")=> π Ha. exact Ha. }
+    rewrite /ty_own shr_bor_gho /=. iSplit; [|done].
+    iSplit.
+    { iApply guard_cloc_combine_fancy; [|iApply "Gpt1"].
+      iApply (guard_trans with "Incl InnerPtBase"). }
+    iSplit.
+    { iApply (guard_trans with "Ggho5 []"). iApply guard_intro.
+      iIntros "!> g".
+      iApply (ty_gho_depth_mono ty d1 g1 (S d') (S (S d')) x1 tid with "g");
+        lia. }
+    iApply (ty_gho_pers_depth_mono ty d1 g1 (S d') (S (S d')) x1 tid
+      with "InnerPers2"); lia.
+  Qed.
+
+  Lemma type_deref_shr_uniq {𝔄 𝔅l ℭl 𝔇} κ κ' x p e (ty: type 𝔄)
+      (T: tctx 𝔅l) (T': tctx ℭl) trx tr E L I (C: cctx 𝔇) :
+    Closed (x :b: []) e →
+    tctx_extract_ctx E L +[p ◁ &shr{κ} (&uniq{κ'} ty)] T T' trx →
+    lctx_lft_alive E L κ → lctx_lft_incl E L κ κ' →
+    (∀v: val, typed_body E L I C (v ◁ &shr{κ} ty +:: T') (subst' x v e) tr) -∗
+    typed_body E L I C T (let: x := !p in e) (trx ∘
+      (λ post '((l, m) -:: bl), λ mask π,
+        tr post ((uniq_bor_loc m, uniq_bor_current m) -:: bl) mask π))%type.
+  Proof.
+    iIntros. iApply typed_body_tctx_incl; [done|].
+    iApply type_let;
+      [by eapply type_deref_shr_uniq_instr|apply tctx_incl_refl| |done].
+    by move=>/= ?[[??]?].
+  Qed.
 End borrow.
