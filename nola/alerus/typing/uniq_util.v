@@ -538,4 +538,30 @@ Section uniq_util.
     rewrite llftl_bor_idx. iDestruct "Bor2" as (ζidx) "[ζBor ζTok]".
     iExists ζi, ζidx. iFrame "EqObs key f ζVo ζTok ζBor".
   Qed.
+
+  (** [uniq_body] as a formula: [&uniq{κ} ty]'s own ghost assertion holds
+    one, and that assertion is a formula now. *)
+  Definition uniq_body_fmlx {𝔄} (ty: type 𝔄) (x: ~~𝔄) (ξi: positive)
+    (d g: nat) (idx: Idx) (κ: lft) (tid: thread_id) (l: cloc) : FML $oi Σ :=
+    (.VOx[PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi] x (d, g) ∗
+     idx_bor_tok_fml idx ∗ &x{κ, idx} (uniq_body_fml ty x ξi tid l))%FML.
+
+  Lemma uniq_body_fmlx_sem {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l :
+    bor_sem (uniq_body_fmlx ty x ξi d g idx κ tid l) ⊣⊢
+      uniq_body ty x ξi d g idx κ tid l.
+  Proof.
+    rewrite /uniq_body_fmlx /uniq_body /uniq_body_pers_component !bor_sep_sem
+      vo_fml_sem idx_bor_tok_fml_sem idxbor_fml_sem //.
+  Qed.
+
+  Definition basically_dead_fml (κ: lft) : FML $oi Σ :=
+    ex_fml (λ κ', ((κ ⊑x κ') ∗ [†x κ'])%FML).
+
+  Lemma basically_dead_fml_sem κ :
+    bor_sem (basically_dead_fml κ) ⊣⊢ basically_dead κ.
+  Proof.
+    rewrite /basically_dead_fml /basically_dead ex_fml_sem.
+    apply bi.exist_proper=> κ'.
+    by rewrite bor_sep_sem guard_fml_sem !alive_fml_sem dead_fml_sem.
+  Qed.
 End uniq_util.
