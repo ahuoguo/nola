@@ -263,4 +263,75 @@ Section typing.
       with "Hgho") as "[Hgho _]"; [lia|lia|].
     by iFrame "H↦ Hfree Hgho".
   Qed.
+
+  Lemma pcell_ty_gho_phys n (γs : ~~(pcellₛ n)) tid :
+    length γs = n →
+    ∀ (l : cloc), (l.1 ↦[^ l.2 ]!∗ ty_phys (pcell_ty n) γs tid) ⊣⊢
+      (l.1 ↦[^ l.2 ]!∗ (FCell <$> γs)).
+  Proof.
+    move=> Hlen l. rewrite /= (pad_length' (FCell <$> γs) n) //.
+    by rewrite length_fmap Hlen.
+  Qed.
+
+  Definition PCellBorrow : val := (λ: ["pcell_ref"; "perm_ref"], "pcell_ref")%V.
+
+  (** The original splits into two symmetric branches on which of the two
+    depths is larger, because it has to pick the receipt that pays for the
+    [▷]s in front of the shared ghost assertions.  There are none here, so
+    one branch does. *)
+  Lemma typed_pcell_borrow {𝔄} κ (pcell_ref perm_ref : path) (ty : type 𝔄)
+      E L I :
+    typed_instr E L I
+      +[pcell_ref ◁ shr_bor κ (pcell_ty (ty_size ty));
+        perm_ref ◁ shr_bor κ (cell_points_to_ty ty)]
+      (PCellBorrow [pcell_ref; perm_ref]) (λ v, +[v ◁ shr_bor κ ty])
+      (λ post '-[(l, γs); (_, (γs', x))], λ mask π,
+        γs = γs' ∧ post -[(cloc_flat_insert l γs, x)] mask π).
+  Proof.
+    move=> tid post mask iκs vπl.
+    iIntros "#LFT #PROPH #UNIQ #E L I TY #Obs"=>/=.
+    destruct vπl as [[l γs] [[l' [γs' x]] []]].
+    iDestruct "TY" as "(Hcell & Hperm & _)".
+    iDestruct "Hcell" as (pl d Heval) "[Hshr %Hphys]".
+    iDestruct "Hperm" as (pl' d' Heval') "[Hshr' %Hphys']".
+    simpl in Hphys, Hphys'. inversion Hphys; subst pl.
+    inversion Hphys'; subst pl'.
+    destruct d as [|d0];
+      [by iDestruct (false_fml_sem_1 with "Hshr") as "[]"|].
+    destruct d' as [|d1];
+      [by iDestruct (false_fml_sem_1 with "Hshr'") as "[]"|].
+    rewrite !shr_bor_gho /=.
+    iDestruct "Hshr" as "#(Hpt & _ & Hlen0)".
+    rewrite pcell_ty_gho_pers. iDestruct "Hlen0" as %Hlen.
+    iDestruct "Hshr'" as "#(_ & Hghoshr & Hpers)".
+    rewrite cell_points_to_gho_pers /=.
+    destruct d1 as [|d2]; [by iDestruct "Hpers" as "[]"|].
+    iDestruct "Hpers" as "[_ Hpers]".
+    iApply twpw_fupdw_nonval; [done|].
+    wp_bind pcell_ref. iApply twp_wand; [by iApply twp_eval_path|].
+    iIntros (?->). wp_bind perm_ref.
+    iApply twp_wand; [by iApply twp_eval_path|]. iIntros (?->).
+    wp_rec. iIntros "W".
+    iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
+    iDestruct (guard_rhs_iff (cell_points_to_gho ty (γs, x) (S d2) (S (S d2))
+      tid) with "Hghoshr") as "#Hghoshr1".
+    iDestruct (guard_rhs_sep_l with "Hghoshr1") as "#Hcells".
+    iDestruct (guard_rhs_sep_r with "Hghoshr1") as "#Hgho".
+    iModIntro. iFrame "W L I". iExists -[(cloc_flat_insert l γs, x)].
+    iSplit; last first.
+    { iApply (proph_obs_impl with "Obs")=> ? [_ Ha]. apply Ha. }
+    iSplit; [|done]. iExists #l.1, (S (S (S d2))). iSplit; [done|].
+    rewrite /ty_own shr_bor_gho /=. iSplit; [|done]. iSplit.
+    { iDestruct (guard_rhs_iff
+        (pcell_ty_gho_phys (ty_size ty) γs tid Hlen l) with "Hpt")
+        as "#Hpt2".
+      iApply (guard_cloc_combine_fancy' with "Hpt2 Hcells"). }
+    iSplit.
+    { iApply (guard_trans with "Hgho []"). iApply guard_intro.
+      iIntros "!> gho".
+      iApply (ty_gho_depth_mono ty d2 (S (S d2)) (S (S d2)) (S (S (S d2)))
+        x tid with "gho"); lia. }
+    iApply (ty_gho_pers_depth_mono ty d2 (S (S d2)) (S (S d2))
+      (S (S (S d2))) x tid with "Hpers"); lia.
+  Qed.
 End typing.
