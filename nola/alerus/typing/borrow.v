@@ -151,6 +151,190 @@ Section borrow.
     destruct Extr as [Htrx _]=> ??. apply Htrx. by case.
   Qed.
 
+  (** The intermediate borrow that [tctx_reborrow_uniq] lends to [κ']: the
+    old value observer paired with the new prophecy controller.  The
+    original's [⧖(S d' `max` g')] inside it goes with the time receipts. *)
+  Definition reborrow_mid_fml {𝔄} (x0: ~~𝔄) (ξi ζi: positive) : FML $oi Σ :=
+    ex_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
+      (.VOx[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi] x' (d', g') ∗
+       .PCx[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ζi] x' (vπ x') (d', g'))%FML))).
+
+  Lemma reborrow_mid_fml_sem {𝔄} (x0: ~~𝔄) ξi ζi :
+    bor_sem (reborrow_mid_fml x0 ξi ζi) ⊣⊢
+      ∃ (x': ~~𝔄) (d' g': nat),
+        .VO[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi] x' (d', g') ∗
+        .PC[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ζi] x' (vπ x') (d', g').
+  Proof.
+    rewrite /reborrow_mid_fml ex_fml_sem. apply bi.exist_proper=> x'.
+    rewrite ex_fml_sem. apply bi.exist_proper=> d'.
+    rewrite ex_fml_sem. apply bi.exist_proper=> g'.
+    by rewrite bor_sep_sem vo_fml_sem pc_fml_sem.
+  Qed.
+
+  (** Reborrowing a unique borrow for a shorter lifetime.
+
+    The original's [⧖]/[⧗]/[£] and the laters they pay for are gone, and with
+    them the [leaf_goal laters to …] steps; what is left is the skeleton -
+    mint a fresh prophecy [ζ], reborrow the contents to [κ'], lend [κ'] the
+    pair of [.VO[ξ]] and [.PC[ζ]], and merge the two borrows into one
+    [uniq_body] for [ζ]. *)
+  Lemma tctx_reborrow_uniq {𝔄} E L I p (ty: type 𝔄) κ κ' :
+    lctx_lft_incl E L κ' κ →
+    typed_instr E L I +[p ◁ &uniq{κ} ty] ReBor
+      (const +[p ◁ &uniq{κ'} ty;
+               p ◁{κ'} blocked_type_ctor _ (&uniq{κ} ty)])
+      (λ post '-[m], λ mask π,
+        ∀ (m': ~~(uniq_borₛ 𝔄)) (b: ~~(blockedₛ (uniq_borₛ 𝔄))),
+          uniq_bor_loc m' = uniq_bor_loc m →
+          uniq_bor_current m' = uniq_bor_current m →
+          blockedπ b π = (uniq_bor_future m' π, uniq_bor_future m π) →
+          post -[m'; b] mask π)%type.
+  Proof.
+    move=> In. apply typed_instr_of_skip.
+    move=> [[[[[l x0] ξi] d'] g'] idx] v d tid post mask iκs.
+    iIntros "#LFT #PROPH #UNIQ #E L I %Hp [gho %phys] #Obs W".
+    iDestruct (In with "L E") as "#Inκ'κ".
+    rewrite uniq_bor_gho.
+    iDestruct "gho" as "(#Incl & %Hle & UniqBody & #PtBase & #Pers)".
+    iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
+    iMod (uniq_intro x0 (vπ x0) (d', g') with "PROPH UNIQ") as (ζi) "[ζVo ζPc]";
+      [set_solver|].
+    set ξ := PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi.
+    set ζ := PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ζi.
+    iDestruct (guard_trans with "Inκ'κ Incl") as "#Inclκ'".
+    iDestruct (guard_trans with "Inκ'κ PtBase") as "#PtBase'".
+    iDestruct "Pers" as "[Dead|#Pers2]".
+    { (* [κ] is already dead, so everything can be faked. *)
+      iDestruct "Dead" as (κ3) "[#Incl3 #Dead3]".
+      iDestruct (llftl_incl_dead_implies_dead ⊤ κ κ3 with "LFT Incl3 Dead3")
+        as "A".
+      iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
+      iMod ("A'" with "W") as "[W #†κ]".
+      iDestruct (llftl_incl_dead_implies_dead ⊤ κ' κ with "LFT Inκ'κ †κ")
+        as "B".
+      iDestruct (fupdw_incl (W:=alerus_wsat) with "B") as "B'".
+      iMod ("B'" with "W") as "[W #†κ']".
+      iDestruct (llftl_bor_fake ⊤ κ' (uniq_body_fml ty x0 ζi tid l)
+        with "LFT †κ'") as "C".
+      iDestruct (fupdw_incl (W:=alerus_wsat) with "C") as "C'".
+      iMod ("C'" with "W") as "[W Fake]".
+      rewrite llftl_bor_idx. iDestruct "Fake" as (fidx) "[#FBor FTok]".
+      iModIntro. iFrame "W L I".
+      iExists -[(l, x0, ζi, d', g', fidx); ((l, x0, ζi, d', g', idx), ζi, ξi)].
+      iSplit; last first.
+      { iApply (proph_obs_impl with "Obs")=> π Ha. by apply Ha. }
+      iSplitL "ζVo FTok".
+      { iExists v, (S d). iSplit; [done|].
+        rewrite /ty_own uniq_bor_gho. iSplit; [|by rewrite /= -phys].
+        iSplitR; [by iApply "Inclκ'"|]. iSplitR; [iPureIntro; lia|].
+        iFrame "ζVo FTok FBor". iSplitR; [by iApply "PtBase'"|].
+        iLeft. iExists κ. by iFrame "Inκ'κ †κ". }
+      iSplit; [|done]. rewrite /tctx_elt_interp /=. iExists v.
+      iSplit; [done|]. iIntros "_ W". iModIntro. iFrame "W".
+      iExists (l, x0, ξi, d', g', idx), (S d).
+      iSplitL "ζPc".
+      { iDestruct (proph_ctrl_eqz with "PROPH ζPc") as "Eqz".
+        iApply (proph_eqz_prod with "[Eqz]");
+          [iFrame "Eqz"|iApply proph_eqz_refl]. }
+      rewrite /ty_own uniq_bor_gho. iSplit; [|by rewrite /= -phys].
+      iSplitR; [iApply "Incl"|]. iSplitR; [iPureIntro; lia|].
+      iFrame "ξVo ξTok ξBor". iSplitR; [iApply "PtBase"|].
+      iLeft. iExists κ. iFrame "†κ". iApply guard_refl. }
+    (* The main case. *)
+    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "ξBor2".
+    iDestruct (llftl_reborrow ⊤ κ κ' (uniq_body_fml ty x0 ξi tid l)
+      with "LFT Inκ'κ ξBor2") as "A".
+    iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
+    iMod ("A'" with "W") as "[W [ξBor3 ToξBor]]".
+    iDestruct (llftl_borrow κ' (reborrow_mid_fml x0 ξi ζi)
+      with "LFT [ξVo ζPc]") as "B".
+    { rewrite reborrow_mid_fml_sem. iExists x0, d', g'. iFrame. }
+    iDestruct (bupdw_incl (W:=alerus_wsat) with "B") as "B'".
+    iMod ("B'" with "W") as "[W [ζBor ToζBig]]".
+    iDestruct (llftl_sep_join ⊤ _ _ κ' with "LFT ξBor3 ζBor") as "C".
+    iDestruct (fupdw_incl (W:=alerus_wsat) with "C") as "C'".
+    iMod ("C'" with "W") as "[W Bor]".
+    (* Merge the two borrows into one [uniq_body] for [ζ].  The original
+      opens the joined borrow atomically because [κ'] need not be alive. *)
+    iAssert (|=[alerus_wsat]{⊤}=> &{κ'} (uniq_body_fml ty x0 ζi tid l))%I
+      with "[Bor]" as "Merge".
+    { iIntros "W". iDestruct (wsat_split (W':=llft_wsat) with "W") as "[Wl Wr]".
+      iMod (llftl_bor_acc_atomic ⊤ _ κ' with "LFT Bor Wl")
+        as "[[P Back]|[Wl #†κ']]"; last first.
+      { iDestruct (wsat_join (W:=alerus_wsat) with "Wl Wr") as "W".
+        iDestruct (llftl_bor_fake ⊤ κ' (uniq_body_fml ty x0 ζi tid l)
+          with "LFT †κ'") as "D".
+        iDestruct (fupdw_incl (W:=alerus_wsat) with "D") as "D'".
+        iApply ("D'" with "W"). }
+      iEval (rewrite bor_sep_sem uniq_body_fml_sem reborrow_mid_fml_sem) in "P".
+      iDestruct "P" as "[(%x1 & %d1 & %g1 & ξPc1 & Gho1 & Pt1)
+                        (%x2 & %d2 & %g2 & ξVo2 & ζPc2)]".
+      iDestruct (uniq_agree with "ξVo2 ξPc1") as %[<- Heq]. inversion Heq.
+      subst d2 g2.
+      iMod ("Back" $! (uniq_body_fml ty x0 ζi tid l)
+        with "[ξVo2 ξPc1] [ζPc2 Gho1 Pt1]") as "[Wl $]"; last first.
+      { iDestruct (wsat_join (W:=alerus_wsat) with "Wl Wr") as "$". done. }
+      { rewrite uniq_body_fml_sem. iExists x2, d1, g1. iFrame. }
+      iIntros "[Body #†κ']". iEval (rewrite uniq_body_fml_sem) in "Body".
+      iDestruct "Body" as (x3 d3 g3) "(ζPc3 & Gho3 & Pt3)".
+      iMod (uniq_update ξ x3 (vπ x3) (d3, g3) with "UNIQ ξVo2 ξPc1")
+        as "[ξVo4 ξPc4]"; [solve_ndisj|].
+      iModIntro. rewrite bor_sep_sem uniq_body_fml_sem reborrow_mid_fml_sem.
+      iSplitR "ξVo4 ζPc3"; [iExists x3, d3, g3; iFrame|].
+      iExists x3, d3, g3. iFrame. }
+    iMod ("Merge" with "W") as "[W ζBor2]".
+    rewrite (llftl_bor_idx κ' (uniq_body_fml ty x0 ζi tid l)).
+    iDestruct "ζBor2" as (ζidx) "[#ζBor3 ζTok]".
+    iModIntro. iFrame "W L I".
+    iExists -[(l, x0, ζi, d', g', ζidx); ((l, x0, ζi, d', g', idx), ζi, ξi)].
+    iSplit; last first.
+    { iApply (proph_obs_impl with "Obs")=> π Ha. by apply Ha. }
+    iSplitL "ζVo ζTok".
+    { iExists v, (S d). iSplit; [done|].
+      rewrite /ty_own uniq_bor_gho. iSplit; [|by rewrite /= -phys].
+      iSplitR; [by iApply "Inclκ'"|]. iSplitR; [iPureIntro; lia|].
+      iFrame "ζVo ζTok ζBor3". iSplitR; [by iApply "PtBase'"|].
+      by iRight. }
+    iSplit; [|done]. rewrite /tctx_elt_interp /=. iExists v.
+    iSplit; [done|]. iIntros "#†κ' W".
+    iDestruct ("ToξBor" with "†κ'") as "A".
+    iDestruct (bupdw_incl (W:=alerus_wsat) with "A") as "A'".
+    iMod ("A'" with "W") as "[W ξBor4]".
+    iDestruct ("ToζBig" with "†κ'") as "B".
+    iDestruct (bupdw_incl (W:=alerus_wsat) with "B") as "B'".
+    iMod ("B'" with "W") as "[W Mid]".
+    iEval (rewrite reborrow_mid_fml_sem) in "Mid".
+    iDestruct "Mid" as (x'' d'' g'') "[ξVo ζPc']".
+    iDestruct (llftl_bor_pers_from_wand2 ⊤ κ _
+      (ty_gho_pers ty x'' d'' g'' tid) with "LFT ξBor4 [] ξVo") as "C".
+    { iIntros "ξVo Body". iEval (rewrite uniq_body_fml_sem) in "Body".
+      iDestruct "Body" as (y e h) "(ξPc & Gho & _)".
+      iDestruct (uniq_agree with "ξVo ξPc") as %[<- Heq]. inversion Heq.
+      subst e h. iApply (ty_gho_pers_impl with "Gho"). }
+    iDestruct (fupdw_incl (W:=alerus_wsat) with "C") as "C'".
+    iMod ("C'" with "W") as "[W (ξBor5 & #Pers'' & ξVo)]".
+    rewrite (llftl_bor_idx κ (uniq_body_fml ty x0 ξi tid l)).
+    iDestruct "ξBor5" as (ξidx) "[#ξBor6 ξTok]".
+    iModIntro. iFrame "W".
+    iExists (l, x'', ξi, d'', g'', ξidx), (d `max` S d'' `max` g'').
+    have Hirr : prval_to_inh (vπ x'') = prval_to_inh (vπ x0).
+    { apply proof_irrel. }
+    have Hirr' : to_inh_syn_type (@vπ 𝔄 x'' inhabitant)
+               = to_inh_syn_type (@vπ 𝔄 x0 inhabitant).
+    { apply proof_irrel. }
+    iSplitL "ζPc'".
+    { iDestruct (proph_ctrl_eqz with "PROPH ζPc'") as "Eqz".
+      iApply (proph_eqz_prod with "[Eqz]"); [iFrame "Eqz"|].
+      rewrite /= Hirr'. iApply proph_eqz_refl. }
+    rewrite /ty_own uniq_bor_gho. iSplit; [|by rewrite /= -phys].
+    iSplitR; [iApply "Incl"|]. iSplitR; [iPureIntro; lia|].
+    rewrite /uniq_body /uniq_body_pers_component
+      (uniq_body_fml_irrel ty x'' x0 ξi tid l Hirr) Hirr.
+    iFrame "ξVo ξTok ξBor6". iSplitR; [iApply "PtBase"|].
+    iDestruct "Pers''" as "[Pers''|Dead]"; [by iRight|].
+    iLeft. iExists κ. iFrame "Dead". iApply guard_refl.
+  Qed.
+
   (** Dereferencing a shared borrow of an owning pointer.
 
     The original's guard source is [llctx_interp L] itself; here it has to be
