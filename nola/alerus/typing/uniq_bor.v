@@ -472,7 +472,7 @@ Section uniq_bor_typing.
     iDestruct (llftl_bor_idx_to_full with "Bor Tok") as "Bor2".
     iDestruct (llftl_bor_acc NalerusE _ static with "LFT Bor2 []") as "A";
       [iApply llftl_tok_unit|].
-    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=NalerusE) with "A")
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat_core) (E':=NalerusE) with "A")
       as "A'"; [done|].
     iMod ("A'" with "W") as "[W [Inner Back]]".
     iEval (rewrite uniq_body_fml_sem) in "Inner".
@@ -490,7 +490,7 @@ Section uniq_bor_typing.
     { iIntros "[_ †]". iExFalso. by iApply llftl_end_unit. }
     { iApply (uniq_body_fml_sem_2 with "ξPc gho [Pt]").
       by rewrite -(Hphys tid tid' x0 x' (eq_sym Habs)). }
-    iDestruct (bupdw_incl (W:=alerus_wsat) with "B") as "B'".
+    iDestruct (bupdw_incl (W:=alerus_wsat_core) with "B") as "B'".
     iMod ("B'" with "W") as "[W [Bor3 _]]".
     rewrite llftl_bor_idx. iDestruct "Bor3" as (idx2) "[#Bor3 Tok3]".
     iModIntro. iFrame "W". iExists (l, x', ξi, d' + off, g', idx2), off.

@@ -1047,7 +1047,7 @@ Class Send `{!typeG FML Σ} {𝔄} (ty: type 𝔄) := {
     (llft_ctx -∗ uniq_ctx -∗
       cna_lifetimes tid κs -∗
       Ktok γ κs q -∗
-      (ty_gho ty) x d g tid =[alerus_wsat]{NalerusE}=∗
+      (ty_gho ty) x d g tid =[alerus_wsat_core]{NalerusE}=∗
       ∃ x' off,
       (ty_gho ty) x' (d+off) g tid' ∗
         ⌜@syn_abstract 𝔄 x' = @syn_abstract 𝔄 x⌝ ∗

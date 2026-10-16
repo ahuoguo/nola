@@ -164,7 +164,7 @@ Section local_invariants.
       as "A".
     { iApply (local_inv_body_sem_2 with "gho"). iPureIntro.
       by rewrite Habs. }
-    iDestruct (bupdw_incl (W:=alerus_wsat) with "A") as "A'".
+    iDestruct (bupdw_incl (W:=alerus_wsat_core) with "A") as "A'".
     iMod ("A'" with "W") as "(W & %γ' & #inv' & active')".
     iModIntro. iFrame "W".
     iExists (N, (γ', γt, d1), c), 0%nat. iFrame "lfts K".
