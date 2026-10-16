@@ -464,4 +464,86 @@ Section typing.
         (pcell_phys_to_flat (ty_size ty) γs cl tid Hlen Hlen') with "Hpt"). }
     iRight. iApply (ty_gho_pers_depth_mono with "Pers'"); lia.
   Qed.
+
+  (** ** Atomic operations on a one-cell permission cell *)
+
+  Definition AtomicLoad : val :=
+    (λ: ["pcell_ref"; "perm_ref"], !ˢᶜ "pcell_ref")%V.
+
+  Lemma typed_pcell_atomic_load κ (pcell_ref perm_ref : path) E L I :
+    lctx_lft_alive E L κ →
+    typed_instr E L I
+      +[pcell_ref ◁ shr_bor κ (pcell_ty 1);
+        perm_ref ◁ shr_bor κ (cell_points_to_ty int)]
+      (AtomicLoad [pcell_ref; perm_ref]) (λ v, +[v ◁ int])
+      (λ post '-[(cl, γs); (_, (γs', n))], λ mask π,
+        γs = γs' ∧ post -[n] mask π).
+  Proof.
+    move=> Alv tid post mask iκs vπl.
+    iIntros "#LFT #PROPH #UNIQ #E L I TY #Obs"=>/=.
+    iDestruct (Alv with "L E") as "#Alv".
+    destruct vπl as [[cl γs] [[cl' [γs' n]] []]].
+    iDestruct "TY" as "(Hcell & Hperm & _)".
+    iDestruct "Hcell" as (pl d0 Heval) "[Hshr %Hphys]".
+    iDestruct "Hperm" as (pl' d1 Heval') "[Hint %Hphys']".
+    simpl in Hphys, Hphys'. inversion Hphys; subst pl.
+    inversion Hphys'; subst pl'.
+    destruct d0 as [|d0];
+      [by iDestruct (false_fml_sem_1 with "Hshr") as "[]"|].
+    destruct d1 as [|d1];
+      [by iDestruct (false_fml_sem_1 with "Hint") as "[]"|].
+    rewrite !shr_bor_gho /=.
+    iDestruct "Hshr" as "#(Hcells & _ & Hlen0)".
+    rewrite pcell_ty_gho_pers. iDestruct "Hlen0" as %Hlen.
+    iDestruct "Hint" as "#(_ & H↦ & _)".
+    iApply twpw_fupdw_nonval; [done|].
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
+    iMod (Ltok_alloc with "L W") as "[W (%γl & [#key f])]".
+    iDestruct (Ltok_guard_frac with "key") as "#Gfrac".
+    iAssert (frac_tok γl 1 &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "Gfrac Alv"). }
+    (* the permission's ghost assertion is [False] at depth zero *)
+    destruct d1 as [|d2].
+    { iDestruct (guard_trans with "Gκ H↦") as "#G0".
+      iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+      iDestruct (guard_acc with "G0 f Wg") as "[gho _]".
+      by iDestruct (false_fml_sem_1 with "gho") as "[]". }
+    destruct γs as [|γ [|γ2 γs2]]; simpl in Hlen; [done| |done].
+    (* read the length of the permission cell's cell list off the shared
+      points-to, giving the guard back right away *)
+    iDestruct (guard_trans with "Gκ Hcells") as "#Gpt".
+    iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (guard_acc with "Gpt f Wg") as "[pt back]".
+    iDestruct (heap_fancy_mapsto_cells_length with "pt") as %Hlen'.
+    iDestruct ("back" with "pt") as "[Wg f]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
+    rewrite /= ?length_pad in Hlen'.
+    destruct cl as [cll cls]=>/=. simpl in Hlen', Heval.
+    destruct cls as [|cs1 [|??]]; simpl in Hlen'; [done| |done].
+    (* assemble the guard the atomic read runs under *)
+    iDestruct (guard_rhs_iff
+      (pcell_ty_gho_phys 1 [γ] tid Hlen (cll, [cs1])) with "Hcells")
+      as "#Hcells2".
+    iDestruct (guard_rhs_iff
+      (cell_points_to_gho int ([γ], n) (S d2) (S (S d2)) tid) with "H↦") as "#H1".
+    iDestruct (guard_rhs_sep_l with "H1") as "#H2".
+    iDestruct (guard_cloc_combine_fancy' _ _ (cll, [cs1]) [γ] [FVal #n]
+      with "Hcells2 H2") as "#Hread".
+    iDestruct (guard_rhs_iff (heap_mapsto_singleton cll (cs1 ++ [γ]) (FVal #n))
+      with "Hread") as "#Hread2".
+    iDestruct (guard_trans with "Gκ Hread2") as "#Gread".
+    iModIntro. iFrame "W".
+    wp_bind pcell_ref. iApply twp_wand; [by iApply twp_eval_path|].
+    iIntros (?->). wp_bind perm_ref.
+    iApply twp_wand; [by iApply twp_eval_path|]. iIntros (?->). wp_rec.
+    iApply (twp_read_sc_guarded_cells _ _ cll (cs1 ++ [γ]) #n
+      (frac_tok γl 1) with "[f]").
+    { iFrame "f". iApply "Gread". }
+    iIntros "f W". iMod (Ltok_withdraw with "[$key $f] W") as "[W L]".
+    iModIntro. iFrame "W". iExists -[n]. iFrame "L I". iSplit; last first.
+    { iApply (proph_obs_impl with "Obs")=> ? [_ Hpost]. apply Hpost. }
+    iSplit; [|done]. rewrite tctx_hasty_val. iExists 0%nat.
+    iSplit; [by iApply empty_fml_sem_2|done].
+  Qed.
 End typing.
