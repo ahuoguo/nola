@@ -52,7 +52,7 @@ Section base.
   Global Instance base_send {𝔄} : Send (@base 𝔄).
   Proof. split=>//.
      - intros. by apply syn_abstract_phys_eq.
-     - move=> tid tid' x d g γ q κs. iIntros "_ _ _ _ A".
+     - move=> tid tid' x d g G κs. iIntros "_ _ _ _ _ A".
        by iDestruct (false_fml_sem_1 with "A") as "[]".
   Qed.
 

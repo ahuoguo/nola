@@ -266,7 +266,7 @@ Section typing.
     split.
     - intros tid tid' x x' H. unfold syn_abstract in H. inversion H.
       unfold ty_phys, fn, ty_of_st. simpl. rewrite H1. trivial.
-    - move=> tid tid' x d g γ q κs. iIntros "_ _ lfts K A $ !>".
+    - move=> tid tid' x d g G κs. iIntros "_ _ lfts _ K A $ !>".
       iExists x, 0%nat. rewrite Nat.add_0_r. iFrame "lfts K".
       iSplit; [|done].
       iExact "A".

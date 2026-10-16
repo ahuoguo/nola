@@ -466,8 +466,8 @@ Section uniq_bor_typing.
   Proof.
     move=> [Hphys Hgho]. split.
     { move=> ?? [[[[[??]?]?]?]?] [[[[[??]?]?]?]?] Ha. by inversion Ha. }
-    move=> tid tid' [[[[[l x0] ξi] d'] g'] idx] d g γ q κs.
-    iIntros "#LFT #UNIQ lfts K gho W". rewrite uniq_bor_gho.
+    move=> tid tid' [[[[[l x0] ξi] d'] g'] idx] d g G κs.
+    iIntros "#LFT #UNIQ lfts #gs K gho W". rewrite uniq_bor_gho.
     iDestruct "gho" as "(#Incl & %Hle & (ξVo & Tok & #Bor) & #PtBase & #Pers)".
     iDestruct (llftl_bor_idx_to_full with "Bor Tok") as "Bor2".
     iDestruct (llftl_bor_acc NalerusE _ static with "LFT Bor2 []") as "A";
@@ -479,7 +479,7 @@ Section uniq_bor_typing.
     iDestruct "Inner" as (x1 d1 g1) "(ξPc & Gho & Pt)".
     iDestruct (uniq_agree with "ξVo ξPc") as %[<- Heq]. inversion Heq.
     subst d1 g1.
-    iMod (Hgho tid tid' x0 d' g' γ q κs with "LFT UNIQ lfts K Gho W")
+    iMod (Hgho tid tid' x0 d' g' G κs with "LFT UNIQ lfts gs K Gho W")
       as "(W & %x' & %off & gho & %Habs & lfts & K)".
     iDestruct (ty_gho_pers_impl with "gho") as "#ghopers".
     iMod (uniq_update (PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi) x' (vπ x')

@@ -130,12 +130,12 @@ Section own.
   Proof.
     move=> [Hphys Hgho]. split.
     - move=> ?? [??] [??] He. by inversion He.
-    - move=> tid tid' x d g γ q κs. iIntros "LFT UNIQ lfts K A".
+    - move=> tid tid' x d g G κs. iIntros "LFT UNIQ lfts #gs K A".
       destruct d as [|d];
         [by iDestruct (false_fml_sem_1 with "A") as "[]"|].
       iDestruct "A" as "(Hown & Hfree & Hgho)".
       iIntros "W".
-      iMod (Hgho with "LFT UNIQ lfts K Hgho W")
+      iMod (Hgho with "LFT UNIQ lfts gs K Hgho W")
         as "(W & %x' & %off & gho & %Habs & lfts & K)".
       iModIntro. iFrame "W". iExists (x.1, x'), off. iFrame "lfts K".
       rewrite own_ptr_gho /=.

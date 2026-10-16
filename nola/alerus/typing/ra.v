@@ -75,8 +75,8 @@ Section Ra.
 
   Global Instance ra_send : Send ra_ty.
   Proof.
-    split; [done|]. move=> tid tid' x d g γ q κs.
-    iIntros "_ _ lfts K A $ !>". iExists x, 0%nat. rewrite Nat.add_0_r.
+    split; [done|]. move=> tid tid' x d g G κs.
+    iIntros "_ _ lfts _ K A $ !>". iExists x, 0%nat. rewrite Nat.add_0_r.
     iFrame "lfts K". iSplit; [|done]. iExact "A".
   Qed.
 

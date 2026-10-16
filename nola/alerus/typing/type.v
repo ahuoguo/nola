@@ -1040,18 +1040,17 @@ Class Send `{!typeG FML Σ} {𝔄} (ty: type 𝔄) := {
     carving a namespace out of the mask, so the original can keep it open
     while [cna_destroy] opens its own guards, whereas a guard here is opened
     by *consuming* the world satisfaction [cna_destroy] would itself need.
-    The arbitrary [G] guarding the lifetime tokens becomes [Ktok γ κs q],
-    because [prod_send] has to *halve* it and [frac_split_in_half] cannot
-    store an arbitrary proposition. *)
-  send_change_tid tid tid' x d g γ q κs :
+    The original's [Timeless G] is not needed: [prod_send] threads [G]
+    through its two components in sequence rather than halving it. *)
+  send_change_tid tid tid' x d g (G : iProp Σ) κs :
     (llft_ctx -∗ uniq_ctx -∗
       cna_lifetimes tid κs -∗
-      Ktok γ κs q -∗
+      (∀ κ, ⌜κ ∈ κs⌝ -∗ (G &&{Wguard}&&> llft_alive κ)) -∗ G -∗
       (ty_gho ty) x d g tid =[alerus_wsat_core]{NalerusE}=∗
       ∃ x' off,
       (ty_gho ty) x' (d+off) g tid' ∗
         ⌜@syn_abstract 𝔄 x' = @syn_abstract 𝔄 x⌝ ∗
-        cna_lifetimes tid κs ∗ Ktok γ κs q
+        cna_lifetimes tid κs ∗ G
      )
 }.
 Global Instance: Params (@Send) 5 := {}.

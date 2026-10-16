@@ -159,9 +159,9 @@ Section typing.
   Proof.
     move=> Hsync. split.
     - move=> ?? [??] [??] Ha. by inversion Ha.
-    - move=> tid tid' x d g γ q κs.
+    - move=> tid tid' x d g G κs.
       have [_ [Hg _]] := shr_sync κ ty Hsync tid tid' x d g.
-      iIntros "_ _ lfts K A $ !>". iExists x, 0. rewrite Nat.add_0_r.
+      iIntros "_ _ lfts _ K A $ !>". iExists x, 0. rewrite Nat.add_0_r.
       iFrame "lfts K". iSplit; [|done]. by iApply (iff_1 Hg).
   Qed.
 

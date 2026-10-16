@@ -147,17 +147,14 @@ Section local_invariants.
     Send ty → Send (local_inv_ty ty pred).
   Proof.
     move=> [Hphys Hgho]. split; [done|].
-    move=> tid tid' [[N [[γ γt] d1]] c] d g γk q κs.
-    iIntros "#LFT #UNIQ lfts K gho W". rewrite local_inv_ty_gho.
+    move=> tid tid' [[N [[γ γt] d1]] c] d g G κs.
+    iIntros "#LFT #UNIQ lfts #gs K gho W". rewrite local_inv_ty_gho.
     iDestruct "gho" as "(Active & %Hd1 & #Inv)".
-    iDestruct "K" as "[#key f]".
-    iAssert (Ktok γk κs q) with "[$key $f]" as "K".
-    iMod (cna_destroy with "Inv lfts Active [] K W")
+    iMod (cna_destroy with "Inv lfts Active gs K W")
       as "(W & lfts & K & P)".
-    { iIntros (κ) "%". by iApply Ktok_guard. }
     rewrite local_inv_body_sem.
     iDestruct "P" as (x' d' g') "[gho %Hpred]".
-    iMod (Hgho tid tid' x' d' g' γk q κs with "LFT UNIQ lfts K gho W")
+    iMod (Hgho tid tid' x' d' g' G κs with "LFT UNIQ lfts gs K gho W")
       as "(W & %x'' & %off & gho & %Habs & lfts & K)".
     iDestruct (cna_alloc (WG:=alerus_WGuard) (sm:=bor_sem) tid' N
       (local_inv_body ty pred c tid') with "[gho]")

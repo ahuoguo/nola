@@ -36,7 +36,7 @@ Section bool.
   Proof.
     intros. split; trivial.
      - intros. unfold syn_abstract in H. subst x'. trivial.
-     - iIntros (tid tid' x0 d g γ q κs) "_ _ lfts tok _ $ !>".
+     - iIntros (tid tid' x0 d g G κs) "_ _ lfts _ tok _ $ !>".
        iExists x0, 0%nat. iFrame "lfts tok".
        iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
