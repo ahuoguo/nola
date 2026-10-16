@@ -94,10 +94,10 @@ Section typing.
   Proof.
     intros Hsend. destruct Hsend as [Hphys Hgho]. split.
      - intros. apply Hphys. apply syn_abstract_consistent0. trivial.
-     - iIntros (tid tid' x d g γ q κs) "LFT UNIQ Hg tok Gho W".
-       iMod (Hgho with "LFT UNIQ Hg tok Gho W")
-         as "($ & %x' & %off & gho & %Habs & tok)".
-       iModIntro. iExists (f ~~$ₛ x'), off. iFrame "tok".
+     - iIntros (tid tid' x d g G κs) "LFT UNIQ lfts #gs tok Gho W".
+       iMod (Hgho with "LFT UNIQ lfts gs tok Gho W")
+         as "($ & %x' & %off & gho & %Habs & lfts & tok)".
+       iModIntro. iExists (f ~~$ₛ x'), off. iFrame "lfts tok".
        rewrite mod_ty_gho semi_iso'. iFrame "gho". iPureIntro.
        have Hs := syn_abstract_consistent1 _ _ Habs. rewrite semi_iso' in Hs.
        trivial.

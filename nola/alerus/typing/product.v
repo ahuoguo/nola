@@ -46,8 +46,8 @@ Section product.
   Global Instance unit0_send : Send unit0.
   Proof.
     intros. split; trivial.
-    iIntros (tid tid' x0 d g γ q κs) "_ _ _ tok _ $ !>".
-    iExists x0, 0%nat. iFrame "tok".
+    iIntros (tid tid' x0 d g G κs) "_ _ lfts _ tok _ $ !>".
+    iExists x0, 0%nat. iFrame "lfts tok".
     iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
   
@@ -257,15 +257,14 @@ Section typing.
       - intros tid tid' x x'. move=> /=. intros Hsyn. inversion Hsyn.
         rewrite (Hphys1 tid tid' x.1 x'.1); trivial.
         rewrite (Hphys2 tid tid' x.2 x'.2); trivial.
-      - intros tid tid' x d g γ q κs. setoid_rewrite prod_ty_gho.
-        iIntros "#LFT #UNIQ #Hg tok [gho1 gho2] W".
-        iDestruct (Ktok_split_1 with "tok") as "[t1 t2]".
-        iMod (Hgho1 with "LFT UNIQ Hg t1 gho1 W")
-          as "(W & %x'1 & %off1 & gho1 & %s1 & t1)".
-        iMod (Hgho2 with "LFT UNIQ Hg t2 gho2 W")
-          as "($ & %x'2 & %off2 & gho2 & %s2 & t2)".
+      - intros tid tid' x d g G κs. setoid_rewrite prod_ty_gho.
+        iIntros "#LFT #UNIQ lfts #gs tok [gho1 gho2] W".
+        iMod (Hgho1 with "LFT UNIQ lfts gs tok gho1 W")
+          as "(W & %x'1 & %off1 & gho1 & %s1 & lfts & tok)".
+        iMod (Hgho2 with "LFT UNIQ lfts gs tok gho2 W")
+          as "($ & %x'2 & %off2 & gho2 & %s2 & lfts & tok)".
         iModIntro. iExists (x'1, x'2), (off1 `max` off2)%nat.
-        iDestruct (Ktok_split_2 with "t1 t2") as "$".
+        iFrame "lfts tok".
         iDestruct (ty_gho_depth_mono with "gho1") as "[$ _]". { lia. } { lia. }
         iDestruct (ty_gho_depth_mono with "gho2") as "[$ _]". { lia. } { lia. }
         iPureIntro. destruct x. simpl. rewrite s1. rewrite s2. done.

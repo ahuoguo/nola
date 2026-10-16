@@ -208,12 +208,20 @@ Section alerus.
   Definition lfts_interp (κs : gmultiset lft) : iProp Σ :=
     [∗ mset] κ ∈ κs, llft_alive κ.
 
+  (** [send_wsat] is deliberately *not* here.  [Send] moves a type's ghost
+    assertion to another thread pool, and for the null pool that means
+    destroying an invariant held there, which needs [cna_lifetimes
+    atomic_pool_name ∅] - i.e. [send_wsat] - as a *resource*.  The original
+    keeps it in an Iris invariant at its own namespace and opens it while
+    [cna_destroy] opens its guards at [↑NllftG]; a guard here is opened by
+    consuming the world satisfaction, so the two would collide.  Keeping
+    [send_wsat] outside the guarding world satisfaction - and outside the one
+    [Send] runs under, [alerus_wsat_core] - separates them. *)
   Definition alerus_WG : iProp Σ :=
     eternal_wsat alerus_eternal_name llft_alive ∗
     frac_wsat bor_sem ∗
     frac_key_wsat llctx_interp ∗
-    frac_key_wsat lfts_interp ∗
-    send_wsat.
+    frac_key_wsat lfts_interp.
 
   (** Fix the lifetime logic's two parameters *)
   #[export] Instance alerus_LlftWG : LlftWG Σ :=
@@ -265,9 +273,16 @@ Section alerus.
     lrustGS_heapSem := _;
   |}.
 
-  (** The global world satisfaction *)
-  Definition alerus_wsat : iProp Σ :=
-    llft_wsat ∗ cna_wsat alerus_WGuard bor_sem.
+  (** The global world satisfaction.
+
+    [na_inv_wsat] is where the *atomic* invariants of [typing/atomic_inv.v]
+    live: the original holds them in Iris invariants, so opening one yields a
+    [▷]; here they are simple invariants over formulas whose world
+    satisfaction has to be threaded explicitly. *)
+  Definition alerus_wsat_core : iProp Σ :=
+    llft_wsat ∗ cna_wsat alerus_WGuard bor_sem ∗
+    na_inv_wsat atomic_threadpool bor_sem.
+  Definition alerus_wsat : iProp Σ := alerus_wsat_core ∗ send_wsat.
 
   (** ** Shared access to a local lifetime context
 
@@ -351,33 +366,80 @@ Section alerus.
   (** The inclusions the rest of the development needs.  They are given
     explicitly rather than left to the structural instances, which would have
     to unfold [llft_wsat], [llft_wsatG] and the [LlftWG] projections. *)
-  #[export] Instance wsat_incl_alerus_llft :
-    WsatIncl alerus_wsat llft_wsat (cna_wsat alerus_WGuard bor_sem).
+  #[export] Instance wsat_incl_alerus_core :
+    WsatIncl alerus_wsat alerus_wsat_core send_wsat.
   Proof. done. Qed.
+  #[export] Instance wsat_incl_alerus_send :
+    WsatIncl alerus_wsat send_wsat alerus_wsat_core.
+  Proof.
+    rewrite /WsatIncl /alerus_wsat. iSplit.
+    - iIntros "[A B]". iFrame.
+    - iIntros "[A B]". iFrame.
+  Qed.
+  #[export] Instance wsat_incl_alerus_core_llft :
+    WsatIncl alerus_wsat_core llft_wsat
+      (cna_wsat alerus_WGuard bor_sem ∗ na_inv_wsat atomic_threadpool bor_sem).
+  Proof. done. Qed.
+  #[export] Instance wsat_incl_alerus_llft :
+    WsatIncl alerus_wsat llft_wsat
+      ((cna_wsat alerus_WGuard bor_sem ∗
+        na_inv_wsat atomic_threadpool bor_sem) ∗ send_wsat).
+  Proof.
+    rewrite /WsatIncl /alerus_wsat /alerus_wsat_core. iSplit.
+    - iIntros "((A & B & C) & D)". iFrame.
+    - iIntros "(A & (B & C) & D)". iFrame.
+  Qed.
+  #[export] Instance wsat_incl_alerus_core_guard :
+    WsatIncl alerus_wsat_core alerus_WGuard
+      (llft_inv_other ∗ cna_wsat alerus_WGuard bor_sem ∗
+        na_inv_wsat atomic_threadpool bor_sem).
+  Proof.
+    rewrite /WsatIncl /alerus_wsat_core /alerus_WGuard /llft_wsat. iSplit.
+    - iIntros "([A B] & C & D)". iFrame.
+    - iIntros "(A & B & C & D)". iFrame.
+  Qed.
   #[export] Instance wsat_incl_alerus_guard :
     WsatIncl alerus_wsat alerus_WGuard
-      (llft_inv_other ∗ cna_wsat alerus_WGuard bor_sem).
+      ((llft_inv_other ∗ cna_wsat alerus_WGuard bor_sem ∗
+        na_inv_wsat atomic_threadpool bor_sem) ∗ send_wsat).
   Proof.
-    rewrite /WsatIncl /alerus_wsat /alerus_WGuard /llft_wsat. iSplit.
-    - by iIntros "([$$] & $)".
-    - by iIntros "([$ $] & $)".
+    rewrite /WsatIncl /alerus_wsat /alerus_wsat_core /alerus_WGuard
+      /llft_wsat. iSplit.
+    - iIntros "(([A B] & C & D) & E)". iFrame.
+    - iIntros "(A & (B & C & D) & E)". iFrame.
+  Qed.
+  #[export] Instance wsat_incl_alerus_core_cna :
+    WsatIncl alerus_wsat_core (cna_wsat alerus_WGuard bor_sem ∗ alerus_WGuard)
+      (llft_inv_other ∗ na_inv_wsat atomic_threadpool bor_sem).
+  Proof.
+    rewrite /WsatIncl /alerus_wsat_core /alerus_WGuard /llft_wsat. iSplit.
+    - iIntros "([A B] & C & D)". iFrame.
+    - iIntros "((A & B) & C & D)". iFrame.
   Qed.
   #[export] Instance wsat_incl_alerus_cna :
     WsatIncl alerus_wsat (cna_wsat alerus_WGuard bor_sem ∗ alerus_WGuard)
-      llft_inv_other.
+      ((llft_inv_other ∗ na_inv_wsat atomic_threadpool bor_sem) ∗ send_wsat).
   Proof.
-    rewrite /WsatIncl /alerus_wsat /alerus_WGuard /llft_wsat. iSplit.
-    - by iIntros "([$$] & $)".
-    - by iIntros "([$ $] & $)".
+    rewrite /WsatIncl /alerus_wsat /alerus_wsat_core /alerus_WGuard
+      /llft_wsat. iSplit.
+    - iIntros "(([A B] & C & D) & E)". iFrame.
+    - iIntros "((A & B) & (C & D) & E)". iFrame.
   Qed.
-  #[export] Instance wsat_incl_alerus_send :
-    WsatIncl alerus_WG send_wsat
-      (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem ∗
-        frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp).
+  #[export] Instance wsat_incl_alerus_core_nainv :
+    WsatIncl alerus_wsat_core (na_inv_wsat atomic_threadpool bor_sem)
+      (llft_wsat ∗ cna_wsat alerus_WGuard bor_sem).
   Proof.
-    rewrite /WsatIncl /alerus_WG. iSplit.
-    - by iIntros "($ & $ & $ & $ & $)".
-    - by iIntros "($ & $ & $ & $ & $)".
+    rewrite /WsatIncl /alerus_wsat_core. iSplit.
+    - iIntros "(A & B & C)". iFrame.
+    - iIntros "(A & B & C)". iFrame.
+  Qed.
+  #[export] Instance wsat_incl_alerus_nainv :
+    WsatIncl alerus_wsat (na_inv_wsat atomic_threadpool bor_sem)
+      ((llft_wsat ∗ cna_wsat alerus_WGuard bor_sem) ∗ send_wsat).
+  Proof.
+    rewrite /WsatIncl /alerus_wsat /alerus_wsat_core. iSplit.
+    - iIntros "((A & B & C) & D)". iFrame.
+    - iIntros "(A & (B & C) & D)". iFrame.
   Qed.
 
   (** [alerus_WG] and its parts sit inside [alerus_WGuard] *)
@@ -388,34 +450,34 @@ Section alerus.
   #[export] Instance wsat_incl_alerus_eternal :
     WsatIncl alerus_WG (eternal_wsat alerus_eternal_name llft_alive)
       (frac_wsat bor_sem ∗ frac_key_wsat llctx_interp ∗
-        frac_key_wsat lfts_interp ∗ send_wsat).
+        frac_key_wsat lfts_interp).
   Proof. done. Qed.
   #[export] Instance wsat_incl_alerus_fracfml :
     WsatIncl alerus_WG (frac_wsat bor_sem)
       (eternal_wsat alerus_eternal_name llft_alive ∗
-        frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp ∗ send_wsat).
+        frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp).
   Proof.
     rewrite /WsatIncl /alerus_WG. iSplit.
-    - by iIntros "($ & $ & $ & $ & $)".
-    - by iIntros "($ & $ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $)".
   Qed.
   #[export] Instance wsat_incl_alerus_llctx :
     WsatIncl alerus_WG (frac_key_wsat llctx_interp)
       (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem ∗
-        frac_key_wsat lfts_interp ∗ send_wsat).
+        frac_key_wsat lfts_interp).
   Proof.
     rewrite /WsatIncl /alerus_WG. iSplit.
-    - by iIntros "($ & $ & $ & $ & $)".
-    - by iIntros "($ & $ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $)".
   Qed.
   #[export] Instance wsat_incl_alerus_lfts :
     WsatIncl alerus_WG (frac_key_wsat lfts_interp)
       (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem ∗
-        frac_key_wsat llctx_interp ∗ send_wsat).
+        frac_key_wsat llctx_interp).
   Proof.
     rewrite /WsatIncl /alerus_WG. iSplit.
-    - by iIntros "($ & $ & $ & $ & $)".
-    - by iIntros "($ & $ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $)".
   Qed.
 
   (** ** Shares of a multiset of lifetime tokens
