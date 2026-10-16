@@ -19,8 +19,8 @@ Section tracked.
     ty_size := 0;
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
-    ty_gho x d g tid := (ty.(ty_gho) x d g tid) ;
-    ty_gho_pers x d g tid := (ty.(ty_gho_pers) x d g tid) ;
+    ty_ghox x d g tid := ty.(ty_ghox) x d g tid ;
+    ty_gho_persx x d g tid := ty.(ty_gho_persx) x d g tid ;
     ty_phys x tid := [];
   |}%I.
   Next Obligation. intros; done. Qed.
@@ -33,6 +33,13 @@ Section tracked.
     iApply (ty_guard_proph _ ty κ x d g tid ξ R Hin with "LFT Incl Pers Rk Rg").
   Qed.
   Next Obligation. intros. apply (ty_gho_pers_impl); trivial. Qed.
+
+  Lemma tracked_ty_gho {𝔄} (ty: type 𝔄) x d g tid :
+    ty_gho (tracked_ty ty) x d g tid ⊣⊢ ty_gho ty x d g tid.
+  Proof. done. Qed.
+  Lemma tracked_ty_gho_pers {𝔄} (ty: type 𝔄) x d g tid :
+    ty_gho_pers (tracked_ty ty) x d g tid ⊣⊢ ty_gho_pers ty x d g tid.
+  Proof. done. Qed.
 
   Global Instance tracked_ne {𝔄} : NonExpansive (@tracked_ty 𝔄).
   Proof. solve_ne_type. Qed.
@@ -77,5 +84,7 @@ Section tracked.
   Proof. intros [Ha Hb]. split; apply tracked_subtype; trivial. Qed.
 
 End tracked.
+
+Global Hint Rewrite @tracked_ty_gho @tracked_ty_gho_pers : fml_sem.
 
 Global Hint Resolve tracked_resolve : lrust_typing.

@@ -8,10 +8,10 @@
 
     ty_guard_proph κ x n d g tid ξ R :
       ξ ∈ ξl x → llft_ctx -∗ κ ⊑ lft_intersect_list ty_lfts -∗
-      ty_gho_pers x d g tid -∗
+      ty_gho_persx x d g tid -∗
       ▷^(d*(g+1)) (
           (R &&{Wguard; n}&&> @[κ]) -∗
-          (R &&{Wguard; n}&&> ty_gho x d g tid) -∗
+          (R &&{Wguard; n}&&> ty_ghox x d g tid) -∗
           (R &&{Wguard; n + d*(g+1)}&&> 1:[ξ]))
 
   - a guard at *index* [n], producing a guard at index [n + d*(g+1)], under
@@ -38,7 +38,7 @@ From nola.alerus.typing Require Export base ctx uniq_cmra lft_contexts
 From nola.alerus Require Import frac_guard.
 From nola.bi Require Import guard modw.
 From nola.iris Require Import point.
-Import GuardNotation ModwNotation.
+Import GuardNotation ModwNotation iPropAppNotation.
 
 Implicit Type (𝔄 𝔅 ℭ: syn_type) (𝔄l 𝔅l: syn_typel).
 
@@ -46,12 +46,43 @@ Class typeG (FML : oFunctor) Σ : Type := TypeG {
   #[global] type_alerusGS :: alerusGS FML Σ;
   #[global] type_heapSem :: HeapSem FML Σ;
   #[global] type_gsrcSem :: GsrcSem FML Σ;
+  #[global] type_typeFml :: TypeFml FML Σ;
 }.
 
 Definition lrustN := nroot .@ "lrust".
 Definition shrN := lrustN .@ "shr".
 
 Definition thread_id := cna_pool_name.
+
+(** ** Matching on a successor depth
+
+  [by_succ] is VerusBelt's; [by_succx] is its formula-level twin, needed
+  because [own_ptr] and [&shr{κ}] build their ghost assertion by matching on
+  the depth. *)
+Definition by_succ `{!typeG FML Σ} (d: nat) (Φ: nat → iProp Σ) : iProp Σ :=
+  match d with S d' => Φ d' | _ => False end.
+Definition by_succx `{!typeG FML Σ} (d: nat) (Φ: nat → FML $oi Σ)
+  : FML $oi Σ := match d with S d' => Φ d' | _ => false_fml end.
+Notation "[S( d' ) := d ] P" := (by_succ d (λ d', P)) (at level 200,
+  right associativity, format "[S( d' )  :=  d ]  P").
+Notation "[Sx( d' ) := d ] P" := (by_succx d (λ d', P)) (at level 200,
+  right associativity, format "[Sx( d' )  :=  d ]  P").
+
+Lemma by_succx_sem `{!typeG FML Σ} d Φ :
+  bor_sem (by_succx d Φ) ⊣⊢ by_succ d (λ d', bor_sem (Φ d')).
+Proof. case d=>//=. apply false_fml_sem. Qed.
+Global Hint Rewrite @by_succx_sem : fml_sem.
+
+Global Instance by_succx_persistent `{!typeG FML Σ} d Φ :
+  (∀d', Persistent (bor_sem (Φ d'))) → Persistent (bor_sem (by_succx d Φ)).
+Proof. move=> ?. case d; exact _. Qed.
+
+Global Instance by_succx_ne `{!typeG FML Σ} n :
+  Proper ((=) ==> pointwise_relation _ (dist n) ==> dist n) by_succx.
+Proof. move=> d ? <- ?? Eq. by case d. Qed.
+Global Instance by_succx_proper `{!typeG FML Σ} :
+  Proper ((=) ==> pointwise_relation _ (≡) ==> (≡)) by_succx.
+Proof. move=> d ? <- ?? Eq. by case d. Qed.
 
 (** * Type *)
 
@@ -60,8 +91,12 @@ Record type `{!typeG FML Σ} 𝔄 := {
   ty_lfts: list lft;
   ty_E: elctx;
   
-  ty_gho_pers: ~~𝔄 → nat → nat → thread_id → iProp Σ;
-  ty_gho: ~~𝔄 → nat → nat → thread_id → iProp Σ;
+  (** The ghost assertion of the type, as a *formula*: see the note on
+    [TypeFml] in [typing/ctx.v] for why it cannot be a proposition.  The
+    semantic views [ty_gho] and [ty_gho_pers] are defined right after the
+    record and are what the rest of the development uses. *)
+  ty_gho_persx: ~~𝔄 → nat → nat → thread_id → FML $oi Σ;
+  ty_ghox: ~~𝔄 → nat → nat → thread_id → FML $oi Σ;
   (* TODO: no type has actually phys depending on tid, we should remove it *)
   ty_phys: ~~𝔄 → thread_id → list fancy_val;
   
@@ -70,11 +105,13 @@ Record type `{!typeG FML Σ} 𝔄 := {
   ty_phys_eq2 x tid : syn_phys x = ty_phys x tid;
   
   ty_gho_depth_mono d g d' g' x tid :
-    (d ≤ d')%nat → (g ≤ g')%nat → ty_gho x d g tid -∗
-        ty_gho x d' g' tid ∗ (ty_gho x d' g' tid -∗ ty_gho x d g tid) ;
+    (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (ty_ghox x d g tid) -∗
+        bor_sem (ty_ghox x d' g' tid) ∗
+          (bor_sem (ty_ghox x d' g' tid) -∗ bor_sem (ty_ghox x d g tid)) ;
         
   ty_gho_pers_depth_mono d g d' g' x tid :
-    (d ≤ d')%nat → (g ≤ g')%nat → ty_gho_pers x d g tid -∗ ty_gho_pers x d' g' tid;
+    (d ≤ d')%nat → (g ≤ g')%nat →
+      bor_sem (ty_gho_persx x d g tid) -∗ bor_sem (ty_gho_persx x d' g' tid);
   
   (** The original's guard index [n] and the [▷^(d*(g+1))] in front are both
     gone: a guard introduces no later, so composing two of them introduces
@@ -83,26 +120,26 @@ Record type `{!typeG FML Σ} 𝔄 := {
       ξ ∈ ξl x →
       llft_ctx -∗
       κ ⊑ lft_intersect_list ty_lfts -∗
-      (ty_gho_pers x d g tid) -∗
+      bor_sem (ty_gho_persx x d g tid) -∗
       (R &&{Wguard}&&> @[κ]) -∗
-      (R &&{Wguard}&&> ty_gho x d g tid) -∗
+      (R &&{Wguard}&&> bor_sem (ty_ghox x d g tid)) -∗
       (R &&{Wguard}&&> 1:[ξ]);
   
   ty_gho_pers_pers x d g tid :
-      Persistent (ty_gho_pers x d g tid) ;
+      Persistent (bor_sem (ty_gho_persx x d g tid)) ;
   ty_gho_pers_impl x d g tid :
-      ty_gho x d g tid -∗ ty_gho_pers x d g tid ;
+      bor_sem (ty_ghox x d g tid) -∗ bor_sem (ty_gho_persx x d g tid) ;
   
  (* ty_gho_depth_mono d g d' g' vπ tid :
-    (d ≤ d')%nat → (g ≤ g')%nat → ty_gho vπ d g tid -∗ ty_gho vπ d' g' tid;
+    (d ≤ d')%nat → (g ≤ g')%nat → ty_ghox vπ d g tid -∗ ty_ghox vπ d' g' tid;
   ty_gho_depth_mono_guard d g d' g' vπ tid :
-    (d ≤ d')%nat → (g ≤ g')%nat → ⊢ ty_gho vπ d g tid &&{Wguard}&&> ty_gho vπ d' g' tid;
+    (d ≤ d')%nat → (g ≤ g')%nat → ⊢ ty_ghox vπ d g tid &&{Wguard}&&> ty_ghox vπ d' g' tid;
  *)
 
   (* not sure if straight guard will work here
     (we need to use the lifetimes somewhere here)
   ty_proph E vπ d κ tid l κ' q :
-    ty_gho vπ d g tid &&{Wguard}&&> 1:+[ξl]
+    ty_ghox vπ d g tid &&{Wguard}&&> 1:+[ξl]
     *)
 
   (*
@@ -150,19 +187,32 @@ Record type `{!typeG FML Σ} 𝔄 := {
 Global Instance: Params (@ty_size) 5 := {}.
 Global Instance: Params (@ty_lfts) 5 := {}.
 Global Instance: Params (@ty_E) 5 := {}.
-Global Instance: Params (@ty_gho) 5 := {}.
-Global Instance: Params (@ty_gho_pers) 5 := {}.
+Global Instance: Params (@ty_ghox) 5 := {}.
+Global Instance: Params (@ty_gho_persx) 5 := {}.
 Global Instance: Params (@ty_phys) 5 := {}.
 Arguments ty_size {_ _ _ _} _ / : simpl nomatch.
 Arguments ty_lfts {_ _ _ _} _ / : simpl nomatch.
 Arguments ty_E {_ _ _ _} _ / : simpl nomatch.
-Arguments ty_gho {_ _ _ _} _ _ _ _ / : simpl nomatch.
-Arguments ty_gho_pers {_ _ _ _} _ _ _ _ / : simpl nomatch.
+Arguments ty_ghox {_ _ _ _} _ _ _ _ / : simpl nomatch.
+Arguments ty_gho_persx {_ _ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_phys {_ _ _ _} _ _ _ / : simpl nomatch.
 Arguments ty_size_eq {_ _ _ _}.
 Arguments ty_gho_depth_mono {_ _ _ _}.
 Arguments ty_gho_pers_depth_mono {_ _ _ _}.
 Global Existing Instance ty_gho_pers_pers.
+
+(** The semantic views of the ghost assertion.  Everything outside the record
+  and the type formers themselves speaks in terms of these. *)
+Definition ty_gho `{!typeG FML Σ} {𝔄} (ty: type 𝔄)
+  (x: ~~𝔄) (d g: nat) (tid: thread_id) : iProp Σ :=
+  bor_sem (ty.(ty_ghox) x d g tid).
+Definition ty_gho_pers `{!typeG FML Σ} {𝔄} (ty: type 𝔄)
+  (x: ~~𝔄) (d g: nat) (tid: thread_id) : iProp Σ :=
+  bor_sem (ty.(ty_gho_persx) x d g tid).
+Global Instance: Params (@ty_gho) 5 := {}.
+Global Instance: Params (@ty_gho_pers) 5 := {}.
+Arguments ty_gho {_ _ _ _} _ _ _ _ : simpl never.
+Arguments ty_gho_pers {_ _ _ _} _ _ _ _ : simpl never.
 
 Notation ty_lft ty := (lft_intersect_list ty.(ty_lfts)).
 
@@ -170,7 +220,7 @@ Notation typel := (hlist type).
 
 Definition ty_own `{!typeG FML Σ} {𝔄} (ty: type 𝔄)
   (x: ~~ 𝔄) (d: nat) (g: nat) (tid: thread_id) (lv: list fancy_val) : iProp Σ :=
-      ty.(ty_gho) x d g tid ∗ ⌜ty.(ty_phys) x tid = lv⌝.
+      ty_gho ty x d g tid ∗ ⌜ty.(ty_phys) x tid = lv⌝.
 
 Definition ty_outlives_E `{!typeG FML Σ} {𝔄} (ty: type 𝔄) (κ: lft) : elctx :=
   (λ α, κ ⊑ₑ α) <$> ty.(ty_lfts).
@@ -251,26 +301,26 @@ Record simple_type `{!typeG FML Σ} 𝔄 := {
   st_lfts: list lft;
   st_E: elctx;
   
-  st_gho: ~~𝔄 → nat → nat → thread_id → iProp Σ;
+  st_ghox: ~~𝔄 → nat → nat → thread_id → FML $oi Σ;
   st_phys: ~~𝔄 → thread_id → list fancy_val;
   
-  st_gho_persistent x d g tid: Persistent (st_gho x d g tid);
+  st_gho_persistent x d g tid: Persistent (bor_sem (st_ghox x d g tid));
   
   st_size_eq x tid : length (st_phys x tid) = st_size;
   st_size_eq2 : size_of 𝔄 = st_size;
   st_phys_eq2 x tid : syn_phys x = st_phys x tid;
   
   st_gho_depth_mono d g d' g' x tid :
-    (d ≤ d')%nat → (g ≤ g')%nat → st_gho x d g tid -∗
-        st_gho x d' g' tid ;
+    (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (st_ghox x d g tid) -∗
+        bor_sem (st_ghox x d' g' tid) ;
         
   st_guard_proph κ x d g tid ξ R :
       ξ ∈ ξl x →
       llft_ctx -∗
       κ ⊑ lft_intersect_list st_lfts -∗
-      st_gho x d g tid -∗
+      bor_sem (st_ghox x d g tid) -∗
       (R &&{Wguard}&&> @[κ]) -∗
-      (R &&{Wguard}&&> st_gho x d g tid) -∗
+      (R &&{Wguard}&&> bor_sem (st_ghox x d g tid)) -∗
       (R &&{Wguard}&&> 1:[ξ]);
       
   st_concrete x tid : all_concrete (st_phys x tid) ;
@@ -280,19 +330,23 @@ Global Instance: Params (@vπ) 5 := {}.
 Global Instance: Params (@st_size) 5 := {}.
 Global Instance: Params (@st_lfts) 5 := {}.
 Global Instance: Params (@st_E) 5 := {}.
-Global Instance: Params (@st_gho) 5 := {}.
+Global Instance: Params (@st_ghox) 5 := {}.
 Arguments st_size {_ _ _ _} _ / : simpl nomatch.
 Arguments st_lfts {_ _ _ _} _ / : simpl nomatch.
 Arguments st_E {_ _ _ _} _ / : simpl nomatch.
-Arguments st_gho {_ _ _ _} _ _ _ _ / : simpl nomatch.
+Arguments st_ghox {_ _ _ _} _ _ _ _ / : simpl nomatch.
+Definition st_gho `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄)
+  (x: ~~𝔄) (d g: nat) (tid: thread_id) : iProp Σ :=
+  bor_sem (st.(st_ghox) x d g tid).
+Arguments st_gho {_ _ _ _} _ _ _ _ : simpl never.
 Arguments st_phys {_ _ _ _} _ _ / : simpl nomatch.
 
 Program Definition ty_of_st `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) : type 𝔄 := {|
   ty_size := st.(st_size);
   ty_lfts := st.(st_lfts);
   ty_E := st.(st_E);
-  ty_gho := st.(st_gho);
-  ty_gho_pers := st.(st_gho);
+  ty_ghox := st.(st_ghox);
+  ty_gho_persx := st.(st_ghox);
   ty_phys := st.(st_phys);
 |}%I.
 Next Obligation. move=> >. apply st_size_eq. Qed.
@@ -307,15 +361,29 @@ Next Obligation. intros FML Σ typeG0 𝔄 st κ x d g tid ξ R.
     try iFrame. Qed.
 Next Obligation. move=> >. iIntros. iFrame "#". Qed.
 
+(** Unfolding the ghost assertion of a derived type.
+
+  A type's ghost assertion is a formula, so [simpl] no longer turns
+  [ty_gho (F ty) x d g tid] into the proposition the original development
+  works with: [ty_gho] is [simpl nomatch], and a type former's body is stuck
+  on a projection of the type it is applied to.  Each type former therefore
+  comes with an unfolding lemma, collected in the [fml_sem] rewrite database
+  so that [fml_simpl] does the whole job. *)
+Lemma ty_of_st_gho `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) x d g tid :
+  ty_gho (ty_of_st st) x d g tid ⊣⊢ st_gho st x d g tid.
+Proof. done. Qed.
+Lemma ty_of_st_gho_pers `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) x d g tid :
+  ty_gho_pers (ty_of_st st) x d g tid ⊣⊢ st_gho st x d g tid.
+Proof. done. Qed.
 Coercion ty_of_st: simple_type >-> type.
 
 (** Plain Type *)
 
 Record plain_type `{!typeG FML Σ} 𝔄 := {
   pt_size: nat;
-  pt_gho: ~~𝔄 → thread_id → iProp Σ;
+  pt_ghox: ~~𝔄 → thread_id → FML $oi Σ;
   pt_phys: ~~𝔄 → thread_id → list fancy_val;
-  pt_gho_persistent x tid : Persistent (pt_gho x tid);
+  pt_gho_persistent x tid : Persistent (bor_sem (pt_ghox x tid));
   pt_size_eq x tid : length (pt_phys x tid) = pt_size;
   pt_size_eq2 : size_of 𝔄 = pt_size;
   pt_phys_eq2 x tid : syn_phys x = pt_phys x tid;
@@ -325,17 +393,20 @@ Record plain_type `{!typeG FML Σ} 𝔄 := {
 }.
 Global Existing Instance pt_gho_persistent.
 Global Instance: Params (@pt_size) 5 := {}.
-Global Instance: Params (@pt_gho) 5 := {}.
+Global Instance: Params (@pt_ghox) 5 := {}.
 Global Instance: Params (@pt_phys) 5 := {}.
 Arguments pt_size {_ _ _ _} _ / : simpl nomatch.
-Arguments pt_gho {_ _ _ _} _ _ _ / : simpl nomatch.
+Arguments pt_ghox {_ _ _ _} _ _ _ / : simpl nomatch.
+Definition pt_gho `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄)
+  (x: ~~𝔄) (tid: thread_id) : iProp Σ := bor_sem (pt.(pt_ghox) x tid).
+Arguments pt_gho {_ _ _ _} _ _ _ : simpl never.
 Arguments pt_phys {_ _ _ _} _ _ _ / : simpl nomatch.
 
 Program Definition st_of_pt `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄) : simple_type 𝔄 := {|
   st_size := pt.(pt_size);
   st_lfts := [];
   st_E := [];
-  st_gho x d g tid := pt.(pt_gho) x tid;
+  st_ghox x d g tid := pt.(pt_ghox) x tid;
   st_phys x tid := pt.(pt_phys) x tid;
 |}%I.
 Next Obligation. move=> >. apply pt_size_eq. Qed.
@@ -346,6 +417,9 @@ Next Obligation. move=> >. intros Hin.
   rewrite (pt_non_prophetic) in Hin; trivial. set_solver. Qed.
 Next Obligation. intros. apply pt_concrete. Qed.
 
+Lemma st_of_pt_gho `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄) x d g tid :
+  st_gho (st_of_pt pt) x d g tid ⊣⊢ pt_gho pt x tid.
+Proof. done. Qed.
 Coercion st_of_pt: plain_type >-> simple_type.
 
 Declare Scope lrust_type_scope.
@@ -355,31 +429,40 @@ Bind Scope lrust_type_scope with type.
 (** Ghost Type *)
 
 Record ghost_type `{!typeG FML Σ} 𝔄 := {
-  gt_gho : ~~𝔄 → thread_id → iProp Σ;
+  gt_ghox : ~~𝔄 → thread_id → FML $oi Σ;
   gt_const : ∀ (x : ~~𝔄) π1 π2 , @vπ 𝔄 x π1 = @vπ 𝔄 x π2;
   gt_non_prophetic (x: ~~𝔄) : @ξl 𝔄 x = [];
   gt_size0 : size_of 𝔄 = 0;
   gt_phys0 (x: ~~𝔄) : @syn_phys 𝔄 x = [];
 }.
-Global Instance: Params (@gt_gho) 5 := {}.
-Arguments gt_gho {_ _ _ _} _ _ / : simpl nomatch.
+Global Instance: Params (@gt_ghox) 5 := {}.
+Arguments gt_ghox {_ _ _ _} _ _ / : simpl nomatch.
+Definition gt_gho `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄)
+  (x: ~~𝔄) (tid: thread_id) : iProp Σ := bor_sem (gt.(gt_ghox) x tid).
+Arguments gt_gho {_ _ _ _} _ _ _ : simpl never.
 
 Program Definition ty_of_gt `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄) : type 𝔄 := {|
   ty_size := 0;
   ty_lfts := [];
   ty_E := [];
-  ty_gho x d g tid := gt.(gt_gho) x tid;
-  ty_gho_pers x d g tid := True%I;
+  ty_ghox x d g tid := gt.(gt_ghox) x tid;
+  ty_gho_persx x d g tid := empty_fml;
   ty_phys x tid := [];
 |}%I.
 Next Obligation. move=> * //=. Qed.
 Next Obligation. move=> * //=. by rewrite gt_size0. Qed.
 Next Obligation. move=> * //=. by rewrite gt_phys0. Qed.
-Next Obligation. iIntros "**". iFrame. iIntros. done. Qed.
-Next Obligation. iIntros "**". iFrame. Qed.
+Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
+Next Obligation. move=> *. by iIntros "$". Qed.
 Next Obligation. move=> >. intros Hin. rewrite gt_non_prophetic in Hin; trivial. set_solver. Qed.
-Next Obligation. iIntros. done. Qed.
+Next Obligation. move=> *. iIntros "_". by iApply empty_fml_sem_2. Qed.
 
+Lemma ty_of_gt_gho `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄) x d g tid :
+  ty_gho (ty_of_gt gt) x d g tid ⊣⊢ gt_gho gt x tid.
+Proof. done. Qed.
+Lemma ty_of_gt_gho_pers `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄) x d g tid :
+  ty_gho_pers (ty_of_gt gt) x d g tid ⊣⊢ True.
+Proof. apply empty_fml_sem. Qed.
 Coercion ty_of_gt: ghost_type >-> type.
 
 (** * OFE Structures on Types *)
@@ -393,15 +476,15 @@ Section ofe.
     ty.(ty_size) = ty'.(ty_size) →
     ty.(ty_lfts) = ty'.(ty_lfts) →
     ty.(ty_E) = ty'.(ty_E) →
-    (∀x d g tid, ty.(ty_gho) x d g tid ≡ ty'.(ty_gho) x d g tid) →
-    (∀x d g tid, (ty.(ty_gho_pers) x d g tid)%I ≡ (ty'.(ty_gho_pers) x d g tid)%I) →
+    (∀x d g tid, ty.(ty_ghox) x d g tid ≡ ty'.(ty_ghox) x d g tid) →
+    (∀x d g tid, (ty.(ty_gho_persx) x d g tid)%I ≡ (ty'.(ty_gho_persx) x d g tid)%I) →
     (∀x tid, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     type_equiv' ty ty'.
   Global Instance type_equiv {𝔄} : Equiv (type 𝔄) := type_equiv'.
   Inductive type_dist' {𝔄} (n: nat) (ty ty': type 𝔄) : Prop := TypeDist:
     ty.(ty_size) = ty'.(ty_size) → ty.(ty_lfts) = ty'.(ty_lfts) → ty.(ty_E) = ty'.(ty_E) →
-    (∀x d g tid, ty.(ty_gho) x d g tid ≡{n}≡ ty'.(ty_gho) x d g tid) →
-    (∀x d g tid, (ty.(ty_gho_pers) x d g tid)%I ≡{n}≡ (ty'.(ty_gho_pers) x d g tid)%I) →
+    (∀x d g tid, ty.(ty_ghox) x d g tid ≡{n}≡ ty'.(ty_ghox) x d g tid) →
+    (∀x d g tid, (ty.(ty_gho_persx) x d g tid)%I ≡{n}≡ (ty'.(ty_gho_persx) x d g tid)%I) →
     (∀x tid, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     type_dist' n ty ty'.
   Global Instance type_dist {𝔄} : Dist (type 𝔄) := type_dist'.
@@ -410,10 +493,10 @@ Section ofe.
     : prodO (prodO (prodO (prodO (prodO
         natO (listO lftO))
         (listO (prodO lftO lftO)))
-        (~~𝔄 -d> nat -d> nat -d> thread_id -d> iProp Σ))
-        (~~𝔄 -d> nat -d> nat -d> thread_id -d> iProp Σ))
+        (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ))
+        (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ))
         (~~𝔄 -d> thread_id -d> leibnizO (list fancy_val)) :=
-    (ty.(ty_size), ty.(ty_lfts), ty.(ty_E), ty.(ty_gho), ty.(ty_gho_pers), 
+    (ty.(ty_size), ty.(ty_lfts), ty.(ty_E), ty.(ty_ghox), ty.(ty_gho_persx), 
       ty.(ty_phys)).
 
   Definition type_ofe_mixin {𝔄} : OfeMixin (type 𝔄).
@@ -486,17 +569,52 @@ Section ofe_lemmas.
   Qed.
 
   Global Instance ty_gho_ne {𝔄} n:
-    Proper (dist n ==> (=) ==> (=) ==> (=) ==> (=) ==> dist n) (ty_gho (𝔄:=𝔄)).
+    Proper (dist n ==> (=) ==> (=) ==> (=) ==> (=) ==> dist n) (ty_ghox (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->??->??->. apply Eqv. Qed.
   Global Instance ty_gho_pers_ne {𝔄} n:
-    Proper (dist n ==> (=) ==> (=) ==> (=) ==> (=) ==> dist n) (ty_gho_pers (𝔄:=𝔄)).
+    Proper (dist n ==> (=) ==> (=) ==> (=) ==> (=) ==> dist n) (ty_gho_persx (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->??->??->. apply Eqv. Qed.
   Global Instance ty_gho_proper {𝔄} :
-    Proper ((≡) ==> (=) ==> (=) ==> (=) ==> (=) ==> (≡)) (ty_gho (𝔄:=𝔄)).
+    Proper ((≡) ==> (=) ==> (=) ==> (=) ==> (=) ==> (≡)) (ty_ghox (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->??->??->. apply Eqv. Qed.
   Global Instance ty_gho_pers_proper {𝔄} :
-    Proper ((≡) ==> (=) ==> (=) ==> (=) ==> (=) ==> (≡)) (ty_gho_pers (𝔄:=𝔄)).
+    Proper ((≡) ==> (=) ==> (=) ==> (=) ==> (=) ==> (≡)) (ty_gho_persx (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->??->??->. apply Eqv. Qed.
+  (** The semantic views inherit the record's persistence.  These are needed
+    because type class search keys on the head of the goal, and the record
+    fields are stated about [bor_sem …]. *)
+  Global Instance ty_gho_pers_persistent {𝔄} (ty: type 𝔄) x d g tid :
+    Persistent (ty_gho_pers ty x d g tid).
+  Proof. rewrite /ty_gho_pers. apply ty_gho_pers_pers. Qed.
+  Global Instance ty_of_st_gho_persistent {𝔄} (st: simple_type 𝔄) x d g tid :
+    Persistent (ty_gho (ty_of_st st) x d g tid).
+  Proof. rewrite /ty_gho. apply st_gho_persistent. Qed.
+  Global Instance st_gho_persistent' {𝔄} (st: simple_type 𝔄) x d g tid :
+    Persistent (st_gho st x d g tid).
+  Proof. rewrite /st_gho. apply st_gho_persistent. Qed.
+  Global Instance pt_gho_persistent' {𝔄} (pt: plain_type 𝔄) x tid :
+    Persistent (pt_gho pt x tid).
+  Proof. rewrite /pt_gho. apply pt_gho_persistent. Qed.
+
+  (** The semantic views inherit the formula-level properness *)
+  Global Instance ty_gho_sem_ne {𝔄} n:
+    Proper (dist n ==> (=) ==> (=) ==> (=) ==> (=) ==> dist n) (ty_gho (𝔄:=𝔄)).
+  Proof. move=> ?? Eqv ??->??->??->??->. rewrite /ty_gho. f_equiv. apply Eqv. Qed.
+  Global Instance ty_gho_pers_sem_ne {𝔄} n:
+    Proper (dist n ==> (=) ==> (=) ==> (=) ==> (=) ==> dist n)
+      (ty_gho_pers (𝔄:=𝔄)).
+  Proof.
+    move=> ?? Eqv ??->??->??->??->. rewrite /ty_gho_pers. f_equiv. apply Eqv.
+  Qed.
+  Global Instance ty_gho_sem_proper {𝔄} :
+    Proper ((≡) ==> (=) ==> (=) ==> (=) ==> (=) ==> (≡)) (ty_gho (𝔄:=𝔄)).
+  Proof. move=> ?? Eqv ??->??->??->??->. rewrite /ty_gho. f_equiv. apply Eqv. Qed.
+  Global Instance ty_gho_pers_sem_proper {𝔄} :
+    Proper ((≡) ==> (=) ==> (=) ==> (=) ==> (=) ==> (≡)) (ty_gho_pers (𝔄:=𝔄)).
+  Proof.
+    move=> ?? Eqv ??->??->??->??->. rewrite /ty_gho_pers. f_equiv. apply Eqv.
+  Qed.
+
   Global Instance ty_phys_ne {𝔄} n :
     Proper (dist n ==> (=) ==> (=) ==> (=)) (ty_phys (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->. apply Eqv. Qed.
@@ -509,14 +627,14 @@ Section ofe_lemmas.
   Section simple_type_ofe.
   Inductive simple_type_equiv' {𝔄} (st st': simple_type 𝔄) : Prop := SimpleTypeEquiv:
     st.(st_size) = st'.(st_size) → st.(st_lfts) = st'.(st_lfts) → st.(st_E) = st'.(st_E) →
-    (∀x d g tid, st.(st_gho) x d g tid ≡ st'.(st_gho) x d g tid) →
+    (∀x d g tid, st.(st_ghox) x d g tid ≡ st'.(st_ghox) x d g tid) →
     (∀x tid, st.(st_phys) x tid = st'.(st_phys) x tid) →
     simple_type_equiv' st st'.
   Global Instance simple_type_equiv {𝔄} : Equiv (simple_type 𝔄) := simple_type_equiv'.
   Inductive simple_type_dist' {𝔄} (n: nat) (st st': simple_type 𝔄) : Prop :=
     SimpleTypeDist:
     st.(st_size) = st'.(st_size) → st.(st_lfts) = st'.(st_lfts) → st.(st_E) = st'.(st_E) →
-    (∀x d g tid, st.(st_gho) x d g tid ≡{n}≡ st'.(st_gho) x d g tid) →
+    (∀x d g tid, st.(st_ghox) x d g tid ≡{n}≡ st'.(st_ghox) x d g tid) →
     (∀x tid, st.(st_phys) x tid = st'.(st_phys) x tid) →
     simple_type_dist' n st st'.
   Global Instance simple_type_dist {𝔄} : Dist (simple_type 𝔄) := simple_type_dist'.
@@ -530,11 +648,18 @@ Section ofe_lemmas.
   End simple_type_ofe.
   
   Global Instance st_gho_ne {𝔄} n:
-    Proper (dist n ==> (=) ==> (=) ==> (=) ==> (=) ==> dist n) (st_gho (𝔄:=𝔄)).
+    Proper (dist n ==> (=) ==> (=) ==> (=) ==> (=) ==> dist n) (st_ghox (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->??->??->. apply Eqv. Qed.
   Global Instance st_gho_proper {𝔄} :
-    Proper ((≡) ==> (=) ==> (=) ==> (=) ==> (=) ==> (≡)) (st_gho (𝔄:=𝔄)).
+    Proper ((≡) ==> (=) ==> (=) ==> (=) ==> (=) ==> (≡)) (st_ghox (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->??->??->. apply Eqv. Qed.
+  Global Instance st_gho_sem_ne {𝔄} n:
+    Proper (dist n ==> (=) ==> (=) ==> (=) ==> (=) ==> dist n) (st_gho (𝔄:=𝔄)).
+  Proof. move=> ?? Eqv ??->??->??->??->. rewrite /st_gho. f_equiv. apply Eqv. Qed.
+  Global Instance st_gho_sem_proper {𝔄} :
+    Proper ((≡) ==> (=) ==> (=) ==> (=) ==> (=) ==> (≡)) (st_gho (𝔄:=𝔄)).
+  Proof. move=> ?? Eqv ??->??->??->??->. rewrite /st_gho. f_equiv. apply Eqv. Qed.
+
   Global Instance st_phys_ne {𝔄} n :
     Proper (dist n ==> (=) ==> (=) ==> (=)) (st_phys (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->. apply Eqv. Qed.
@@ -554,22 +679,22 @@ Section ofe_lemmas.
   Section plain_type_ofe.
   Inductive plain_type_equiv' {𝔄} (pt pt': plain_type 𝔄) : Prop := PlainTypeEquiv:
     pt.(pt_size) = pt'.(pt_size) →
-    (∀x tid, pt.(pt_gho) x tid ≡ pt'.(pt_gho) x tid) →
+    (∀x tid, pt.(pt_ghox) x tid ≡ pt'.(pt_ghox) x tid) →
     (∀x tid, pt.(pt_phys) x tid = pt'.(pt_phys) x tid) →
     plain_type_equiv' pt pt'.
   Global Instance plain_type_equiv {𝔄} : Equiv (plain_type 𝔄) := plain_type_equiv'.
   Inductive plain_type_dist' {𝔄} (n: nat) (pt pt': plain_type 𝔄) : Prop := PlainTypeDist:
     pt.(pt_size) = pt'.(pt_size) →
-    (∀x tid, pt.(pt_gho) x tid ≡{n}≡ (pt'.(pt_gho) x tid)) →
+    (∀x tid, pt.(pt_ghox) x tid ≡{n}≡ (pt'.(pt_ghox) x tid)) →
     (∀x tid, pt.(pt_phys) x tid = (pt'.(pt_phys) x tid)) →
     plain_type_dist' n pt pt'.
   Global Instance plain_type_dist {𝔄} : Dist (plain_type 𝔄) := plain_type_dist'.
 
   Definition plain_type_unpack {𝔄} (pt: plain_type 𝔄)
     : prodO (prodO natO
-        (~~𝔄 -d> thread_id -d> iPropO Σ))
+        (~~𝔄 -d> thread_id -d> FML $oi Σ))
         (~~𝔄 -d> thread_id -d> leibnizO (list fancy_val)) :=
-    (pt.(pt_size), pt.(pt_gho), pt.(pt_phys)).
+    (pt.(pt_size), pt.(pt_ghox), pt.(pt_phys)).
 
   Definition plain_type_ofe_mixin {𝔄} : OfeMixin (plain_type 𝔄).
   Proof.
@@ -582,12 +707,19 @@ Section ofe_lemmas.
   End plain_type_ofe.
 
   Global Instance pt_gho_ne n {𝔄} :
-    Proper (dist n ==> (=) ==> (=) ==> dist n) (pt_gho (𝔄:=𝔄)).
+    Proper (dist n ==> (=) ==> (=) ==> dist n) (pt_ghox (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->. apply Eqv. Qed.
   Global Instance pt_gho_proper {𝔄} :
-    Proper ((≡) ==> (=) ==> (=) ==> (≡)) (pt_gho (𝔄:=𝔄)).
+    Proper ((≡) ==> (=) ==> (=) ==> (≡)) (pt_ghox (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->. apply Eqv. Qed.
   
+  Global Instance pt_gho_sem_ne n {𝔄} :
+    Proper (dist n ==> (=) ==> (=) ==> dist n) (pt_gho (𝔄:=𝔄)).
+  Proof. move=> ?? Eqv ??->??->. rewrite /pt_gho. f_equiv. apply Eqv. Qed.
+  Global Instance pt_gho_sem_proper {𝔄} :
+    Proper ((≡) ==> (=) ==> (=) ==> (≡)) (pt_gho (𝔄:=𝔄)).
+  Proof. move=> ?? Eqv ??->??->. rewrite /pt_gho. f_equiv. apply Eqv. Qed.
+
   Global Instance pt_phys_ne n {𝔄} :
     Proper (dist n ==> (=) ==> (=) ==> (=)) (pt_phys (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->. apply Eqv. Qed.
@@ -606,18 +738,18 @@ Section ofe_lemmas.
 
   Section ghost_type_ofe.
   Inductive ghost_type_equiv' {𝔄} (gt gt': ghost_type 𝔄) : Prop := GhostTypeEquiv:
-    (∀vπ tid, gt.(gt_gho) vπ tid ≡ gt'.(gt_gho) vπ tid) →
+    (∀vπ tid, gt.(gt_ghox) vπ tid ≡ gt'.(gt_ghox) vπ tid) →
     ghost_type_equiv' gt gt'.
   Global Instance ghost_type_equiv {𝔄} : Equiv (ghost_type 𝔄) := ghost_type_equiv'.
   Inductive ghost_type_dist' {𝔄} (n: nat) (gt gt': ghost_type 𝔄) : Prop :=
     GhostTypeDist:
-    (∀vπ tid, gt.(gt_gho) vπ tid ≡{n}≡ gt'.(gt_gho) vπ tid) →
+    (∀vπ tid, gt.(gt_ghox) vπ tid ≡{n}≡ gt'.(gt_ghox) vπ tid) →
     ghost_type_dist' n gt gt'.
   Global Instance ghost_type_dist {𝔄} : Dist (ghost_type 𝔄) := ghost_type_dist'.
 
   Definition ghost_type_unpack {𝔄} (gt: ghost_type 𝔄)
-    : (~~𝔄 -d> thread_id -d> iPropO Σ) :=
-    gt.(gt_gho).
+    : (~~𝔄 -d> thread_id -d> FML $oi Σ) :=
+    gt.(gt_ghox).
 
   Definition ghost_type_ofe_mixin {𝔄} : OfeMixin (ghost_type 𝔄).
   Proof.
@@ -628,11 +760,18 @@ Section ofe_lemmas.
   End ghost_type_ofe.
   
   Global Instance gt_gho_ne {𝔄} n:
-    Proper (dist n ==> (=) ==> (=) ==> dist n) (gt_gho (𝔄:=𝔄)).
+    Proper (dist n ==> (=) ==> (=) ==> dist n) (gt_ghox (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->. apply Eqv. Qed.
   Global Instance gt_gho_proper {𝔄} :
-    Proper ((≡) ==> (=) ==> (=) ==> (≡)) (gt_gho (𝔄:=𝔄)).
+    Proper ((≡) ==> (=) ==> (=) ==> (≡)) (gt_ghox (𝔄:=𝔄)).
   Proof. move=> ?? Eqv ??->??->. apply Eqv. Qed.
+
+  Global Instance gt_gho_sem_ne {𝔄} n:
+    Proper (dist n ==> (=) ==> (=) ==> dist n) (gt_gho (𝔄:=𝔄)).
+  Proof. move=> ?? Eqv ??->??->. rewrite /gt_gho. f_equiv. apply Eqv. Qed.
+  Global Instance gt_gho_sem_proper {𝔄} :
+    Proper ((≡) ==> (=) ==> (=) ==> (≡)) (gt_gho (𝔄:=𝔄)).
+  Proof. move=> ?? Eqv ??->??->. rewrite /gt_gho. f_equiv. apply Eqv. Qed.
 
   Global Instance ty_of_gt_ne {𝔄} : NonExpansive (@ty_of_gt _ _ _ 𝔄).
   Proof.
@@ -745,17 +884,17 @@ Class TypeNonExpansive `{!typeG FML Σ} {𝔄 𝔅} (T: type 𝔄 → type 𝔅)
   type_ne_ty_gho n ty ty' :
     ty.(ty_size) = ty'.(ty_size) → (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     elctx_interp ty.(ty_E) ≡ elctx_interp ty'.(ty_E) →
-    (∀vπ d g tid, ty.(ty_gho) vπ d g tid ≡{n}≡ ty'.(ty_gho) vπ d g tid) →
-    (∀vπ d g tid, ty.(ty_gho_pers) vπ d g tid ≡{n}≡ ty'.(ty_gho_pers) vπ d g tid) →
+    (∀vπ d g tid, ty.(ty_ghox) vπ d g tid ≡{n}≡ ty'.(ty_ghox) vπ d g tid) →
+    (∀vπ d g tid, ty.(ty_gho_persx) vπ d g tid ≡{n}≡ ty'.(ty_gho_persx) vπ d g tid) →
     (∀vπ tid, ty.(ty_phys) vπ tid = ty'.(ty_phys) vπ tid) →
-    (∀vπ d g tid, (T ty).(ty_gho) vπ d g tid ≡{n}≡ (T ty').(ty_gho) vπ d g tid);
+    (∀vπ d g tid, (T ty).(ty_ghox) vπ d g tid ≡{n}≡ (T ty').(ty_ghox) vπ d g tid);
   type_ne_ty_gho_pers n ty ty' :
     ty.(ty_size) = ty'.(ty_size) → (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     elctx_interp ty.(ty_E) ≡ elctx_interp ty'.(ty_E) →
-    (∀vπ d g tid, ty.(ty_gho) vπ d g tid ≡{n}≡ ty'.(ty_gho) vπ d g tid) →
-    (∀vπ d g tid, ty.(ty_gho_pers) vπ d g tid ≡{n}≡ ty'.(ty_gho_pers) vπ d g tid) →
+    (∀vπ d g tid, ty.(ty_ghox) vπ d g tid ≡{n}≡ ty'.(ty_ghox) vπ d g tid) →
+    (∀vπ d g tid, ty.(ty_gho_persx) vπ d g tid ≡{n}≡ ty'.(ty_gho_persx) vπ d g tid) →
     (∀vπ tid, ty.(ty_phys) vπ tid = ty'.(ty_phys) vπ tid) →
-    (∀vπ d g tid, (T ty).(ty_gho_pers) vπ d g tid ≡{n}≡ (T ty').(ty_gho_pers) vπ d g tid);
+    (∀vπ d g tid, (T ty).(ty_gho_persx) vπ d g tid ≡{n}≡ (T ty').(ty_gho_persx) vπ d g tid);
   type_ne_ty_phys ty ty' :
     ty.(ty_size) = ty'.(ty_size) →
     (∀vπ tid, ty.(ty_phys) vπ tid = ty'.(ty_phys) vπ tid) →
@@ -768,17 +907,17 @@ Class TypeContractive `{!typeG FML Σ} {𝔄 𝔅} (T: type 𝔄 → type 𝔅) 
   type_contractive_ty_gho n ty ty' :
     ty.(ty_size) = ty'.(ty_size) → (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     elctx_interp ty.(ty_E) ≡ elctx_interp ty'.(ty_E) →
-    (∀vπ d g tid, dist_later n (ty.(ty_gho) vπ d g tid) (ty'.(ty_gho) vπ d g tid)) →
-    (∀vπ d g tid, dist_later n (ty.(ty_gho_pers) vπ d g tid) (ty'.(ty_gho_pers) vπ d g tid)) →
+    (∀vπ d g tid, dist_later n (ty.(ty_ghox) vπ d g tid) (ty'.(ty_ghox) vπ d g tid)) →
+    (∀vπ d g tid, dist_later n (ty.(ty_gho_persx) vπ d g tid) (ty'.(ty_gho_persx) vπ d g tid)) →
     (∀vπ tid, ty.(ty_phys) vπ tid = ty'.(ty_phys) vπ tid) →
-    (∀vπ d g tid, (T ty).(ty_gho) vπ d g tid ≡{n}≡ (T ty').(ty_gho) vπ d g tid);
+    (∀vπ d g tid, (T ty).(ty_ghox) vπ d g tid ≡{n}≡ (T ty').(ty_ghox) vπ d g tid);
   type_contractive_ty_gho_pers n ty ty' :
     ty.(ty_size) = ty'.(ty_size) → (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     elctx_interp ty.(ty_E) ≡ elctx_interp ty'.(ty_E) →
-    (∀vπ d g tid, dist_later n (ty.(ty_gho) vπ d g tid) (ty'.(ty_gho) vπ d g tid)) →
-    (∀vπ d g tid, dist_later n (ty.(ty_gho_pers) vπ d g tid) (ty'.(ty_gho_pers) vπ d g tid)) →
+    (∀vπ d g tid, dist_later n (ty.(ty_ghox) vπ d g tid) (ty'.(ty_ghox) vπ d g tid)) →
+    (∀vπ d g tid, dist_later n (ty.(ty_gho_persx) vπ d g tid) (ty'.(ty_gho_persx) vπ d g tid)) →
     (∀vπ tid, ty.(ty_phys) vπ tid = ty'.(ty_phys) vπ tid) →
-    (∀vπ d g tid, (T ty).(ty_gho_pers) vπ d g tid ≡{n}≡ (T ty').(ty_gho_pers) vπ d g tid);
+    (∀vπ d g tid, (T ty).(ty_gho_persx) vπ d g tid ≡{n}≡ (T ty').(ty_gho_persx) vπ d g tid);
   type_contractive_ty_phys ty ty' :
     ty.(ty_size) = ty'.(ty_size) →
     (∀vπ tid, ty.(ty_phys) vπ tid = ty'.(ty_phys) vπ tid) →
@@ -880,8 +1019,8 @@ Fixpoint shr_locsE (l: loc) (n: nat) : coPset :=
   match n with O => ∅ | S n => ↑shrN.@l ∪ shr_locsE (l +ₗ 1) n end.
 
 Class Copy `{!typeG FML Σ} {𝔄} (ty: type 𝔄) := {
-  copy_persistent x d g tid : Persistent (ty.(ty_gho) x d g tid);
-  copy_concrete x d g tid : ty.(ty_gho) x d g tid ⊢ ⌜all_concrete (ty.(ty_phys) x tid)⌝;
+  copy_persistent x d g tid : Persistent ((ty_gho ty) x d g tid);
+  copy_concrete x d g tid : (ty_gho ty) x d g tid ⊢ ⌜all_concrete (ty.(ty_phys) x tid)⌝;
 }.
 Global Existing Instance copy_persistent.
 Global Instance: Params (@Copy) 5 := {}.
@@ -906,9 +1045,9 @@ Class Send `{!typeG FML Σ} {𝔄} (ty: type 𝔄) := {
     (llft_ctx -∗ uniq_ctx -∗
       (True &&{Wguard}&&> cna_lifetimes tid κs) -∗
       Ktok γ κs q -∗
-      ty.(ty_gho) x d g tid =[alerus_wsat]{NalerusE}=∗
+      (ty_gho ty) x d g tid =[alerus_wsat]{NalerusE}=∗
       ∃ x' off,
-      ty.(ty_gho) x' (d+off) g tid' ∗
+      (ty_gho ty) x' (d+off) g tid' ∗
         ⌜@syn_abstract 𝔄 x' = @syn_abstract 𝔄 x⌝ ∗ Ktok γ κs q
      )
 }.
@@ -919,14 +1058,14 @@ Notation ListSend := (TCHForall (λ 𝔄, @Send _ _ _ 𝔄)).
 Class Sync `{!typeG FML Σ} {𝔄} (ty: type 𝔄) :=
   sync_change_tid tid tid' x d g :
     (ty.(ty_phys) x tid = ty.(ty_phys) x tid') ∧
-    (ty.(ty_gho) x d g tid ⊣⊢ ty.(ty_gho) x d g tid') ∧
-    (ty.(ty_gho_pers) x d g tid ⊣⊢ ty.(ty_gho_pers) x d g tid').
+    ((ty_gho ty) x d g tid ⊣⊢ (ty_gho ty) x d g tid') ∧
+    ((ty_gho_pers ty) x d g tid ⊣⊢ (ty_gho_pers ty) x d g tid').
 Global Instance: Params (@Sync) 5 := {}.
 
 Notation ListSync := (TCHForall (λ 𝔄, @Sync _ _ _ 𝔄)).
 
 Class JustLoc `{!typeG FML Σ} {𝔄} (ty: type 𝔄) : Prop :=
-  just_loc vπ d g tid : ty.(ty_gho) vπ d g tid -∗ ⌜∃l: loc, ty.(ty_phys) vπ tid = [FVal (#l)]⌝.
+  just_loc vπ d g tid : (ty_gho ty) vπ d g tid -∗ ⌜∃l: loc, ty.(ty_phys) vπ tid = [FVal (#l)]⌝.
 
 Section traits.
   Context `{!typeG FML Σ}.
@@ -936,8 +1075,9 @@ Section traits.
   Global Instance copy_equiv {𝔄} : Proper ((≡) ==> impl) (Copy (𝔄:=𝔄)).
   Proof.
     move=> ty ty' [EqSz ? ? EqOwn EqPers EqPhys] Hcopy. split=> >.
-    - rewrite -EqOwn. apply _.
-    - rewrite -EqPhys. inversion Hcopy as [_ Hconc]. rewrite -EqOwn. apply Hconc.
+    - rewrite /ty_gho -(EqOwn _ _ _ _). apply _.
+    - rewrite -EqPhys. inversion Hcopy as [_ Hconc].
+      rewrite /ty_gho -(EqOwn _ _ _ _). apply Hconc.
   Qed.
 
   Global Program Instance simple_type_copy {𝔄} (st: simple_type 𝔄) : Copy st.
@@ -950,15 +1090,16 @@ Section traits.
     move=> ?? [_ _ _ Eqv Eqv2 Eqv3] Hyp. destruct Hyp as [Hphys Hgho].
     split.
     - intros tid tid' x x'. rewrite -!Eqv3. apply Hphys.
-    - intros. setoid_rewrite <- Eqv. apply Hgho; trivial.
+    - intros. rewrite /ty_gho. setoid_rewrite <- (Eqv _ _ _ _).
+      apply Hgho; trivial.
   Qed.
 
   Global Instance sync_equiv {𝔄} : Proper ((≡) ==> impl) (Sync (𝔄:=𝔄)).
   Proof. move=> ?? [_ _ _ Eqv Eqv2 Eqv3] Hyp. rewrite /Sync=> *. split.
     - rewrite -!Eqv3. apply Hyp. { auto. } { auto. }
     - split.
-      + rewrite -!Eqv. apply Hyp.
-      + rewrite -!Eqv2. apply Hyp.
+      + rewrite /ty_gho -!(Eqv _ _ _ _). apply Hyp.
+      + rewrite /ty_gho_pers -!(Eqv2 _ _ _ _). apply Hyp.
   Qed.
 
   (* VerusBelt: this doesn't work anymore; Sync is proved on a per-type basis
@@ -983,7 +1124,7 @@ Definition resolve `{!typeG FML Σ} {𝔄} (E: elctx) (L: llctx) (ty: type 𝔄)
     (Φ: ~~ 𝔄 → proph_asn → Prop) : Prop :=
   ∀γ q F x d g tid, NalerusE ⊆ F →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗ Ltok γ L q -∗
-    ty.(ty_gho) x d g tid =[alerus_wsat]{F}=∗ ⟨π, Φ x π⟩ ∗ Ltok γ L q.
+    (ty_gho ty) x d g tid =[alerus_wsat]{F}=∗ ⟨π, Φ x π⟩ ∗ Ltok γ L q.
 Global Instance: Params (@resolve) 5 := {}.
 
 Definition resolvel `{!typeG FML Σ} {𝔄l} (E: elctx) (L: llctx) (tyl: typel 𝔄l)
@@ -1031,9 +1172,9 @@ End resolve.
 Definition type_incl `{!typeG FML Σ} {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
   : iProp Σ :=
   ⌜ty.(ty_size) = ty'.(ty_size)⌝ ∗ (ty_lft ty' ⊑ ty_lft ty) ∗
-  (□ ∀x d g tid, ty.(ty_gho) x d g tid -∗ ty'.(ty_gho) (f ~~$ₛ x) d g tid
-                    ∗ (ty'.(ty_gho) (f ~~$ₛ x) d g tid -∗ ty.(ty_gho) x d g tid)) ∗
-  (□ ∀x d g tid, ty.(ty_gho_pers) x d g tid -∗ ty'.(ty_gho_pers) (f ~~$ₛ x) d g tid) ∗
+  (□ ∀x d g tid, (ty_gho ty) x d g tid -∗ (ty_gho ty') (f ~~$ₛ x) d g tid
+                    ∗ ((ty_gho ty') (f ~~$ₛ x) d g tid -∗ (ty_gho ty) x d g tid)) ∗
+  (□ ∀x d g tid, (ty_gho_pers ty) x d g tid -∗ (ty_gho_pers ty') (f ~~$ₛ x) d g tid) ∗
   ⌜∀x tid, ty.(ty_phys) x tid = ty'.(ty_phys) (f ~~$ₛ x) tid⌝.
 Global Instance: Params (@type_incl) 5 := {}.
 
@@ -1065,8 +1206,8 @@ Section subtyping.
   Lemma eqtype_unfold {𝔄 𝔅} E L f g `{!Isoₛ f g} (ty : type 𝔄) (ty' : type 𝔅) :
     (llctx_interp L -∗ □ (elctx_interp E -∗
       ⌜ty.(ty_size) = ty'.(ty_size)⌝ ∗ ty_lft ty ≡ₗ ty_lft ty' ∗
-      (□ ∀x d g tid, ty.(ty_gho) x d g tid ↔ ty'.(ty_gho) (f ~~$ₛ x) d g tid) ∗
-      (□ ∀x d g tid, ty.(ty_gho_pers) x d g tid ↔ ty'.(ty_gho_pers) (f ~~$ₛ x) d g tid) ∗
+      (□ ∀x d g tid, (ty_gho ty) x d g tid ↔ (ty_gho ty') (f ~~$ₛ x) d g tid) ∗
+      (□ ∀x d g tid, (ty_gho_pers ty) x d g tid ↔ (ty_gho_pers ty') (f ~~$ₛ x) d g tid) ∗
       ⌜∀x tid, ty.(ty_phys) x tid = ty'.(ty_phys) (f ~~$ₛ x) tid⌝))
     ↔ eqtype E L ty ty' f g.
   Proof.
@@ -1112,8 +1253,8 @@ Section subtyping.
   Lemma eqtype_id_unfold {𝔄} E L (ty ty': type 𝔄) :
     (llctx_interp L -∗ □ (elctx_interp E -∗
       ⌜ty.(ty_size) = ty'.(ty_size)⌝ ∗ ty_lft ty ≡ₗ ty_lft ty' ∗
-      (□ ∀vπ d g tid, ty.(ty_gho) vπ d g tid ↔ ty'.(ty_gho) vπ d g tid) ∗
-      (□ ∀vπ d g tid, ty.(ty_gho_pers) vπ d g tid ↔ ty'.(ty_gho_pers) vπ d g tid) ∗
+      (□ ∀vπ d g tid, (ty_gho ty) vπ d g tid ↔ (ty_gho ty') vπ d g tid) ∗
+      (□ ∀vπ d g tid, (ty_gho_pers ty) vπ d g tid ↔ (ty_gho_pers ty') vπ d g tid) ∗
       ⌜∀vπ tid, ty.(ty_phys) vπ tid = ty'.(ty_phys) vπ tid⌝)) ↔
     eqtype E L ty ty' idₛ idₛ.
   Proof. split.
@@ -1128,12 +1269,11 @@ Section subtyping.
   Global Instance type_incl_ne {𝔄 𝔅} n :
     Proper (dist n ==> dist n ==> (=) ==> dist n) (type_incl (𝔄:=𝔄) (𝔅:=𝔅)).
   Proof.
-    rewrite /type_incl.
-    move=> ??[->->_ EqvOwn EqvOwnPers EqvPhys]??[->->_ EqvOwn' EqvOwnPers' EqvPhys']??->. do 4 f_equiv.
-      + do 8 f_equiv. by rewrite EqvOwn EqvOwn'.
-      + do 9 f_equiv. by rewrite EqvOwnPers EqvOwnPers'.
-      + f_equiv.
-          setoid_rewrite EqvPhys. setoid_rewrite EqvPhys'. trivial.
+    rewrite /type_incl /ty_gho /ty_gho_pers.
+    move=> ??[->->_ EqvOwn EqvOwnPers EqvPhys]??[->->_ EqvOwn' EqvOwnPers' EqvPhys']??->.
+    setoid_rewrite EqvOwn. setoid_rewrite EqvOwn'.
+    setoid_rewrite EqvOwnPers. setoid_rewrite EqvOwnPers'.
+    setoid_rewrite EqvPhys. setoid_rewrite EqvPhys'. trivial.
   Qed.
 
   Global Instance type_incl_persistent {𝔄 𝔅} (ty : type 𝔄) (ty' : type 𝔅) f :
@@ -1273,7 +1413,7 @@ Section subtyping.
 
   Lemma type_incl_simple_type {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (st: simple_type 𝔄) (st': simple_type 𝔅):
     st.(st_size) = st'.(st_size) → ty_lft st' ⊑ ty_lft st -∗
-    (□ ∀x d g tid, st.(st_gho) x d g tid -∗ st'.(st_gho) (f ~~$ₛ x) d g tid) -∗
+    (□ ∀x d g tid, (st_gho st) x d g tid -∗ (st_gho st') (f ~~$ₛ x) d g tid) -∗
     ⌜∀x tid, st.(st_phys) x tid = st'.(st_phys) (f ~~$ₛ x) tid⌝ -∗
     type_incl st st' f.
   Proof.
@@ -1290,7 +1430,7 @@ Section subtyping.
   Lemma subtype_simple_type {𝔄 𝔅} E L (f : 𝔄 →ₛ 𝔅) (st: simple_type 𝔄) (st': simple_type 𝔅) :
     (llctx_interp L -∗ □ (elctx_interp E -∗
       ⌜st.(st_size) = st'.(st_size)⌝ ∗ ty_lft st' ⊑ ty_lft st ∗
-      (□ ∀x d g tid, st.(st_gho) x d g tid -∗ st'.(st_gho) (f ~~$ₛ x) d g tid) ∗
+      (□ ∀x d g tid, (st_gho st) x d g tid -∗ (st_gho st') (f ~~$ₛ x) d g tid) ∗
       ⌜∀x tid, st.(st_phys) x tid = st'.(st_phys) (f ~~$ₛ x) tid⌝)) →
     subtype E L st st' f.
   Proof.
@@ -1303,8 +1443,8 @@ Section subtyping.
   
   Lemma type_incl_plain_type {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (pt: plain_type 𝔄) (pt': plain_type 𝔅):
     pt.(pt_size) = pt'.(pt_size) → ty_lft pt' ⊑ ty_lft pt -∗
-    □ (∀v tid, pt.(pt_gho) v tid -∗ pt'.(pt_gho) (f ~~$ₛ v) tid
-            ∗ (pt'.(pt_gho) (f ~~$ₛ v) tid -∗ pt.(pt_gho) v tid)
+    □ (∀v tid, (pt_gho pt) v tid -∗ (pt_gho pt') (f ~~$ₛ v) tid
+            ∗ ((pt_gho pt') (f ~~$ₛ v) tid -∗ (pt_gho pt) v tid)
     ) -∗
     ⌜∀v tid, pt.(pt_phys) v tid = pt'.(pt_phys) (f ~~$ₛ v) tid⌝ -∗
     type_incl pt pt' f.
@@ -1322,8 +1462,8 @@ Section subtyping.
   Lemma subtype_plain_type {𝔄 𝔅} E L (f : 𝔄 →ₛ 𝔅) (pt: plain_type 𝔄) (pt': plain_type 𝔅) :
     (llctx_interp L -∗ □ (elctx_interp E -∗
       ⌜pt.(pt_size) = pt'.(pt_size)⌝ ∗ ty_lft pt' ⊑ ty_lft pt ∗
-      (∀v tid, pt.(pt_gho) v tid -∗ pt'.(pt_gho) (f ~~$ₛ v) tid
-          ∗ (pt'.(pt_gho) (f ~~$ₛ v) tid -∗ pt.(pt_gho) v tid)
+      (∀v tid, (pt_gho pt) v tid -∗ (pt_gho pt') (f ~~$ₛ v) tid
+          ∗ ((pt_gho pt') (f ~~$ₛ v) tid -∗ (pt_gho pt) v tid)
       ) ∗
       ⌜∀v tid, pt.(pt_phys) v tid = pt'.(pt_phys) (f ~~$ₛ v) tid⌝
       )) →
@@ -1337,24 +1477,23 @@ Section subtyping.
   (** Ghost Type *)
 
   Lemma type_incl_ghost_type {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (gt: ghost_type 𝔄) (gt': ghost_type 𝔅):
-    □ (∀v tid, gt.(gt_gho) v tid -∗ gt'.(gt_gho) (f ~~$ₛ v) tid
-            ∗ (gt'.(gt_gho) (f ~~$ₛ v) tid -∗ gt.(gt_gho) v tid)) -∗
+    □ (∀v tid, (gt_gho gt) v tid -∗ (gt_gho gt') (f ~~$ₛ v) tid
+            ∗ ((gt_gho gt') (f ~~$ₛ v) tid -∗ (gt_gho gt) v tid)) -∗
     type_incl gt gt' f.
   Proof.
     iIntros "#InOwn".
     iSplit. { iPureIntro. trivial. }
-    do 1 (iSplit; try done).
-    { simpl. by iApply lft_incl_static. }
-    iSplit; last done.
-    rewrite /ty_gho /ty_of_gt //=.
-    iIntros "!> % % % % H".
-    iDestruct ("InOwn" with "H") as "[H H']".
-    iFrame.
+    iSplit. { simpl. by iApply lft_incl_static. }
+    iSplit; [|iSplit; [|done]].
+    - rewrite /ty_gho /ty_of_gt //=. iIntros "!> % % % % H".
+      iDestruct ("InOwn" with "H") as "[H H']". iFrame.
+    - rewrite /ty_gho_pers /ty_of_gt //=. iIntros "!> % % % % _".
+      by iApply empty_fml_sem_2.
   Qed.
 
   Lemma subtype_ghost_type {𝔄 𝔅} E L (f : 𝔄 →ₛ 𝔅) (gt: ghost_type 𝔄) (gt': ghost_type 𝔅) :
     (llctx_interp L -∗ □ (elctx_interp E -∗
-    □ (∀v tid, gt.(gt_gho) v tid -∗ gt'.(gt_gho) (f ~~$ₛ v) tid ∗ (gt'.(gt_gho) (f ~~$ₛ v) tid -∗ gt.(gt_gho) v tid)))) →
+    □ (∀v tid, (gt_gho gt) v tid -∗ (gt_gho gt') (f ~~$ₛ v) tid ∗ ((gt_gho gt') (f ~~$ₛ v) tid -∗ (gt_gho gt) v tid)))) →
     subtype E L gt gt' f.
   Proof.
     move=> Sub. iIntros "L". iDestruct (Sub with "L") as "#Incl".
@@ -1383,8 +1522,6 @@ End subtyping.
 Section type_util.
   Context `{!typeG FML Σ}.
 
-  Definition by_succ (d: nat) (Φ: nat → iProp Σ) : iProp Σ :=
-    match d with S d' => Φ d' | _ => False end.
   Lemma by_succ_ex d Φ : by_succ d Φ ⊣⊢ ∃d', ⌜d = S d'⌝ ∗ Φ d'.
   Proof.
     iSplit; [|by iIntros "[%[->$]]"]. iIntros. case d; [done|]=> d'.
@@ -1424,8 +1561,6 @@ Section type_util.
   Proof. rewrite by_just_loc_ex. apply _. Qed.
 End type_util.
 
-Notation "[S( d' ) := d ] P" := (by_succ d (λ d', P)) (at level 200,
-  right associativity, format "[S( d' )  :=  d ]  P") : bi_scope.
 
 Notation "[loc[ l ] := vl ] P" := (by_just_loc vl (λ l, P)) (at level 200,
   right associativity, format "[loc[ l ]  :=  vl ]  P") : bi_scope.

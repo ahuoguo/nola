@@ -16,7 +16,7 @@ Section int.
 
   Program Definition int: type Zₛ :=
     {| pt_size := 1;
-       pt_gho (z: ~~Zₛ) _ := True%I;
+       pt_ghox (z: ~~Zₛ) _ := empty_fml;
        pt_phys (z: ~~Zₛ) _ := [ FVal #z ];
     |}.
   Next Obligation. intros. done. Qed.
@@ -26,6 +26,11 @@ Section int.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
   
+  Lemma int_gho z d g tid : ty_gho int z d g tid ⊣⊢ True.
+  Proof. apply empty_fml_sem. Qed.
+  Lemma int_gho_pers z d g tid : ty_gho_pers int z d g tid ⊣⊢ True.
+  Proof. apply empty_fml_sem. Qed.
+
   Global Instance int_copy: Copy int.
   Proof. split. - typeclasses eauto. - iIntros. iPureIntro. done. Qed.
   
@@ -37,11 +42,12 @@ Section int.
     intros. split; trivial.
      - intros. unfold syn_abstract in H. subst x'. trivial.
      - iIntros (tid tid' x0 d g γ q κs) "_ _ _ tok _ $ !>".
-       iExists x0, 0%nat. iFrame "tok". done.
+       iExists x0, 0%nat. iFrame "tok".
+       iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
   Global Instance int_sync: Sync bool_ty.
-  Proof. split; trivial. split; iSplit; done. Qed.
+  Proof. move=> *. split; [done|]. split; reflexivity. Qed.
 
   Lemma int_resolve E L : resolve E L int (const (const True)).
   Proof. apply resolve_just. Qed.
@@ -56,14 +62,16 @@ Section int.
   Lemma bool_ty_to_int E L : subtype E L bool_ty int Z_of_boolₛ.
   Proof.
     apply subtype_plain_type. iIntros "*_!>_/=". iSplit; [done|].
-    iSplit; [iApply lft_incl_refl|]. by iIntros.
+    iSplit; [iApply lft_incl_refl|]. iSplit; [|done].
+    iIntros (??) "$". by iIntros "$".
   Qed.
 
   Lemma type_int_instr (z: Z) : typed_val #z int z.
   Proof.
     iIntros (????????) "_ _ _ _ $$ _ Obs".
     iApply twp_value. iExists -[z]. iFrame "Obs". iSplit; [|done].
-    rewrite tctx_hasty_val'; [|done]. iExists 0%nat. done.
+    rewrite tctx_hasty_val'; [|done]. iExists 0%nat.
+    iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
   Lemma type_int {𝔄l 𝔅} (z: Z) (T: tctx 𝔄l) x e tr E L I (C: cctx 𝔅) :
@@ -80,7 +88,8 @@ Section int.
     wp_apply (twp_hasty with "p1"). iIntros "%v %d _ [gho %phys]". inversion phys. subst v.
     wp_apply (twp_hasty with "p2"). iIntros "%v %d' _ [gho' %phys']". inversion phys'. subst v.
     wp_op. iExists -[(z + z')]. iFrame "Obs". rewrite right_id
-    tctx_hasty_val'; [|done]. iExists d. done.
+    tctx_hasty_val'; [|done]. iExists d.
+    iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
   Lemma type_plus {𝔄l 𝔅l ℭ} p1 p2 x e trx tr E L I (C: cctx ℭ) (T: tctx 𝔄l) (T': tctx 𝔅l) :
@@ -101,7 +110,8 @@ Section int.
     wp_apply (twp_hasty with "p1"). iIntros "%v %d _ [gho %phys]". inversion phys. subst v.
     wp_apply (twp_hasty with "p2"). iIntros "%v %d' _ [gho' %phys']". inversion phys'. subst v.
     wp_op. iExists -[(z - z')]. iFrame "Obs". rewrite right_id
-    tctx_hasty_val'; [|done]. iExists d. done.
+    tctx_hasty_val'; [|done]. iExists d.
+    iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
   Lemma type_minus {𝔄l 𝔅l ℭ} p1 p2 x e trx tr E L I (C: cctx ℭ) (T: tctx 𝔄l) (T': tctx 𝔅l) :
@@ -122,7 +132,8 @@ Section int.
     wp_apply (twp_hasty with "p1"). iIntros "%v %d _ [gho %phys]". inversion phys. subst v.
     wp_apply (twp_hasty with "p2"). iIntros "%v %d' _ [gho' %phys']". inversion phys'. subst v.
     wp_op. iExists -[(z * z')]. iFrame "Obs". rewrite right_id
-    tctx_hasty_val'; [|done]. iExists d. done.
+    tctx_hasty_val'; [|done]. iExists d.
+    iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
   Lemma type_mult {𝔄l 𝔅l ℭ} p1 p2 x e trx tr E L I (C: cctx ℭ) (T: tctx 𝔄l) (T': tctx 𝔅l) :
@@ -143,7 +154,8 @@ Section int.
     wp_apply (twp_hasty with "p1"). iIntros "%v %d _ [gho %phys]". inversion phys. subst v.
     wp_apply (twp_hasty with "p2"). iIntros "%v %d' _ [gho' %phys']". inversion phys'. subst v.
     wp_op. iExists -[bool_decide (z ≤ z')]. iFrame "Obs". rewrite right_id
-    tctx_hasty_val'; [|done]. iExists d. done.
+    tctx_hasty_val'; [|done]. iExists d.
+    iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
   Lemma type_le {𝔄l 𝔅l ℭ} p1 p2 x e trx tr E L I (C: cctx ℭ) (T: tctx 𝔄l) (T': tctx 𝔅l) :
@@ -161,7 +173,7 @@ Section int.
   Proof.
     iIntros (?????) "_ _ _ _ $$ _ #Obs".
     wp_nd_int z. iExists -[_]. rewrite right_id tctx_hasty_val'; [|done].
-    iSplit. { iExists 0%nat. done. }
+    iSplit. { iExists 0%nat. iSplit; [by iApply empty_fml_sem_2|done]. }
     iApply (proph_obs_impl with "Obs"). intros π Ha. destruct xl. apply Ha.
   Qed.
 
@@ -182,7 +194,8 @@ Section int.
     wp_apply (twp_hasty with "p1"). iIntros "%v %d _ [gho %phys]". inversion phys. subst v.
     wp_apply (twp_hasty with "p2"). iIntros "%v %d' _ [gho' %phys']". inversion phys'. subst v.
     wp_op. iExists -[bool_decide (z = z')]. iFrame "Obs". rewrite right_id
-    tctx_hasty_val'; [|done]. iExists d. done.
+    tctx_hasty_val'; [|done]. iExists d.
+    iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
   Lemma type_int_eq {𝔄l 𝔅l ℭ} p1 p2 x e trx tr E L I (C: cctx ℭ) (T: tctx 𝔄l) (T': tctx 𝔅l) :
@@ -196,5 +209,7 @@ Section int.
   Qed.
 
 End int.
+
+Global Hint Rewrite @int_gho @int_gho_pers : fml_sem.
 
 Global Hint Resolve int_resolve : lrust_typing.

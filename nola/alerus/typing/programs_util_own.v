@@ -55,7 +55,8 @@ Section programs_util_own.
       "#LFT #PROPH #UNIQ #E L I %He1 Own1 %He2 Own2 Obs".
     iDestruct "Own1" as "[Gho1 %Phys1]".
     iDestruct "Own2" as "[Gho2 %Phys2]".
-    destruct d as [|d]; first by iIntros.
+    destruct d as [|d];
+      first by iDestruct (false_fml_sem_1 with "Gho1") as "[]".
     iDestruct "Gho1" as "[Pt1 [Free1 Gho1]]".
     iDestruct "Gho2" as "[Pt2 [Free2 Gho2]]".
     iIntros "W".
@@ -65,7 +66,7 @@ Section programs_util_own.
     iModIntro. iFrame "W". iExists -[(l2, xret)], mask. iFrame "L I Obs".
     iSplitL "GhoRet"; [|done]. iExists v2, (S (S d)).
     inversion Phys2. iSplit; [iPureIntro; subst; done|]. iSplitL "GhoRet"; [|done].
-    rewrite /= Hsize0' (zero_size_phys tyret xret tid Hsize0')
+    rewrite own_ptr_gho /= Hsize0' (zero_size_phys tyret xret tid Hsize0')
       heap_mapsto_fancy_vec_nil. by iFrame "GhoRet".
   Qed.
 
@@ -94,7 +95,8 @@ Section programs_util_own.
     iIntros ([l1 x1] v1 d tid post mask iκs)
       "#LFT #PROPH #UNIQ #E L I %He1 Own1 Obs".
     iDestruct "Own1" as "[Gho1 %Phys1]".
-    destruct d as [|d]; first by iIntros.
+    destruct d as [|d];
+      first by iDestruct (false_fml_sem_1 with "Gho1") as "[]".
     iDestruct "Gho1" as "[Pt1 [Free1 Gho1]]". iIntros "W".
     iMod (Ha l1 x1 d tid iκs post mask
       with "LFT PROPH UNIQ E L I Gho1 Obs W") as "[W X]".
@@ -102,7 +104,7 @@ Section programs_util_own.
     iModIntro. iFrame "W". iExists -[(l1, xret)]. iFrame "L I Obs".
     iSplitL "GhoRet"; [|done]. iExists v1, (S d').
     inversion Phys1. iSplit; [iPureIntro; subst; done|]. iSplitL "GhoRet"; [|done].
-    rewrite /= Hsize0' (zero_size_phys tyret xret tid Hsize0')
+    rewrite own_ptr_gho /= Hsize0' (zero_size_phys tyret xret tid Hsize0')
       heap_mapsto_fancy_vec_nil. by iFrame "GhoRet".
   Qed.
 
@@ -131,7 +133,8 @@ Section programs_util_own.
     iIntros ([l1 x1] v1 d tid post mask iκs)
       "#LFT #PROPH #UNIQ #E L I %He1 Own1 Obs".
     iDestruct "Own1" as "[Gho1 %Phys1]".
-    destruct d as [|d]; first by iIntros.
+    destruct d as [|d];
+      first by iDestruct (false_fml_sem_1 with "Gho1") as "[]".
     iDestruct "Gho1" as "[Pt1 [Free1 Gho1]]". iIntros "W".
     iMod (Ha l1 x1 d tid iκs post mask
       with "LFT PROPH UNIQ E L I Gho1 Obs W") as "[W X]".
@@ -139,7 +142,7 @@ Section programs_util_own.
     iModIntro. iFrame "W". iExists -[(l1, xret)], mask'. iFrame "L I Obs".
     iSplitL "GhoRet"; [|done]. iExists v1, (S d').
     inversion Phys1. iSplit; [iPureIntro; subst; done|]. iSplitL "GhoRet"; [|done].
-    rewrite /= Hsize0' (zero_size_phys tyret xret tid Hsize0')
+    rewrite own_ptr_gho /= Hsize0' (zero_size_phys tyret xret tid Hsize0')
       heap_mapsto_fancy_vec_nil. by iFrame "GhoRet".
   Qed.
 
@@ -167,7 +170,8 @@ Section programs_util_own.
       "#LFT #PROPH #UNIQ #E L I %He1 Own1 %He2 Own2 Obs".
     iDestruct "Own1" as "[Gho1 %Phys1]".
     iDestruct "Own2" as "[Gho2 %Phys2]".
-    destruct d as [|d]; first by iIntros.
+    destruct d as [|d];
+      first by iDestruct (false_fml_sem_1 with "Gho1") as "[]".
     iDestruct "Gho1" as "[Pt1 [Free1 Gho1]]".
     iDestruct "Gho2" as "[Pt2 [Free2 Gho2]]". iIntros "W".
     iMod (Ha l1 l2 x1 x2 d tid iκs post mask

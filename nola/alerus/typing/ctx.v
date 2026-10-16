@@ -36,6 +36,7 @@ From nola.alerus.typing Require Export base uniq_cmra.
 From iris.algebra Require Import auth gset.
 From iris.proofmode Require Import proofmode.
 Import GuardNotation ModwNotation iPropAppNotation.
+Export iPropAppNotation.
 
 (** [nola.alerus.lifetime.lifetime_full] keeps these [Local], but the typing
   layer needs them to state [BorStateFml] and to speak about [box_wsat]. *)
@@ -53,6 +54,12 @@ Section wsat_split.
   Lemma wsat_join {W W' Wr : PROP} `{!WsatIncl W W' Wr} : W' -∗ Wr -∗ W.
   Proof. rewrite (wsat_incl W W' Wr). by iIntros "$$". Qed.
 End wsat_split.
+
+(** [bor_sem] respects [≡].  It is [NonExpansive] by [BorSem]; the [Proper]
+  form is what [setoid_rewrite] needs. *)
+#[export] Instance bor_sem_proper `{!BorSem FML Σ} :
+  Proper ((≡) ==> (≡)) (bor_sem (FML:=FML) (Σ:=Σ)).
+Proof. apply ne_proper, _. Qed.
 
 (** Rewriting a guard along an equivalence.
 
@@ -232,6 +239,19 @@ Section alerus.
     | GFrac γ q => frac_tok γ q
     | GMapstoVec l fv => l ↦!∗ fv
     end%I.
+
+  (** ** Fractional deallocation permission
+
+    VerusBelt puts this in [typing/freeable_util.v]; here it has to be
+    available to the formula language below, which must be able to express
+    the ghost assertion of [own_ptr]. *)
+  Definition freeable_sz (n sz : nat) (l : loc) : iProp Σ :=
+    match sz, n with 0%nat, _ => True | _, 0%nat => False |
+      sz, n => †{pos_to_Qp (Pos.of_nat sz) / pos_to_Qp (Pos.of_nat n)}l…sz end.
+  Arguments freeable_sz : simpl never.
+
+  #[export] Instance freeable_sz_timeless n sz l : Timeless (freeable_sz n sz l).
+  Proof. case sz, n; apply _. Qed.
 
   Context `{!HeapSem FML Σ}.
 
@@ -471,6 +491,205 @@ Section gsrc.
   Lemma gsrc_fml_sem_2 {s} : gsrc_interp s ⊢ bor_sem (gsrc_fml s).
   Proof. by rewrite gsrc_fml_sem. Qed.
 End gsrc.
+
+(** ** The formula language of the typing layer
+
+  This follows Nola's [rust_halt] ([nola/examples/rust_halt/type.v]), where a
+  type's interpretation *is* a formula: [ty_own]/[ty_shr] land in
+  [cif CON Σ], and every property of a type is stated about [⟦ · ⟧ᶜ] of it.
+  The reason is the same here.  A unique borrow [&uniq{κ} ty] keeps the
+  borrowed contents in [&{κ,idx}(…)], and the Points-To Cell Logic keeps a
+  type's ghost assertion in a [cna_inv]; in a later-free development both of
+  those store a *formula* ([idx_bor κ idx (Px : FML $oi Σ)],
+  [cna_inv γ p N Px]), because agreeing on an arbitrary [iProp Σ] is
+  [saved_prop] and reading one back costs a later.  So a type's ghost
+  assertion has to be a formula too.
+
+  Nola gets the shapes it needs from [cif]'s built-in BI connectives plus a
+  [rust_haltC] class listing the custom constructors.  Here [FML] is left
+  abstract - every layer below ([BorSem] with its [bor_sep], [BorStateFml],
+  [ShrBorSem], [EmptySem], [HeapSem], [GsrcSem]) is already written that way -
+  so this class plays the role of *both*: it lists the connectives and the
+  custom constructors the type formers need, each with the equation pinning
+  down its semantics.  A concrete [FML] (a [cif] instance) has to satisfy it;
+  see the note on [typing/soundness.v]. *)
+Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ} := {
+  (** Formulas form a COFE: [typing/fixpoint.v] takes the limit of a chain of
+    type interpretations, which is now a chain of formulas. *)
+  #[global] fml_cofe :: Cofe (FML $oi Σ);
+  (** [False], for the empty type used in fixpoints *)
+  false_fml : FML $oi Σ;
+  false_fml_sem : bor_sem false_fml ⊣⊢ False;
+  (** A pure proposition *)
+  pure_fml : Prop → FML $oi Σ;
+  pure_fml_sem φ : bor_sem (pure_fml φ) ⊣⊢ ⌜φ⌝;
+  (** Existential quantification, for the body of a unique borrow *)
+  ex_fml {A : Type} : (A → FML $oi Σ) → FML $oi Σ;
+  ex_fml_sem {A} (Φ : A → FML $oi Σ) :
+    bor_sem (ex_fml Φ) ⊣⊢ ∃ a : A, bor_sem (Φ a);
+  ex_fml_ne {A} n (Φ Ψ : A → FML $oi Σ) :
+    (∀ a, Φ a ≡{n}≡ Ψ a) → ex_fml Φ ≡{n}≡ ex_fml Ψ;
+  (** A guard over the guarding world satisfaction, for [&shr{κ}] *)
+  guard_fml : FML $oi Σ → FML $oi Σ → FML $oi Σ;
+  guard_fml_sem Px Qx :
+    bor_sem (guard_fml Px Qx) ⊣⊢ (bor_sem Px &&{alerus_WGuard}&&> bor_sem Qx);
+  guard_fml_ne :: NonExpansive2 guard_fml;
+  (** A lifetime token, for [&shr{κ}] *)
+  alive_fml : lft → FML $oi Σ;
+  alive_fml_sem κ : bor_sem (alive_fml κ) ⊣⊢ @[κ];
+  (** A points-to assertion over a vector of fancy values, with cells *)
+  cells_fml : loc → list (list cell_id) → list fancy_val → FML $oi Σ;
+  cells_fml_sem l cs fv : bor_sem (cells_fml l cs fv) ⊣⊢ l ↦[^ cs ]!∗ fv;
+  (** A *complete* points-to assertion, for the body of a unique borrow *)
+  ccells_fml : cloc → list fancy_val → FML $oi Σ;
+  ccells_fml_sem l fv : bor_sem (ccells_fml l fv) ⊣⊢ l #↦!∗ fv;
+  (** The deallocation permission, for [own_ptr] *)
+  freeable_fml : nat → nat → loc → FML $oi Σ;
+  freeable_fml_sem n sz l :
+    bor_sem (freeable_fml n sz l) ⊣⊢ freeable_sz n sz l;
+  (** The prophecy controller, for the body of a unique borrow *)
+  pc_fml (ξ : proph_var) : ~~ (`ξ.(pv_ty)) → proph ξ.(pv_ty) → nat * nat →
+    FML $oi Σ;
+  pc_fml_sem ξ x vπ d : bor_sem (pc_fml ξ x vπ d) ⊣⊢ .PC[ξ] x vπ d;
+  (** Disjunction, for [&uniq{κ}]'s "the lifetime is already dead" case *)
+  or_fml : FML $oi Σ → FML $oi Σ → FML $oi Σ;
+  or_fml_sem Px Qx :
+    bor_sem (or_fml Px Qx) ⊣⊢ bor_sem Px ∨ bor_sem Qx;
+  or_fml_ne :: NonExpansive2 or_fml;
+  (** The value observer of a unique reference *)
+  vo_fml (ξ : proph_var) : ~~ (`ξ.(pv_ty)) → nat * nat → FML $oi Σ;
+  vo_fml_sem ξ x d : bor_sem (vo_fml ξ x d) ⊣⊢ .VO[ξ] x d;
+  (** An indexed borrow, for the body of a unique reference *)
+  idxbor_fml : lft → Idx → FML $oi Σ → FML $oi Σ;
+  idxbor_fml_sem κ idx Px :
+    bor_sem (idxbor_fml κ idx Px) ⊣⊢ idx_bor κ idx Px;
+  idxbor_fml_ne κ idx :: NonExpansive (idxbor_fml κ idx);
+  (** A dead lifetime *)
+  dead_fml : lft → FML $oi Σ;
+  dead_fml_sem κ : bor_sem (dead_fml κ) ⊣⊢ [†κ];
+  (** "This location is allocated", as [&uniq{κ}] guards it *)
+  cmapstoany_fml : cloc → FML $oi Σ;
+  cmapstoany_fml_sem l : bor_sem (cmapstoany_fml l) ⊣⊢ l #↦∗_;
+  (** Separating conjunction comes from [BorSem]; non-expansiveness of it is
+    needed here and nowhere below, so it is asked for here. *)
+  sep_fml_ne :: NonExpansive2 (bor_sep (FML:=FML) (Σ:=Σ));
+}.
+
+Section type_fml.
+  Context `{!alerusGS FML Σ, !TypeFml FML Σ}.
+
+  (** A points-to assertion over a plain location, as [own_ptr] uses it *)
+  Definition mapsto_fml (l : loc) (fv : list fancy_val) : FML $oi Σ :=
+    cells_fml l (repeat [] (length fv)) fv.
+  Lemma mapsto_fml_sem {l fv} : bor_sem (mapsto_fml l fv) ⊣⊢ l ↦!∗ fv.
+  Proof. by rewrite /mapsto_fml cells_fml_sem. Qed.
+
+  (** [ex_fml] is proper *)
+  #[export] Instance ex_fml_ne' {A} n :
+    Proper (pointwise_relation A (dist n) ==> dist n) (@ex_fml _ _ _ _ A).
+  Proof. move=> ?? eq. by apply ex_fml_ne. Qed.
+  #[export] Instance ex_fml_proper' {A} :
+    Proper (pointwise_relation A (≡) ==> (≡)) (@ex_fml _ _ _ _ A).
+  Proof.
+    move=> ?? eq. apply equiv_dist=> n. apply ex_fml_ne=> a.
+    by apply equiv_dist.
+  Qed.
+
+  (** Persistence, so that the [Persistent] obligations of the type formers
+    are discharged by type class search as they were before. *)
+  #[export] Instance false_fml_persistent : Persistent (bor_sem false_fml).
+  Proof. rewrite false_fml_sem. exact _. Qed.
+  #[export] Instance empty_fml_persistent : Persistent (bor_sem empty_fml).
+  Proof. rewrite empty_fml_sem. exact _. Qed.
+  #[export] Instance pure_fml_persistent {φ} :
+    Persistent (bor_sem (pure_fml φ)).
+  Proof. rewrite pure_fml_sem. exact _. Qed.
+  #[export] Instance guard_fml_persistent {Px Qx} :
+    Persistent (bor_sem (guard_fml Px Qx)).
+  Proof. rewrite guard_fml_sem. exact _. Qed.
+  #[export] Instance idxbor_fml_persistent {κ idx Px} :
+    Persistent (bor_sem (idxbor_fml κ idx Px)).
+  Proof. rewrite idxbor_fml_sem. exact _. Qed.
+  #[export] Instance dead_fml_persistent {κ} :
+    Persistent (bor_sem (dead_fml κ)).
+  Proof. rewrite dead_fml_sem. exact _. Qed.
+  #[export] Instance or_fml_persistent {Px Qx} :
+    Persistent (bor_sem Px) → Persistent (bor_sem Qx) →
+    Persistent (bor_sem (or_fml Px Qx)).
+  Proof. move=> ??. rewrite or_fml_sem. exact _. Qed.
+  #[export] Instance sep_fml_persistent {Px Qx} :
+    Persistent (bor_sem Px) → Persistent (bor_sem Qx) →
+    Persistent (bor_sem (bor_sep Px Qx)).
+  Proof. move=> ??. rewrite bor_sep_sem. exact _. Qed.
+  #[export] Instance empty_fml_timeless : Timeless (bor_sem empty_fml).
+  Proof. rewrite empty_fml_sem. exact _. Qed.
+  #[export] Instance false_fml_timeless : Timeless (bor_sem false_fml).
+  Proof. rewrite false_fml_sem. exact _. Qed.
+
+  (** Directed forms of the semantics equations, for [iApply] and
+    [iDestruct]: rewriting an [⊣⊢] inside the Iris proof context trips over
+    the [Proper] search for [envs]. *)
+  Lemma false_fml_sem_1 : bor_sem false_fml ⊢ False.
+  Proof. by rewrite false_fml_sem. Qed.
+  Lemma pure_fml_sem_1 {φ} : bor_sem (pure_fml φ) ⊢ ⌜φ⌝.
+  Proof. by rewrite pure_fml_sem. Qed.
+  Lemma pure_fml_sem_2 {φ} : φ → ⊢ bor_sem (pure_fml φ).
+  Proof. move=> ?. rewrite pure_fml_sem. by iPureIntro. Qed.
+  Lemma sep_fml_sem_1 {Px Qx} :
+    bor_sem (bor_sep Px Qx) ⊢ bor_sem Px ∗ bor_sem Qx.
+  Proof. by rewrite bor_sep_sem. Qed.
+  Lemma sep_fml_sem_2 {Px Qx} :
+    bor_sem Px -∗ bor_sem Qx -∗ bor_sem (bor_sep Px Qx).
+  Proof. rewrite bor_sep_sem. by iIntros "$$". Qed.
+End type_fml.
+
+(** ** Notation for formulas
+
+  So that a type former's ghost assertion reads the way the original writes
+  it.  [cif] gives Nola these for free; with [FML] abstract they are
+  notations for the constructors of [TypeFml]. *)
+Declare Scope fml_scope.
+Delimit Scope fml_scope with FML.
+Notation "'False'" := false_fml : fml_scope.
+Notation "'True'" := empty_fml : fml_scope.
+Notation "⌜ φ ⌝" := (pure_fml φ%type%stdpp) : fml_scope.
+Notation "Px ∗ Qx" := (bor_sep Px%FML Qx%FML)
+  (at level 80, right associativity) : fml_scope.
+Notation "∃ x .. y , Px" :=
+  (ex_fml (λ x, .. (ex_fml (λ y, Px%FML)) ..))
+  (at level 10, x binder, y binder, Px at level 200) : fml_scope.
+Notation "l ↦[^ cs ]!∗ fv" := (cells_fml l cs fv) (at level 20) : fml_scope.
+Notation "l ↦!∗ fv" := (mapsto_fml l fv) (at level 20) : fml_scope.
+Notation "l #↦!∗ fv" := (ccells_fml l fv) (at level 20) : fml_scope.
+Notation "@[ κ ]" := (alive_fml κ) (format "@[ κ ]") : fml_scope.
+Notation ".PCx[ ξ ]" := (pc_fml ξ) (at level 5, format ".PCx[ ξ ]")
+  : fml_scope.
+Notation ".VOx[ ξ ]" := (vo_fml ξ) (at level 5, format ".VOx[ ξ ]")
+  : fml_scope.
+Notation "Px ∨ Qx" := (or_fml Px%FML Qx%FML)
+  (at level 85, right associativity) : fml_scope.
+Notation "l #↦∗_" := (cmapstoany_fml l) (at level 20) : fml_scope.
+Notation "&x{ κ , i } Px" := (idxbor_fml κ i Px%FML)
+  (at level 20, format "&x{ κ ,  i }  Px") : fml_scope.
+Notation "[†x κ ]" := (dead_fml κ) (format "[†x κ ]") : fml_scope.
+(** The guard a type's lifetime inclusion becomes *)
+Notation "κ ⊑x κ'" := (guard_fml (alive_fml κ) (alive_fml κ'))
+  (at level 70) : fml_scope.
+
+(** Normalising the semantics of the formula language.
+
+  A type former's ghost assertion is now a formula, so a goal that used to
+  read [ty_gho (own_ptr n ty) x d g tid] unfolds to [bor_sem] of a formula
+  built out of the constructors above.  [fml_simpl] pushes [bor_sem] through
+  them and gives back exactly the proposition the original development works
+  with. *)
+Create HintDb fml_sem.
+Global Hint Rewrite @false_fml_sem @pure_fml_sem @guard_fml_sem @alive_fml_sem
+  @cells_fml_sem @ccells_fml_sem @freeable_fml_sem @pc_fml_sem
+  @mapsto_fml_sem @bor_sep_sem @empty_fml_sem @or_fml_sem @vo_fml_sem
+  @idxbor_fml_sem @dead_fml_sem @cmapstoany_fml_sem : fml_sem.
+Ltac fml_simpl := autorewrite with fml_sem.
+Ltac fml_simpl' := simpl; autorewrite with fml_sem.
 
 (** The lifetime logic's notations.  [lifetime_full] cannot export these: the
   argument order it leaves behind after closing its section does not allow it. *)
