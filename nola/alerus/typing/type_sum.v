@@ -409,4 +409,122 @@ Section type_sum.
     move=> ?[[l [s pad]] ?]/=. case (to_xsum s)=>/= ??.
     by rewrite pbyidx_plookup.
   Qed.
+
+  (** ** Unique references *)
+
+  (** The original's [⧖]/[⧗]/[£] and the [▷]s they strip are gone; the
+    arbitrary [Timeless G] guarding [@[κ]] is the fraction inside the
+    [Ltok] the context now is. *)
+  Lemma tctx_unwrap_uniq_xsum {𝔄l 𝔅l} i (tyl: typel 𝔄l) κ p (T: tctx 𝔅l) E L :
+    lctx_lft_alive E L κ →
+    tctx_incl E L (p ◁ &uniq{κ} (Σ! tyl) +:: T)
+      (p +ₗ #1 ◁ &uniq{κ} (tyl +!! i) +:: T)
+      (λ post '(m -:: bl), λ mask π, ∃a: ~~(𝔄l !!ₗ i),
+        (uniq_bor_current m).1 = pinj i a ∧
+        ∀a': 𝔄l !!ₗ i, (uniq_bor_future m π).1 = pinj i a' →
+        ∀ m': ~~ (uniq_borₛ (𝔄l !!ₗ i)),
+          uniq_bor_current m' = a → uniq_bor_future m' π = a' →
+          post (m' -:: bl) mask π).
+  Proof.
+    move=> Alv. split.
+    { move=> p1 p2 Eq [m bl] mask π. split.
+      - move=> [a[Heq Ha]]. exists a. split; [exact Heq|]=> a' H1 m' H2 H3.
+        apply (proj1 (Eq _ mask π)), (Ha a' H1 m' H2 H3).
+      - move=> [a[Heq Ha]]. exists a. split; [exact Heq|]=> a' H1 m' H2 H3.
+        apply (proj2 (Eq _ mask π)), (Ha a' H1 m' H2 H3). }
+    move=> γ q tid [[[[[[l [x0 pad]] ξi] d'] g'] idx] xl] mask post.
+    iIntros "#LFT #PROPH #UNIQ #E tok /=[p T] #Obs W".
+    iDestruct (lctx_lft_alive_get_guards γ q E L κ Alv with "E tok W")
+      as "(tok & W & #Alv)".
+    iDestruct "tok" as "[#key f]".
+    iAssert (frac_tok γ q &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "[] Alv"). iApply (Ltok_guard_frac with "key"). }
+    iDestruct "p" as (v d) "[%Ev [gho %Phys]]".
+    iMod (proph_obs_sat with "PROPH Obs") as %[πSat X]; [solve_ndisj|].
+    destruct X as [x1 [PinjEq _]]. simpl in PinjEq. subst x0.
+    rewrite uniq_bor_gho.
+    iDestruct "gho" as "(#Incl & %Ineqs & UniqBody & #PtBase & #Pers)".
+    iDestruct "Pers" as "[Dead|#Pers]".
+    { (* [κ] is already dead, so the lifetime context is contradictory *)
+      iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+      iDestruct (guard_trans with "Gκ Incl'") as "#G3".
+      iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+      iDestruct (guard_acc with "G3 f Wg") as "[Alive _]".
+      iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
+    rewrite xsum_gho_pers_pinj.
+    iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
+    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "ξBorFull".
+    iAssert (bor_sem (gsrc_fml (GFrac γ q)) &&{Wguard}&&> @[κ])%I as "#Gκx".
+    { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ q))). iApply "Gκ". }
+    iDestruct (llftl_bor_acc_guarded ⊤ (gsrc_fml (GFrac γ q)) κ
+      with "LFT ξBorFull Gκx [f]") as "A";
+      [by iApply (gsrc_fml_sem_2 (s := GFrac γ q))|].
+    iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
+    iMod ("A'" with "W") as "[W [P' ToBor]]".
+    iEval (rewrite uniq_body_fml_sem) in "P'".
+    iDestruct "P'" as (x'' d'' g'') "(ξPc & Gho1 & Pt1)".
+    iDestruct (uniq_agree with "ξVo ξPc") as %[<- Heq]. inversion Heq.
+    subst d'' g''.
+    have ?: Inhabited (𝔄l !!ₗ i) := populate (vπ x1 inhabitant).
+    iMod (uniq_intro x1 (vπ x1) (d', g') with "PROPH UNIQ")
+      as (ζi) "[ζVo ζPc]"; [set_solver|].
+    set ξ := PrVar ((Σ! 𝔄l)%ST ↾
+      prval_to_inh (@vπ (Σ! 𝔄l)%ST (pinj i x1, pad))) ξi.
+    set ζ := PrVar ((𝔄l !!ₗ i) ↾ prval_to_inh (vπ x1)) ζi.
+    iDestruct (uniq_proph_tok with "ζVo ζPc") as "(ζVo & ζ & ToζPc)".
+    iMod (uniq_preresolve ξ [ζ] (λ π, (of_xsum (xinj i (π ζ)), pad))
+      with "UNIQ PROPH ξVo ξPc [$ζ]")
+      as "(#Obs' & (ζ & _) & ToξPc)"; [set_solver| |done|].
+    { move=> π π' Eqv. have Eqv2 := Eqv ζ. rewrite Eqv2; [done|].
+      apply list_elem_of_here. }
+    iDestruct ("ToζPc" with "ζ") as "ζPc".
+    iEval (rewrite xsum_gho_pinj) in "Gho1".
+    iEval (rewrite (split_pt_xsum_cells'' i)) in "Pt1".
+    iDestruct "Pt1" as "(Pt1 & Pt2 & Pt3)".
+    iDestruct ("ToBor" $! (uniq_body_fml (tyl +!! i) x1 ζi tid
+      (cloc_take (cloc_skip l 1) (ty_size (tyl +!! i))))
+      with "[ToξPc Pt1 Pt3] [ζPc Gho1 Pt2]") as "B".
+    { iIntros "Body". iEval (rewrite uniq_body_fml_sem) in "Body".
+      iDestruct "Body" as (y e h) "(ζPc & Gho & Pt)". iModIntro.
+      rewrite uniq_body_fml_sem. iExists (pinj i y, pad), e, h.
+      rewrite xsum_gho_pinj (split_pt_xsum_cells'' i).
+      iFrame "Gho Pt1 Pt Pt3". iApply "ToξPc".
+      iApply (proph_eqz_modify (λ π, (pinj i (π ζ), pad))).
+      { iApply proph_obs_true=> ?. done. }
+      iDestruct (proph_ctrl_eqz with "PROPH ζPc") as "Eqz".
+      iDestruct (proph_eqz_constr (λ t : 𝔄l !!ₗ i, (pinj i t, pad))
+        (H:=ltac:(move=> u1 u2 ha; inversion ha as [hb];
+          by apply pinj_Inj in hb)) with "Eqz") as "Eqz2".
+      iApply (proph_eqz_eq with "Eqz2"); [done|].
+      fun_ext=> ?. simpl. by rewrite psum_map1_pinj. }
+    { rewrite uniq_body_fml_sem. iExists x1, d', g'. iFrame "ζPc Gho1 Pt2". }
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "B") as "B'";
+      [set_solver|].
+    iMod ("B'" with "W") as "[W [Bor f]]".
+    iDestruct (gsrc_fml_sem_1 (s := GFrac γ q) with "f") as "f".
+    rewrite (llftl_bor_idx κ (uniq_body_fml (tyl +!! i) x1 ζi tid
+      (cloc_take (cloc_skip l 1) (ty_size (tyl +!! i))))).
+    iDestruct "Bor" as (ζidx) "[#ζBor ζTok]".
+    iDestruct (guard_rhs_iff (split_pt_xsum_cells' i tyl l.1 l.2)
+      with "PtBase") as "#PtBase'".
+    iDestruct (guard_rhs_sep_r with "PtBase'") as "#PtBasex".
+    iDestruct (guard_rhs_sep_l with "PtBasex") as "#PtBase2".
+    inversion Phys as [Eqv]. subst v.
+    iModIntro. iFrame "W key f".
+    destruct l as [l1 cells].
+    iExists ((cloc_take (cloc_skip (l1, cells) 1) (ty_size (tyl +!! i)),
+      x1, ζi, d', g', ζidx) -:: xl).
+    iFrame "T". iSplit; last first.
+    { iCombine "Obs Obs'" as "#Obs2".
+      iApply (proph_obs_impl with "Obs2")=>/= π [[x2 [Heq2 Ha]] Hb].
+      apply pinj_Inj in Heq2. subst x2. apply (Ha (π ζ)); [|done|done].
+      rewrite /uniq_bor_future /= Hb //. }
+    iExists _, d. iSplit; [by rewrite /= Ev|].
+    rewrite /ty_own uniq_bor_gho. iSplit; [|done].
+    iSplitR.
+    { iApply (guard_trans with "Incl []").
+      iApply lft_intersect_tyl_lfts_lookup_incl. }
+    iSplitR; [iPureIntro; lia|]. iFrame "ζVo ζTok ζBor".
+    iFrame "PtBase2". by iRight.
+  Qed.
 End type_sum.
