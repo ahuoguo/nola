@@ -873,4 +873,151 @@ Section type_sum.
       |done].
     by move=> ?[??]/=.
   Qed.
+
+  (** The original splits a seven-way [£] budget between the write guard,
+    [resolve], [wp_memcpy_guarded] (which itself wants [£(6*d)]), the laters
+    of the write guard it reopens and the closing [typed_write] step.
+    Later-free, none of it is needed. *)
+  Lemma type_sum_memcpy_instr {𝔄 𝔄' 𝔅 𝔅' ℭ ℭl} (tyl: typel ℭl) (i: fin _)
+      (tyw: type 𝔄) (tyw': type 𝔄') (tyr: type 𝔅) (tyr': type 𝔅')
+      (tyb: type ℭ) p q gtw stw gtr str Φ E L I :
+    typed_write E L tyw tyb tyw' (Σ! tyl) gtw stw → resolve' E L tyb Φ →
+    typed_read E L tyr (tyl +!! i) tyr' gtr str →
+    typed_instr E L I +[p ◁ tyw; q ◁ tyr]
+      (p <-{(tyl +!! i).(ty_size),Σ i} !q) (λ _, +[p ◁ tyw'; q ◁ tyr'])
+      (λ post '-[a; b], λ mask π, ∀ pad,
+        Φ (gtw a) π (∀ zw zr,
+          stw a (pinj i (gtr b), pad) zw → str b zr →
+          post -[zw; zr] mask π)).
+  Proof.
+    iIntros ([Eq Wrt] Rslv Rd ???? (x & y &[]))
+      "/= #LFT #PROPH #UNIQ #E L I (p & q &_) Obs".
+    iDestruct (closed_hasty with "p") as %Cp.
+    iDestruct (closed_hasty with "q") as %Cq.
+    iApply twpw_fupdw_nonval; [done|].
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Ltok_alloc with "L W") as "[W (%γ & tok)]".
+    iDestruct (Ltok_split_1 with "tok") as "[t1 tok2]".
+    iDestruct (Ltok_split_1 with "tok2") as "[t2 t3]". iModIntro. iFrame "W".
+    wp_bind p. iApply (twp_hasty with "p"). iIntros (v d Heq) "tyw".
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Wrt with "LFT UNIQ E t1 tyw W") as
+      "(W & %l & %d' & %Hw & %Heqv & -> & (%vl & ↦ & Own) & Hw' & #Hwpt &
+        Totyw)".
+    inversion Heqv. subst v.
+    iDestruct "Own" as "[tyb_gho %tyb_phys]".
+    assert (length vl = ty_size tyb) as Sz.
+    { rewrite <- tyb_phys. apply ty_size_eq. }
+    destruct vl as [|v vl]; [rewrite Eq in Sz; done|].
+    destruct l as [l cells]. destruct cells as [|cells0 cells]; [done|].
+    rewrite heap_mapsto_cloc_fancy_vec_cons. iDestruct "↦" as "[↦1 ↦2]".
+    rewrite -heap_complete_mapsto_fancy_singleton.
+    iMod (mapsto_vec_untether_singleton _ _ ⊤ ∅ with "↦1")
+      as (v₀ l₀ c₀) "[%Hl [↦1 _]]". inversion Hl. subst l₀ c₀.
+    iDestruct (guard_rhs_iff (heap_mapsto_cloc_emp_cons l cells0 cells)
+      with "Hwpt") as "#Hg0".
+    iDestruct (guard_rhs_sep_l with "Hg0") as "#Hgdisc".
+    iDestruct (guard_rhs_sep_r with "Hg0") as "#Hgrest".
+    iModIntro. iFrame "W". wp_bind (_ <- _)%E.
+    iApply (twp_write_na_guarded _ _ _ _ _ _ _ Hw with "[Hw' ↦1]").
+    { iFrame "Hgdisc Hw' ↦1". }
+    iIntros "[↦1 Hw']". wp_seq.
+    wp_bind p. iApply twp_wand; [by iApply twp_eval_path|]. iIntros (?->).
+    wp_op. wp_bind q. iApply (twp_hasty with "q"). iIntros (vb db ?) "tyr".
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Rd with "LFT E t2 tyr W") as
+      "(W & %l0 & %vlbc & %vlb & %Hr & %Heqv2 & %Hleneq & Hr' & #Hrpt' &
+        Retether & _ & Own' & Totyr')".
+    inversion Heqv2. subst vb.
+    iDestruct "Own'" as "[tyb'_gho %tyb'_phys]".
+    assert (length vlb = ty_size (tyl +!! i)) as Sz'.
+    { rewrite <- tyb'_phys. apply ty_size_eq. }
+    assert (length vlb ≤ length vl) as HlenLe.
+    { rewrite Eq in Sz. rewrite Sz'.
+      have h := max_hlist_with_ge (λ X : syn_type, ty_size) tyl i.
+      have Hlia : ∀ a b c, S a = S b → c ≤ b → c ≤ a by lia.
+      apply (Hlia _ _ _ Sz h). }
+    have Hmin : length vlb `min` length vl = length vlb by lia.
+    iMod (Rslv _ _ ⊤ with "LFT PROPH UNIQ E t3 tyb_gho W")
+      as "(W & #Obs' & t3)"; [solve_ndisj|].
+    rewrite -{1}(take_drop (length vlb) vl) heap_cloc_mapsto_fancy_vec_app
+      length_take Hmin.
+    iDestruct "↦2" as "[↦2 ↦3]".
+    iMod (mapsto_vec_untether _ _ ⊤ ∅ with "↦2")
+      as (vl2c) "[↦2 [%Hvlen2 _]]".
+    iMod (mapsto_vec_untether _ _ ⊤ ∅ with "↦3")
+      as (vl3c) "[↦3 [%Hvlen3 _]]".
+    iDestruct (guard_rhs_iff
+      (heap_cloc_mapsto_emp_vec_app (l +ₗ 1, cells) (length vlb))
+      with "Hgrest") as "#Hg1".
+    iDestruct (guard_rhs_sep_l with "Hg1") as "#Hgmid".
+    iModIntro. iFrame "W".
+    iApply (twp_memcpy_guarded _ (cloc_take (l +ₗ 1, cells) (length vlb)) l0
+      vl2c vlbc Hw Hr with "[↦2 Hw' Hr']").
+    { rewrite Hvlen2 length_take /=. lia. }
+    { congruence. }
+    { iFrame "↦2 Hw' Hr'". iFrame "Hgmid Hrpt'". }
+    iIntros "(↦2 & Hw' & Hr') W".
+    iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (guard_acc with "Hgmid Hw' Wg") as "[prefix back]".
+    iMod (fupd_mask_mono ∅ ⊤ with "(Retether [$prefix $↦2])")
+      as "[prefix ↦2]"; [set_solver|].
+    iDestruct ("back" with "prefix") as "[Wg Hw']".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
+    iMod ("Totyw" $! (pinj i (gtr y), vl3c) db
+      with "[↦1 ↦2 ↦3 tyb'_gho] Hw' W") as "(W & %z & tok1 & %Hz & tyw')".
+    { iExists (FVal #i :: vlb ++ fmap FVal vl3c).
+      rewrite heap_mapsto_cloc_fancy_vec_cons
+        heap_cloc_mapsto_fancy_vec_app /ty_own xsum_gho_pinj.
+      rewrite -heap_complete_mapsto_fancy_fmap_eq.
+      iFrame "↦1 ↦2 ↦3". iSplitL.
+      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]"; [lia|lia]. }
+      iPureIntro. rewrite /ty_phys /xsum_ty /= to_xsum_pinj tyb'_phys.
+      apply pad_length'. rewrite /= length_app length_fmap Hvlen3 length_drop.
+      rewrite Eq in Sz. simpl in Sz. lia. }
+    iMod ("Totyr'" with "Hr' W") as "(W & %zr & %Hzr & tok3 & tyr')".
+    iDestruct (Ltok_split_2 with "tok3 t3") as "tok2".
+    iDestruct (Ltok_split_2 with "tok1 tok2") as "tok".
+    iMod (Ltok_withdraw with "tok W") as "[W L]". iModIntro. iFrame "W".
+    iExists -[z; zr]. iFrame "L I". iSplit; [rewrite right_id|].
+    - iSplitL "tyw'"; (rewrite tctx_hasty_val'; [|done]).
+      + iExists (S d' `max` S db). iDestruct "tyw'" as "[gho phys]". iFrame.
+        iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; [lia|lia].
+      + iExists db. iFrame "tyr'".
+    - iCombine "Obs Obs'" as "Obs2".
+      iApply (proph_obs_impl with "Obs2")=>/= ?[Ha Imp].
+      generalize Hzr. generalize Hz. generalize zr. generalize z. apply Imp.
+      apply Ha.
+  Qed.
+
+  Lemma type_sum_memcpy {𝔄 𝔄' 𝔅 𝔅' ℭ ℭl 𝔇l 𝔈l 𝔉} (tyl: typel ℭl) (i: fin _)
+      (tyw: type 𝔄) (tyr: type 𝔅) (tyw': type 𝔄') (tyr': type 𝔅')
+      (tyb: type ℭ) (k n: Z) (T: tctx 𝔇l) (T': tctx 𝔈l) p q gtw stw gtr str
+      trx tr e Φ E L I (C: cctx 𝔉) :
+    Closed [] e → k = i → tctx_extract_ctx E L +[p ◁ tyw; q ◁ tyr] T T' trx →
+    typed_write E L tyw tyb tyw' (Σ! tyl) gtw stw → resolve' E L tyb Φ →
+    n = (tyl +!! i).(ty_size) → typed_read E L tyr (tyl +!! i) tyr' gtr str →
+    typed_body E L I C (p ◁ tyw' +:: q ◁ tyr' +:: T') e tr -∗
+    typed_body E L I C T (p <-{n,Σ k} !q;; e) (trx ∘
+      (λ post '(a -:: b -:: el), λ mask π, ∀ pad,
+        Φ (gtw a) π (∀ zw zr,
+          stw a (pinj i (gtr b), pad) zw → str b zr →
+          tr post (zw -:: zr -:: el) mask π)))%type.
+  Proof.
+    iIntros (?->???->?) "e". iApply typed_body_tctx_incl; [done|].
+    iApply type_seq; [by eapply type_sum_memcpy_instr|by apply tctx_incl_refl|
+      |done].
+    by move=> ?[?[??]]/=.
+  Qed.
+
+  Lemma ty_outlives_E_elctx_sat_sum {𝔄l} E L (tyl: typel 𝔄l) κ :
+    elctx_sat E L (tyl_outlives_E tyl κ) →
+    elctx_sat E L (ty_outlives_E (Σ! tyl) κ).
+  Proof.
+    move=> Sat. eapply eq_ind; [done|]. clear Sat.
+    rewrite /tyl_outlives_E /ty_outlives_E /=.
+    induction tyl as [|???? IH]=>//=. by rewrite IH fmap_app.
+  Qed.
 End type_sum.
+
+Global Hint Resolve ty_outlives_E_elctx_sat_sum : lrust_typing.
