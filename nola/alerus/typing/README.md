@@ -58,38 +58,68 @@ provides `lrust_adequacy` and, beyond what the original can state,
 2. **`bor_sem` has no definition.**  A concrete `FML` means a `cif` (see
    `nola/iris/cif.v`) with roughly 25 constructors - `gsrc`, `alive`,
    `dead`, `cmapstoany`, `cells`, `ccells`, `cellsvec`, `freeable`, `heap`,
-   `vo`, `idxbor`, `ra`, `obs`, `handle`, the `cna_*` and `na_inv_*` family,
-   … - together with their `Ecsem`.  That is long but mechanical, with one
-   exception:
+   `vo`, `pc`, `ra`, `obs`, `handle`, the `cna_*` and `na_inv_*` family, … -
+   together with their `Ecsem`.  Most of that is long but mechanical: those
+   constructors' semantics mention their subformulas and nothing else.
 
-   `LocalInvFml.cna_closer_fml` (`local_inv.v:38`) and
-   `AtomicInvFml.atomic_closer_fml` (`atomic_inv.v`) are formulas whose
-   semantics is
+   What is not mechanical is that **`bor_sem` would have to be defined in
+   terms of itself at formulas that are not subformulas**, so it is not a
+   structural recursion over the `cif`; and the self-reference sits on both
+   sides of a `-∗` with no `▷`, so it is not a contractive fixpoint either.
+   Three constructors do this:
 
-   ```coq
-   cna_closer alerus_wsat κ p N bor_sem Px
-   ```
+   * `guard_fml Px Qx` (`ctx.v:596`), whose semantics is
+     `bor_sem Px &&{Wguard}&&> bor_sem Qx`.  `Wguard = llft_wsatG =
+     WG ∗ shr_wsat ∗ box_wsat bor_sem ∗ llft_inv_main`
+     (`lifetime/lifetime_full.v:143`), and `shr_wsat` is
+     `sinv_wsat (λ _ Qx, bor_sem Qx)`.
+   * `idxbor_fml κ idx Px` (`ctx.v:626`): `idx_bor κ idx Px` is
+     `κ ⊑ κ' ∗ ∃ Px', □ (bor_sem Px' ↔ bor_sem Px) ∗ sinv_tok sn Px'`
+     (`lifetime_full.v:736`) — an `∃` over *arbitrary* formulas under
+     `bor_sem`, and `κ ⊑ κ'` is itself a guard over `llft_wsatG`
+     (`lifetime_full.v:249`).
+   * `fn_fml fp spec x` (`function.v:113`), whose semantics is the
+     function's whole `typed_body` judgment and so mentions `twpw` over
+     `alerus_wsat`.
 
-   i.e. a magic wand over `alerus_wsat`, which itself contains
-   `cna_wsat alerus_WGuard bor_sem`.  Defining `bor_sem` therefore needs
-   `bor_sem` applied to *arbitrary* formulas, not to subformulas, so it is
-   not a structural recursion; and the occurrence sits on both sides of `-∗`
-   with no `▷`, so it is not contractive either.  Storing a closer over the
-   world satisfaction *inside* the world satisfaction is exactly the
-   self-reference the later-free discipline rules out.
+   The two *closers* used to belong on this list.  They no longer do: an
+   opened invariant is now a token, `cna_otok` / `na_otok`, following Nola's
+   `obor_tok` (`nola/iris/borrow.v:115`), which is plain CMRA ownership plus
+   a lifetime-token fragment and mentions no interpretation at all.
 
-   Two ways out, neither of them local:
+   **Why Nola does not hit this and we do.**  Nola's borrow machinery is
+   token-shaped throughout: `bor_tok α Px` is
+   `own borrow_name (◯ {[i := (to_agree α, {[j := Excl (Px, Clsd)]}, ε)]})`,
+   which carries `Px` as *data*, and `α ⊑□ β` is over lifetime ghost state
+   only.  Neither mentions the interpretation, so `cif_bor` and friends are
+   ordinary constructors.  Leaf's lifetime logic - which VerusBelt is built
+   on, and which this port reimplements later-free - instead bakes the world
+   satisfaction into the proposition: inclusion *is* a guard, and a shared
+   borrow *is* a guard.
 
-   * Hand back the closer's *resources* instead of the wand.  Concretely
-     `cna_inv_acc` builds its closer out of `cna_inv γ p N Px`, a `cna_own`
-     fragment and the half of the lifetime token that records `κ`
-     (`util/cancellable_na_invariants.v:356`ff.).  Exposing those as a
-     `cna_closer_res` predicate, with `cna_close` restated over it, makes the
-     closer a composite of leaf constructors.  This touches
-     `cancellable_na_invariants.v`, `na_inv_fork.v`, `local_inv.v` and
-     `atomic_inv.v`.
-   * Express the closer as a *judgment* and use Nola's derivability machinery
-     (`nola/bi/deriv.v`, as `nola/iris/inv_deriv.v` does), so the semantics is
-     parameterised by `δ` and the knot is tied by `der`.  This keeps the
-     interfaces as they are but pulls the whole `Dsem`/`Csem`/`Jsem` layer
-     into the development.
+   Two ways forward.
+
+   * **Magic derivability** (`nola/bi/deriv.v`).  This is Nola's own answer
+     to storing a world-satisfaction-quantifying accessor in a formula:
+     `inv_deriv.v` stores `inv_acsr sm N P :=
+     ∀E, ⌜↑N⊆E⌝ → |=[inv_wsat sm]{E,E∖↑N}=> P ∗ (P =[inv_wsat sm]{E∖↑N,E}=∗ True)`
+     as a *judgment*, with `inv' δ N Px := □ δ (inv_jacsr N Px)` and
+     `invJT_sem δ J := inv_acsr ⟦⟧(δ) …`.  The knot is tied by
+     `der = psg …`; elimination is `der_sound` (`invd_acc`), introduction is
+     `Deriv_factor'` (`inv_acsr_inv'`).  Note what this does *not* give: a
+     `⊣⊢` semantics is impossible, and `psg` yields only the post-fixpoint
+     `der J ⊢ ⟦J⟧(der)`.  So `guard_fml_sem`, `idxbor_fml_sem` and
+     `fn_fml_sem` would split into an elimination at `der` and an
+     introduction that must hold **uniformly in `δ'`** - which is exactly why
+     every law of Nola's own `Ty` class is stated `∀ δ`
+     (`nola/examples/rust_halt/type.v:128-145`).  Making this development
+     `δ`-parametric is the price.
+   * **Replace the lifetime logic with Nola's** (`nola/iris/borrow.v`,
+     `nola/iris/lft.v`), so that inclusion and shared borrows are tokens and
+     the guard disappears from the formulas.  That is a different
+     development - it is what `rust_halt` is - and it gives up the Leaf
+     shape the port deliberately follows.
+
+   Either way, `fn_fml` needs derivability regardless: a function type's
+   ghost assertion is its own typing judgment, and `rust_halt` has no
+   function type, so there is no worked precedent for it in Nola.
