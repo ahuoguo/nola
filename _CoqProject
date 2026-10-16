@@ -190,3 +190,4 @@ nola/alerus/typing/borrow.v
 nola/alerus/typing/product_split.v
 nola/alerus/typing/type_sum.v
 nola/alerus/typing/pptr.v
+nola/alerus/typing/local_inv.v
