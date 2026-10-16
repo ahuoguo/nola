@@ -186,3 +186,4 @@ nola/alerus/typing/programs_util_own.v
 nola/alerus/typing/ra.v
 nola/alerus/typing/uniq_util.v
 nola/alerus/typing/uniq_bor.v
+nola/alerus/typing/borrow.v
