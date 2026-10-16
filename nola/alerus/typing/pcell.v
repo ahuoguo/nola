@@ -691,4 +691,176 @@ Section typing.
       (@to_inh_syn_type (trackedₛ (pcellₛ 1 * Zₛ)) ([γ], x))) in Hrsv.
     by rewrite Hrsv.
   Qed.
+
+  Definition AtomicCAS : val :=
+    (λ: ["pcell_ref"; "perm_mut_ref"; "n1"; "n2"],
+      CAS "pcell_ref" "n1" "n2")%V.
+
+  Lemma typed_pcell_atomic_CAS κ (pcell_ref perm_mut_ref p1 p2 : path) E L I :
+    lctx_lft_alive E L κ →
+    typed_instr E L I
+      +[pcell_ref ◁ shr_bor κ (pcell_ty 1);
+        perm_mut_ref ◁ &uniq{κ} (cell_points_to_ty int); p1 ◁ int; p2 ◁ int]
+      (AtomicCAS [pcell_ref; perm_mut_ref; p1; p2]) (λ v, +[v ◁ int])
+      (λ post '-[(cl, γs); m; n1; n2], λ mask π,
+        let '(cl', (γs', n), ξi, d, g, idx) := m in γs = γs' ∧
+          if decide (n = n1)
+          then uniq_bor_future m π = (γs', n2) → post -[1%Z] mask π
+          else uniq_bor_future m π = (γs', n) → post -[0%Z] mask π).
+  Proof.
+    move=> Alv tid post mask iκs vπl.
+    iIntros "#LFT #PROPH #UNIQ #E L I TY #Obs"=>/=.
+    iDestruct (Alv with "L E") as "#Alv".
+    destruct vπl as [[cl γs] [u [n1 [n2 []]]]].
+    destruct u as [[[[[cl' [γs' x]] ξi] di] gi] ξidx].
+    iDestruct "TY" as "(Hcell & Hperm & Hn1 & Hn2 & _)".
+    iDestruct "Hcell" as (pl d0 Heval) "[Hshr %Hphys]".
+    iDestruct "Hperm" as (pl' d1 Heval') "[Huniq %Hphys']".
+    iDestruct "Hn1" as (q1 e1 Hpath1) "[_ %Hphys1]".
+    iDestruct "Hn2" as (q2 e2 Hpath2) "[_ %Hphys2]".
+    simpl in Hphys, Hphys', Hphys1, Hphys2.
+    inversion Hphys; subst pl. inversion Hphys'; subst pl'.
+    inversion Hphys1; subst q1. inversion Hphys2; subst q2.
+    destruct d0 as [|d0];
+      [by iDestruct (false_fml_sem_1 with "Hshr") as "[]"|].
+    rewrite shr_bor_gho. iDestruct "Hshr" as "#(Hcells & _ & Hlen0)".
+    rewrite pcell_ty_gho_pers. iDestruct "Hlen0" as %Hlen.
+    rewrite uniq_bor_gho.
+    iDestruct "Huniq" as "(#Incl & %Hineq & UniqBody & #PtBase & #Pers)".
+    iApply twpw_fupdw_nonval; [done|].
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
+    iMod (Ltok_alloc with "L W") as "[W (%γl & tok)]".
+    iDestruct (Ltok_split_1 with "tok") as "[[#key fa] [_ fb]]".
+    iDestruct (Ltok_guard_frac with "key") as "#Gfrac".
+    iAssert (frac_tok γl (1/2) &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "Gfrac Alv"). }
+    iAssert (bor_sem (gsrc_fml (GFrac γl (1/2))) &&{Wguard}&&> @[κ])%I
+      as "#Gκ'".
+    { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γl (1/2)))). iApply "Gκ". }
+    iDestruct "Pers" as "[Dead|#Pers]".
+    { iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+      iDestruct (guard_trans with "Gκ Incl'") as "#G3".
+      iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+      iDestruct (guard_acc with "G3 fb Wg") as "[Alive _]".
+      iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
+    rewrite (cell_points_to_gho_pers int (γs, x) di gi tid).
+    destruct di as [|di]; [by iDestruct "Pers" as "[]"|].
+    destruct γs as [|γ [|??]]; simpl in Hlen; [done| |done].
+    iDestruct (guard_trans with "Gκ Hcells") as "#Gpt".
+    iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (guard_acc with "Gpt fb Wg") as "[pt back]".
+    iDestruct (heap_fancy_mapsto_cells_length with "pt") as %Hlen'.
+    iDestruct ("back" with "pt") as "[Wg fb]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
+    rewrite /= ?length_pad in Hlen'.
+    destruct cl as [cll cls]. simpl in Hlen', Heval.
+    destruct cls as [|cs1 [|??]]; simpl in Hlen'; [done| |done].
+    iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
+    iDestruct (llftl_bor_idx_acc_guarded ⊤ (gsrc_fml (GFrac γl (1/2))) κ ξidx
+      with "LFT ξBor ξTok Gκ' [fa]") as "A".
+    { by iApply (gsrc_fml_sem_2 (s := GFrac γl (1/2))). }
+    iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
+    iMod ("A'" with "W") as "[W [Inner Back]]".
+    rewrite uniq_body_fml_sem.
+    iDestruct "Inner" as (y d3 g3) "(ξPc & Gho & Phys)".
+    iDestruct (uniq_agree with "ξVo ξPc") as %[<- Heq]. inversion Heq.
+    subst d3 g3. iSimpl in "Phys".
+    rewrite (cell_points_to_gho int ([γ], x) (S di) gi tid).
+    iDestruct "Gho" as "[Hcellpt _]".
+    iEval (rewrite (pcell1_cell_mapsto γ cll cs1 #x)) in "Hcellpt".
+    iDestruct (guard_rhs_iff (pcell1_phys_to_cell γ cll cs1 tid)
+      with "Hcells") as "#Hcells2".
+    iDestruct (guard_trans with "Gκ' Hcells2") as "#Gwrite".
+    iModIntro. iFrame "W".
+    wp_bind pcell_ref. iApply twp_wand; [by iApply twp_eval_path|].
+    iIntros (?->). wp_bind perm_mut_ref.
+    iApply twp_wand; [by iApply twp_eval_path|]. iIntros (?->).
+    wp_bind p1. iApply twp_wand; [by iApply twp_eval_path|].
+    iIntros (?->). wp_bind p2.
+    iApply twp_wand; [by iApply twp_eval_path|]. iIntros (?->). wp_rec.
+    destruct (decide (x = n1)) as [->|NE].
+    - (* the compare-and-swap succeeds *)
+      iApply (twp_cas_int_suc_guarded _ _ cll (cs1 ++ [γ]) n1 _ _
+        (gsrc_fml (GFrac γl (1/2))) with "[fb Hcellpt]").
+      { iFrame "Gwrite Hcellpt".
+        by iApply (gsrc_fml_sem_2 (s := GFrac γl (1/2))). }
+      iIntros "[fb Hcellpt] W".
+      iDestruct (gsrc_fml_sem_1 (s := GFrac γl (1/2)) with "fb") as "fb".
+      iEval (rewrite -(pcell1_cell_mapsto γ cll cs1 #n2)) in "Hcellpt".
+      iMod (uniq_update (PrVar ((trackedₛ (pcellₛ (ty_size int) * Zₛ))%ST
+          ↾ prval_to_inh (@vπ (trackedₛ (pcellₛ (ty_size int) * Zₛ))
+            ([γ], n1))) ξi)
+        ([γ], n2)
+        (@vπ (trackedₛ (pcellₛ (ty_size int) * Zₛ)) ([γ], n2)) (S di, gi)
+        with "UNIQ ξVo ξPc") as "[ξVo ξPc]"; [solve_ndisj|].
+      iDestruct ("Back" with "[ξPc Hcellpt Phys]") as "B".
+      { iExists ([γ], n2), (S di), gi. iFrame "ξPc".
+        rewrite (cell_points_to_gho int ([γ], n2) (S di) gi tid).
+        iSplitR "Phys"; [|iExact "Phys"].
+        iFrame "Hcellpt". by iApply empty_fml_sem_2. }
+      iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "B") as "B'";
+        [done|].
+      iMod ("B'" with "W") as "[W [ξTok fa]]".
+      iDestruct (gsrc_fml_sem_1 (s := GFrac γl (1/2)) with "fa") as "fa".
+      rewrite (uniq_body_pers_component_irrel (cell_points_to_ty int)
+        ([γ], n1) ([γ], n2) ξi (S di) gi (S di) gi ξidx κ tid cl'
+        (proof_irrel _ _))
+        (proof_irrel (prval_to_inh
+          (@vπ (trackedₛ (pcellₛ (ty_size int) * Zₛ)) ([γ], n1)))
+         (prval_to_inh
+          (@vπ (trackedₛ (pcellₛ (ty_size int) * Zₛ)) ([γ], n2)))).
+      iMod (resolve_uniq_body (cell_points_to_ty int) ([γ], n2) ξi (S di) gi
+        ξidx κ tid cl' E L γl (1/2) ⊤
+        with "LFT PROPH UNIQ Incl E [$key $fa] [$ξVo $ξTok $ξBor] W")
+        as "[W (#Hrslv & fa & _)]"; [done|solve_ndisj|].
+      iDestruct (Ltok_split_2 with "fa [$key $fb]") as "tok".
+      iMod (Ltok_withdraw with "tok W") as "[W L]".
+      iModIntro. iFrame "W". iExists -[1%Z]. iFrame "L I".
+      iSplit; last first.
+      { iDestruct (proph_obs_and with "Hrslv Obs") as "Obs2".
+        iApply (proph_obs_impl with "Obs2")=> π [Hrsv [_ Hpost]].
+        case_decide as Hd; [|done]. apply Hpost.
+        rewrite /uniq_bor_future /=.
+        rewrite (proof_irrel (prval_to_inh _)
+          (@to_inh_syn_type (trackedₛ (pcellₛ 1 * Zₛ)) ([γ], n1))) in Hrsv.
+        by rewrite Hrsv. }
+      iSplit; [|done]. rewrite tctx_hasty_val. iExists 0%nat.
+      iSplit; [by iApply empty_fml_sem_2|done].
+    - (* the compare-and-swap fails; the permission is unchanged *)
+      have Hne : n1 ≠ x := λ H, NE (eq_sym H).
+      iApply (twp_cas_int_fail_guarded _ _ cll (cs1 ++ [γ]) n1 _ _ x
+        (gsrc_fml (GFrac γl (1/2))) _ Hne with "[fb Hcellpt]").
+      { iFrame "Gwrite Hcellpt".
+        by iApply (gsrc_fml_sem_2 (s := GFrac γl (1/2))). }
+      iIntros "[fb Hcellpt] W".
+      iDestruct (gsrc_fml_sem_1 (s := GFrac γl (1/2)) with "fb") as "fb".
+      iEval (rewrite -(pcell1_cell_mapsto γ cll cs1 #x)) in "Hcellpt".
+      iDestruct ("Back" with "[ξPc Hcellpt Phys]") as "B".
+      { iExists ([γ], x), (S di), gi. iFrame "ξPc".
+        rewrite (cell_points_to_gho int ([γ], x) (S di) gi tid).
+        iSplitR "Phys"; [|iExact "Phys"].
+        iFrame "Hcellpt". by iApply empty_fml_sem_2. }
+      iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "B") as "B'";
+        [done|].
+      iMod ("B'" with "W") as "[W [ξTok fa]]".
+      iDestruct (gsrc_fml_sem_1 (s := GFrac γl (1/2)) with "fa") as "fa".
+      iMod (resolve_uniq_body (cell_points_to_ty int) ([γ], x) ξi (S di) gi
+        ξidx κ tid cl' E L γl (1/2) ⊤
+        with "LFT PROPH UNIQ Incl E [$key $fa] [$ξVo $ξTok $ξBor] W")
+        as "[W (#Hrslv & fa & _)]"; [done|solve_ndisj|].
+      iDestruct (Ltok_split_2 with "fa [$key $fb]") as "tok".
+      iMod (Ltok_withdraw with "tok W") as "[W L]".
+      iModIntro. iFrame "W". iExists -[0%Z]. iFrame "L I".
+      iSplit; last first.
+      { iDestruct (proph_obs_and with "Hrslv Obs") as "Obs2".
+        iApply (proph_obs_impl with "Obs2")=> π [Hrsv [_ Hpost]].
+        case_decide as Hd; [done|]. apply Hpost.
+        rewrite /uniq_bor_future /=.
+        rewrite (proof_irrel (prval_to_inh _)
+          (@to_inh_syn_type (trackedₛ (pcellₛ 1 * Zₛ)) ([γ], x))) in Hrsv.
+        by rewrite Hrsv. }
+      iSplit; [|done]. rewrite tctx_hasty_val. iExists 0%nat.
+      iSplit; [by iApply empty_fml_sem_2|done].
+  Qed.
 End typing.
