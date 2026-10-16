@@ -334,4 +334,134 @@ Section typing.
     iApply (ty_gho_pers_depth_mono ty d2 (S (S d2)) (S (S d2))
       (S (S (S d2))) x tid with "Hpers"); lia.
   Qed.
+
+  (** The physical footprint of a permission cell, re-read as the flat
+    locations the cells stand for *)
+  Lemma pcell_phys_to_flat n (γs : ~~(pcellₛ n)) (cl : cloc) tid :
+    length γs = n → length cl.2 = n →
+    (cl.1 ↦[^ cl.2 ]!∗ ty_phys (pcell_ty n) γs tid) ⊣⊢
+      cloc_flat_insert cl γs #↦∗_.
+  Proof.
+    move=> Hlen Hlen2. rewrite (pcell_ty_gho_phys n γs tid Hlen cl).
+    rewrite heap_mapsto_cells_to_complete_mapsto_fancy_vec.
+    rewrite (heap_complete_mapsto_combine γs cl); [done|].
+    by rewrite Hlen2 Hlen.
+  Qed.
+
+  Definition PCellMutBorrow : val :=
+    (λ: ["pcell_ref"; "perm_mut_ref"], "pcell_ref")%V.
+
+  (** As in [typed_pcell_borrow], the original's symmetric case split on which
+    of the two depths is the larger only picked the time receipt that paid for
+    the [▷]s in front of the shared ghost assertions; one branch does here. *)
+  Lemma typed_pcell_borrow_mut {𝔄} κ (pcell_ref perm_mut_ref : path)
+      (ty : type 𝔄) E L I :
+    lctx_lft_alive E L κ →
+    typed_instr E L I
+      +[pcell_ref ◁ shr_bor κ (pcell_ty (ty_size ty));
+        perm_mut_ref ◁ &uniq{κ} (cell_points_to_ty ty)]
+      (PCellMutBorrow [pcell_ref; perm_mut_ref]) (λ v, +[v ◁ &uniq{κ} ty])
+      (λ post '-[(cl, γs); m], λ mask π,
+        let '(cl', (γs', x), ξi, d, g, idx) := m in γs = γs' ∧ ∀ m',
+          uniq_bor_current m' = x →
+          uniq_bor_future m' π = (uniq_bor_future m π).2 →
+          (uniq_bor_future m π).1 = γs →
+          uniq_bor_loc m' = cloc_flat_insert cl γs →
+          post -[m'] mask π).
+  Proof.
+    move=> Alv tid post mask iκs vπl.
+    iIntros "#LFT #PROPH #UNIQ #E L I TY #Obs"=>/=.
+    iDestruct (Alv with "L E") as "#Alv".
+    destruct vπl as [[cl γs] [u []]].
+    destruct u as [[[[[cl' [γs' x]] ξi] d] g] ξidx].
+    iDestruct "TY" as "(Hcell & Hperm & _)".
+    iDestruct "Hcell" as (pl d0 Heval) "[Hshr %Hphys]".
+    iDestruct "Hperm" as (pl' d'' Heval') "[Huniq %Hphys']".
+    simpl in Hphys, Hphys'. inversion Hphys; subst pl.
+    inversion Hphys'; subst pl'.
+    destruct d0 as [|d0];
+      [by iDestruct (false_fml_sem_1 with "Hshr") as "[]"|].
+    rewrite shr_bor_gho /=. iDestruct "Hshr" as "#(Hpt & _ & Hlen0)".
+    rewrite pcell_ty_gho_pers. iDestruct "Hlen0" as %Hlen.
+    rewrite uniq_bor_gho.
+    iDestruct "Huniq" as "(#Incl & %Hineq & UniqBody & #PtBase & #Pers)".
+    iApply twpw_fupdw_nonval; [done|].
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Ltok_alloc with "L W") as "[W (%γ & [#key f])]".
+    iDestruct (Ltok_guard_frac with "key") as "#Gfrac".
+    iAssert (frac_tok γ 1 &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "Gfrac Alv"). }
+    (* read the length of the cell list off the shared points-to, giving the
+      guard back right away *)
+    iDestruct (guard_trans with "Gκ Hpt") as "#Gpt".
+    iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (guard_acc with "Gpt f Wg") as "[pt back]".
+    iDestruct (heap_fancy_mapsto_cells_length with "pt") as %Hlen'.
+    iDestruct ("back" with "pt") as "[Wg f]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
+    rewrite /= length_pad in Hlen'.
+    iDestruct "Pers" as "[Dead|#Pers]".
+    { iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+      iDestruct (guard_trans with "Gκ Incl'") as "#G3".
+      iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg' Wr']".
+      iDestruct (guard_acc with "G3 f Wg'") as "[Alive _]".
+      iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
+    rewrite cell_points_to_gho_pers /=.
+    destruct d as [|d]; [by iDestruct "Pers" as "[]"|].
+    iDestruct "Pers" as "[_ Pers']".
+    iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
+    destruct cl' as [cl'1 cs']. destruct cs' as [|cs'0 cs']; last first.
+    { (* the permission's own cell list is empty, so this cannot happen *)
+      iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
+      iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "Bor".
+      iAssert (bor_sem (gsrc_fml (GFrac γ 1)) &&{Wguard}&&> @[κ])%I as "#Gκx".
+      { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ 1))). iApply "Gκ". }
+      iDestruct (llftl_bor_acc_guarded ⊤ (gsrc_fml (GFrac γ 1)) κ
+        with "LFT Bor Gκx [f]") as "A";
+        [by iApply (gsrc_fml_sem_2 (s := GFrac γ 1))|].
+      iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
+      iMod ("A'" with "W") as "[W [P' _]]".
+      iEval (rewrite uniq_body_fml_sem) in "P'".
+      iDestruct "P'" as (???) "(_ & _ & Hfalse)".
+      iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hfalse")
+        as %Hfalse. by simpl in Hfalse. }
+    iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
+    have Hinj : Inj eq eq ((!ₛ) (pair_with_cell_idsₛ (𝔄:=𝔄) (ty_size ty) γs))
+      by move=> ??[=].
+    have Hmask : (↑Nllft ∪ ↑prophN ∪ ↑uniqN : coPset) ⊆ ⊤ by set_solver.
+    have Hcl : length cl.2 = length γs by rewrite Hlen' Hlen.
+    iMod (uniq_body_transform (cell_points_to_ty ty) ty (γs, x) x (S d) g ξi
+      ξidx κ tid (cl'1, []) (cloc_flat_insert cl γs) ⊤ γ L 1
+      (pair_with_cell_idsₛ (ty_size ty) γs) Hinj Hmask
+      with "LFT PROPH UNIQ [] Gκ [$key $f] [$ξVo $ξTok $ξBor] W")
+      as "[W (%ζi & %ζidx & #Obs2 & UniqBody & tok)]".
+    { iIntros "[gho pt]". rewrite cell_points_to_gho /=.
+      iDestruct "gho" as "(cells & gho)".
+      iDestruct (ty_gho_depth_mono ty d g (S d) g x tid with "gho")
+        as "[gho _]"; [lia|lia|]. iModIntro.
+      iEval (rewrite (heap_complete_mapsto_fancy_val_vec_eq''
+        γs cl (ty_phys ty x tid) Hcl)) in "cells".
+      iFrame "gho cells". iIntros (y e h) "[gho2 pt2]". iModIntro.
+      iExists (S e), h. rewrite cell_points_to_gho /=.
+      iEval (rewrite -(heap_complete_mapsto_fancy_val_vec_eq''
+        γs cl (ty_phys ty y tid) Hcl)) in "pt2".
+      iFrame "pt gho2 pt2". }
+    iMod (Ltok_withdraw with "tok W") as "[W L]". iModIntro. iFrame "W".
+    wp_bind pcell_ref. iApply twp_wand; [by iApply twp_eval_path|].
+    iIntros (?->). wp_bind perm_mut_ref.
+    iApply twp_wand; [by iApply twp_eval_path|]. iIntros (?->). wp_rec.
+    iModIntro.
+    iExists -[(cloc_flat_insert cl γs, x, ζi, S d, g, ζidx)].
+    iFrame "L I". iSplit; last first.
+    { iCombine "Obs Obs2" as "#Obs3".
+      iApply (proph_obs_impl with "Obs3")=> π [[_ Ha] Hb].
+      apply Ha; [done| | |done]; rewrite /uniq_bor_future /= Hb //. }
+    iSplit; [|done]. iExists #cl.1, d''. iSplit; [done|].
+    rewrite /ty_own uniq_bor_gho. iSplit; [|done].
+    iSplitR; [iApply "Incl"|]. iSplitR; [iPureIntro; lia|].
+    iFrame "UniqBody". iSplitR.
+    { iApply (guard_rhs_iff
+        (pcell_phys_to_flat (ty_size ty) γs cl tid Hlen Hlen') with "Hpt"). }
+    iRight. iApply (ty_gho_pers_depth_mono with "Pers'"); lia.
+  Qed.
 End typing.
