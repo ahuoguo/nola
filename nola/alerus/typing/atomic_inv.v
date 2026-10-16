@@ -47,13 +47,6 @@ Section atomic_invariants.
   Lemma Active_2_no γ : Active γ -∗ Active γ -∗ False.
   Proof. iIntros "A B". by iDestruct (own_valid_2 with "A B") as %?. Qed.
 
-  (** The original's closer takes an arbitrary mask and gives it back with
-    [↑N] added; the disjointness it needs comes from the two [na_own]s. *)
-  Definition atomic_closer (γ: gname) (N: namespace) (Px : FML $oi Σ)
-    : iProp Σ :=
-    ∀ F, (bor_sem Px ∨ Active γ) -∗ na_own ATOMIC_POOL F =[alerus_wsat]=∗
-      na_own ATOMIC_POOL (F ∪ ↑N).
-
   (** The formula constructors an atomic invariant's ghost assertion names *)
   Class AtomicInvFml := {
     active_fml : gname → FML $oi Σ;
@@ -63,9 +56,13 @@ Section atomic_invariants.
     na_inv_tok_fml : namespace → FML $oi Σ → FML $oi Σ;
     na_inv_tok_fml_sem N Px :
       bor_sem (na_inv_tok_fml N Px) ⊣⊢ na_inv_tok ATOMIC_POOL N Px;
-    atomic_closer_fml : gname → namespace → FML $oi Σ → FML $oi Σ;
-    atomic_closer_fml_sem γ N Px :
-      bor_sem (atomic_closer_fml γ N Px) ⊣⊢ atomic_closer γ N Px;
+    (** The original's closer is a wand over the world satisfaction, which
+      cannot be a formula: it would mention [bor_sem] at *every* formula.
+      Following Nola's [obor_tok] ([nola.iris.borrow]), an opened invariant
+      is a token of plain ghost ownership instead. *)
+    na_otok_fml : namespace → FML $oi Σ → FML $oi Σ;
+    na_otok_fml_sem N Px :
+      bor_sem (na_otok_fml N Px) ⊣⊢ na_otok ATOMIC_POOL N Px;
     handle_fml : coPset → FML $oi Σ;
     handle_fml_sem c :
       bor_sem (handle_fml c) ⊣⊢ atomic_lock_handle atomic_lock_ctr_name c;
@@ -86,6 +83,31 @@ Section atomic_invariants.
   Lemma external_na_inv_body_sem γ Px :
     bor_sem (Px ∨ active_fml γ)%FML ⊣⊢ bor_sem Px ∨ Active γ.
   Proof. by rewrite or_fml_sem active_fml_sem. Qed.
+
+  (** The token for an atomic invariant this thread has opened *)
+  Definition atomic_closer (γ: gname) (N: namespace) (Px : FML $oi Σ)
+    : iProp Σ := na_otok ATOMIC_POOL N (Px ∨ active_fml γ)%FML.
+  Definition atomic_closer_fml (γ: gname) (N: namespace) (Px : FML $oi Σ)
+    : FML $oi Σ := na_otok_fml N (Px ∨ active_fml γ)%FML.
+  Lemma atomic_closer_fml_sem γ N Px :
+    bor_sem (atomic_closer_fml γ N Px) ⊣⊢ atomic_closer γ N Px.
+  Proof. apply na_otok_fml_sem. Qed.
+
+  (** Close an atomic invariant with its open token.  This is the original's
+    closer, now a lemma rather than a stored wand. *)
+  Lemma atomic_close {γ N Px F} :
+    atomic_closer γ N Px -∗ (bor_sem Px ∨ Active γ) -∗
+    na_own ATOMIC_POOL F =[alerus_wsat]=∗ na_own ATOMIC_POOL (F ∪ ↑N).
+  Proof.
+    iIntros "otok body pool W".
+    iDestruct (wsat_split (W':=na_inv_wsat ATOMIC_POOL bor_sem) with "W")
+      as "[Wn Wr]".
+    iDestruct (na_inv_tok_close with "otok [body] pool Wn")
+      as "(_ & pool & Wn)".
+    { by rewrite external_na_inv_body_sem. }
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wn Wr") as "$".
+    by iFrame "pool".
+  Qed.
 
   Lemma external_na_inv_alloc N Px :
     bor_sem Px =[alerus_wsat]=∗ ∃ γ, external_na_inv γ N Px ∗ Active γ.
@@ -113,22 +135,15 @@ Section atomic_invariants.
     rewrite (na_own_subset NF). iDestruct "pool" as "[poolN pool]".
     iDestruct (wsat_split (W':=na_inv_wsat ATOMIC_POOL bor_sem) with "W")
       as "[Wn Wr]".
-    iDestruct (na_inv_tok_acc (sm:=bor_sem) (F:=↑N) with "inv poolN Wn")
-      as "(body & empty & Wn & close)"; [done|].
+    iDestruct (na_inv_tok_open (sm:=bor_sem) (F:=(↑N:coPset))
+      with "inv poolN Wn") as "(body & empty & otok & Wn)"; [done|].
     iEval (rewrite external_na_inv_body_sem) in "body".
     iDestruct "body" as "[Px|A]"; last first.
     { iDestruct (wsat_split (W':=Wguard) with "Wr") as "[Wg Wr']".
       iDestruct (guard_acc with "g G Wg") as "[A' _]".
       iDestruct (Active_2_no with "A A'") as "[]". }
     iDestruct (wsat_join (W:=alerus_wsat) with "Wn Wr") as "W".
-    iModIntro. iFrame "W pool G Px". iIntros (F') "body pool' W".
-    iDestruct (wsat_split (W':=na_inv_wsat ATOMIC_POOL bor_sem) with "W")
-      as "[Wn Wr]".
-    iDestruct ("close" with "[body] empty Wn") as "[poolN Wn]".
-    { by rewrite external_na_inv_body_sem. }
-    iDestruct (wsat_join (W:=alerus_wsat) with "Wn Wr") as "$".
-    iDestruct (na_own_disjoint with "pool' poolN") as %?.
-    iModIntro. rewrite na_own_union; [|done]. iFrame.
+    iModIntro. by iFrame "W pool G Px otok".
   Qed.
 
   Lemma external_na_inv_cancel γ N Px F :
@@ -139,8 +154,7 @@ Section atomic_invariants.
     move=> NF. iIntros "#inv A pool W".
     iMod (external_na_inv_acc_strong γ N Px F NF with "inv [] A pool W")
       as "(W & pool & A & Px & close)"; [iApply guard_refl|].
-    iMod ("close" $! (F ∖ ↑N) with "[A] pool W") as "[W pool]";
-      [by iRight|].
+    iMod (atomic_close with "close [A] pool W") as "[W pool]"; [by iRight|].
     have ->: ((F ∖ ↑N) ∪ ↑N) = F.
     { rewrite difference_union_L union_comm_L.
       by apply subseteq_union_1_L. }
@@ -510,7 +524,7 @@ Section atomic_invariants.
       [set_solver|].
     iMod ("A'" with "W")
       as "[W (%tid' & %x' & %d' & %TidsEq & gho' & %Habs & L & cna_lfts)]".
-    iMod ("closer" $! at_mask with "[gho'] pool W") as "[W pool]".
+    iMod (atomic_close with "closer [gho'] pool W") as "[W pool]".
     { iLeft. iApply (atomic_inv_body_sem_2 with "gho' [] []").
       - iApply (proph_obs_impl with "Obs")=> π [Ha _]. by rewrite Habs.
       - iPureIntro. exact TidsEq. }

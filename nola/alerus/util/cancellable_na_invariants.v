@@ -334,12 +334,29 @@ Section cna.
     rewrite (wsat_incl W (cna_wsat WG sm ∗ WG) Wr). by iIntros "$$$".
   Qed.
 
-  (** What [cna_inv_acc] hands back.  It captures the lock, the part of the
-    pool outside [i], and the half token recording [κ]. *)
-  Definition cna_closer W κ p N sm Px : iProp Σ :=
-    ∀ F' κs', sm Px -∗ cna_own p F' -∗ cna_lifetimes p κs' =[W]=∗
-      ∃ κs'', ⌜κs' = {[+ κ +]} ⊎ κs'' ∧ F' ## ↑N⌝ ∗
-        cna_own p (F' ∪ ↑N) ∗ cna_lifetimes p κs''.
+  (** The token for an *open* invariant.
+
+    Nola represents an opened borrow by a token made of plain ghost ownership
+    ([nola.iris.borrow]'s [obor_tok]) rather than by a closing wand, so that
+    it can be stored in a formula; [cna_otok] does the same here.  It holds
+    exactly what the original's closer captured: the invariant itself, its
+    lock, the part of the pool outside [i], and the half token recording
+    [κ].  Writing it this way - rather than as
+    [∀ F' κs', sm Px -∗ … =[W]=∗ …] - is what makes it expressible as a
+    formula: a wand over [W] would mention [sm] at *every* formula, not just
+    at subformulas of its own. *)
+  Definition cna_otok γ p N κ Px : iProp Σ :=
+    ∃ i, ⌜i ∈ (↑N:coPset)⌝ ∧ sinv_tok' i ((γ, p), Px) ∗ cna_lock p i ∗
+      cna_own p ((↑N:coPset) ∖ {[i]}) ∗ lft_tok (γk γ) (Some κ).
+
+  #[export] Instance cna_otok_ne {γ p N κ} : NonExpansive (cna_otok γ p N κ).
+  Proof.
+    move=> n Px Qx eq. rewrite /cna_otok. do 4 f_equiv.
+    apply sinv_tok_ne. by split.
+  Qed.
+  #[export] Instance cna_otok_proper {γ p N κ} :
+    Proper ((≡) ==> (⊣⊢)) (cna_otok γ p N κ).
+  Proof. apply ne_proper, _. Qed.
 
   (** Open a cancellable non-atomic invariant.
 
@@ -353,7 +370,7 @@ Section cna.
     (G &&{WG}&&> cna_active γ) -∗ (llft_alive κ &&{WG}&&> cna_active γ) -∗
     G =[W]=∗
       sm Px ∗ G ∗ cna_own p (F ∖ ↑N) ∗ cna_lifetimes p ({[+ κ +]} ⊎ κs) ∗
-      cna_closer W κ p N sm Px.
+      cna_otok γ p N κ Px.
   Proof.
     move=> NF. iIntros "[%i[%iN #tok]] F κs #g1 #g2 G W".
     iDestruct (cna_wsat_split with "W") as "(Wc & Wg & Wr)".
@@ -370,25 +387,8 @@ Section cna.
       { rewrite /cna_body /=. iRight. iRight. iFrame "Fi". iExists κ.
         iFrame "g2 single t1". }
       iDestruct (cna_wsat_join (W:=W) with "Wc Wg Wr") as "$". iModIntro.
-      iFrame "Px G Frest κs". iIntros (F' κs') "Px F' κs' W".
-      iDestruct (cna_wsat_split with "W") as "(Wc & Wg & Wr)".
-      iDestruct (sinv_tok_acc (sinvGS0:=cna_sinvGS) with "tok Wc")
-        as "[body →Wc]". rewrite {1}/cna_body /=.
-      iDestruct "body"
-        as "[(_ & t1' & _)|[(_ & _ & t1' & _)|(Fi & [%κ' (_ & single & t1')])]]".
-      + by iDestruct (lft_tok_agree with "t2 t1'") as %?.
-      + by iDestruct (lft_tok_agree with "t2 t1'") as %?.
-      + iDestruct (lft_tok_agree with "t2 t1'") as %eq. inversion eq. subst κ'.
-        iMod (lft_tok_update (o'':=None) with "t1' t2") as "[t1 t2]".
-        iDestruct ("→Wc" with "[Px lock t1 t2]") as "Wc".
-        { rewrite /cna_body /=. iRight. iLeft. iFrame. }
-        iMod (cna_lfts_delete with "κs' single") as (κs'') "[κs' %eqκs]".
-        iDestruct (cna_own_union2 with "Fi Fj") as "FN".
-        rewrite -union_difference_L; [|set_solver].
-        iDestruct (cna_own_disjoint with "F' FN") as %?.
-        iDestruct (cna_own_union2 with "F' FN") as "FF".
-        iDestruct (cna_wsat_join (W:=W) with "Wc Wg Wr") as "$". iModIntro.
-        iExists κs''. iFrame "FF κs'". iPureIntro. by split.
+      iFrame "Px G Frest κs". iExists i. iSplit; [done|].
+      iFrame "tok lock Fj t2".
     - iDestruct (cna_own_disjoint with "Fi Fi'") as %?. set_solver.
   Qed.
 
@@ -401,7 +401,7 @@ Section cna.
     (G &&{WG}&&> llft_alive κ) -∗ (llft_alive κ &&{WG}&&> cna_active γ) -∗
     G =[W]=∗
       cna_own p (F ∖ ↑N) ∗ cna_lifetimes p ({[+ κ +]} ⊎ κs) ∗ G ∗ sm Px ∗
-      cna_closer W κ p N sm Px.
+      cna_otok γ p N κ Px.
   Proof.
     move=> ?. iIntros "inv F κs #g #g2 G W".
     iDestruct (guard_trans with "g g2") as "#g3".
@@ -410,14 +410,32 @@ Section cna.
     iModIntro. iFrame.
   Qed.
 
-  (** Close an opened invariant *)
-  Lemma cna_close {W κ p N sm Px F κs} :
-    cna_closer W κ p N sm Px -∗ sm Px -∗ cna_own p F -∗
+  (** Close an opened invariant with its open token *)
+  Lemma cna_close `{!WsatIncl W (cna_wsat WG sm ∗ WG) Wr} {γ p N κ Px F κs} :
+    cna_otok γ p N κ Px -∗ sm Px -∗ cna_own p F -∗
     cna_lifetimes p κs =[W]=∗ ∃ κs',
       ⌜κs = {[+ κ +]} ⊎ κs' ∧ F ## ↑N⌝ ∗ cna_own p (F ∪ ↑N) ∗
       cna_lifetimes p κs'.
   Proof.
-    iIntros "closer Px F κs W". by iApply ("closer" with "Px F κs W").
+    iIntros "[%i[%iN (#tok & lock & Fj & t2)]] Px F' κs' W".
+    iDestruct (cna_wsat_split with "W") as "(Wc & Wg & Wr)".
+    iDestruct (sinv_tok_acc (sinvGS0:=cna_sinvGS) with "tok Wc")
+      as "[body →Wc]". rewrite {1}/cna_body /=.
+    iDestruct "body"
+      as "[(_ & t1' & _)|[(_ & _ & t1' & _)|(Fi & [%κ' (_ & single & t1')])]]".
+    - by iDestruct (lft_tok_agree with "t2 t1'") as %?.
+    - by iDestruct (lft_tok_agree with "t2 t1'") as %?.
+    - iDestruct (lft_tok_agree with "t2 t1'") as %eq. inversion eq. subst κ'.
+      iMod (lft_tok_update (o'':=None) with "t1' t2") as "[t1 t2]".
+      iDestruct ("→Wc" with "[Px lock t1 t2]") as "Wc".
+      { rewrite /cna_body /=. iRight. iLeft. iFrame. }
+      iMod (cna_lfts_delete with "κs' single") as (κs'') "[κs' %eqκs]".
+      iDestruct (cna_own_union2 with "Fi Fj") as "FN".
+      rewrite -union_difference_L; [|set_solver].
+      iDestruct (cna_own_disjoint with "F' FN") as %?.
+      iDestruct (cna_own_union2 with "F' FN") as "FF".
+      iDestruct (cna_wsat_join (W:=W) with "Wc Wg Wr") as "$". iModIntro.
+      iExists κs''. iFrame "FF κs'". iPureIntro. by split.
   Qed.
 
   (** Cancel a cancellable non-atomic invariant and take its content back *)

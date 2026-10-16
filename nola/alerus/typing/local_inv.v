@@ -36,10 +36,10 @@ Section local_invariants.
     cna_inv_fml : gname → thread_id → namespace → FML $oi Σ → FML $oi Σ;
     cna_inv_fml_sem γ p N Px :
       bor_sem (cna_inv_fml γ p N Px) ⊣⊢ cna_inv γ p N Px;
-    cna_closer_fml : lft → thread_id → namespace → FML $oi Σ → FML $oi Σ;
-    cna_closer_fml_sem κ p N Px :
-      bor_sem (cna_closer_fml κ p N Px) ⊣⊢
-        cna_closer alerus_wsat κ p N bor_sem Px;
+    cna_otok_fml :
+      gname → thread_id → namespace → lft → FML $oi Σ → FML $oi Σ;
+    cna_otok_fml_sem γ p N κ Px :
+      bor_sem (cna_otok_fml γ p N κ Px) ⊣⊢ cna_otok γ p N κ Px;
   }.
   Context `{!LocalInvFml}.
 
@@ -115,7 +115,7 @@ Section local_invariants.
     ty_E := [];
     ty_gho_persx x d g tid := empty_fml;
     ty_ghox x d g tid := match x with (N, (γ, γt, d1), c) =>
-      cna_closer_fml κ tid N (local_inv_body ty pred c tid) end;
+      cna_otok_fml γ tid N κ (local_inv_body ty pred c tid) end;
     ty_phys x tid := [];
   |}.
   Next Obligation. done. Qed.
@@ -129,8 +129,8 @@ Section local_invariants.
   Lemma local_closer_ty_gho {𝔄 ℭ} κ (ty: type 𝔄) pred N γ γt d1 (c: ~~ℭ)
       d g tid :
     ty_gho (local_closer_ty κ ty pred) (N, (γ, γt, d1), c) d g tid ⊣⊢
-      cna_closer alerus_wsat κ tid N bor_sem (local_inv_body ty pred c tid).
-  Proof. apply cna_closer_fml_sem. Qed.
+      cna_otok γ tid N κ (local_inv_body ty pred c tid).
+  Proof. apply cna_otok_fml_sem. Qed.
 
   Lemma local_inv_ty_resolve E L {𝔄 ℭ} (ty: type 𝔄)
       (pred: abstracted_syn_type 𝔄 → ~~ℭ → Prop) :

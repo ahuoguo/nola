@@ -92,14 +92,30 @@ Section na_inv.
     - iExists i. by iSplit.
   Qed.
 
-  (** Access a non-atomic invariant.  The original needed
+  (** Token for an *open* non-atomic invariant.
+
+    Nola represents an opened borrow by a token made of plain ghost ownership
+    ([nola.iris.borrow]'s [obor_tok]) rather than by a closing wand, so that
+    it can be stored in a formula.  This does the same for an opened
+    invariant: it holds exactly what the closer of [na_inv_tok_acc] used to
+    capture - the simple invariant, its lock, and the part of the pool
+    outside the invariant's own index. *)
+  Definition na_otok p N Px : iProp Σ :=
+    ∃ i, ⌜i ∈ (↑N:coPset)⌝ ∧ sinv_tok i Px ∗ na_lock p i ∗
+      na_own p ((↑N:coPset) ∖ {[i]}).
+
+  #[export] Instance na_otok_ne {p N} : NonExpansive (na_otok p N).
+  Proof. solve_proper. Qed.
+  #[export] Instance na_otok_proper {p N} : Proper ((≡) ==> (⊣⊢)) (na_otok p N).
+  Proof. apply ne_proper, _. Qed.
+
+  (** Open a non-atomic invariant.  The original needed
     [={E}=∗ ▷ P ∗ … ∗ (▷ P ∗ … ={E}=∗ …)]; here there is neither later nor
-    update, only the world satisfaction being passed in and out. *)
-  Lemma na_inv_tok_acc {p sm N F Px} : ↑N ⊆ F →
+    update, only the world satisfaction being passed in and out - and the
+    closer is a token rather than a wand. *)
+  Lemma na_inv_tok_open {p sm N F Px} : ↑N ⊆ F →
     na_inv_tok p N Px -∗ na_own p F -∗ na_inv_wsat p sm -∗
-      sm Px ∗ na_own p (F ∖ ↑N) ∗ na_inv_wsat p sm ∗
-      (sm Px -∗ na_own p (F ∖ ↑N) -∗ na_inv_wsat p sm -∗
-         na_own p F ∗ na_inv_wsat p sm).
+      sm Px ∗ na_own p (F ∖ ↑N) ∗ na_otok p N Px ∗ na_inv_wsat p sm.
   Proof.
     move=> NF. iIntros "[%i[%iN #tok]] F W". rewrite /na_inv_wsat.
     rewrite (na_own_subset NF) (na_own_in iN).
@@ -108,12 +124,40 @@ Section na_inv.
     rewrite {1}/na_body. iDestruct "body" as "[[$ lock]|i']"; last first.
     { iDestruct (na_own_disjoint with "i i'") as %?. set_solver. }
     iDestruct ("→W" with "[i]") as "$". { rewrite /na_body. iRight. iFrame. }
-    iIntros "Px rest' W".
+    iExists i. iSplit; [done|]. iFrame "tok lock rest".
+  Qed.
+
+  (** Close a non-atomic invariant with its open token *)
+  Lemma na_inv_tok_close {p sm N F Px} :
+    na_otok p N Px -∗ sm Px -∗ na_own p F -∗ na_inv_wsat p sm -∗
+      ⌜F ## ↑N⌝ ∗ na_own p (F ∪ ↑N) ∗ na_inv_wsat p sm.
+  Proof.
+    iIntros "[%i[%iN (#tok & lock & rest)]] Px F W". rewrite /na_inv_wsat.
     iDestruct (sinv_tok_acc with "tok W") as "[body →W]".
     rewrite {1}/na_body. iDestruct "body" as "[[_ lock']|i]".
     { iDestruct (na_lock_2_no with "lock lock'") as "[]". }
     iDestruct ("→W" with "[Px lock]") as "$".
     { rewrite /na_body. iLeft. iFrame. }
-    iFrame.
+    iAssert (na_own p (↑N:coPset)) with "[i rest]" as "N".
+    { rewrite (na_own_in (p:=p) (E:=(↑N:coPset)) iN). iFrame. }
+    iDestruct (na_own_disjoint with "F N") as %?. iSplit; [done|].
+    rewrite na_own_union; [|done]. iFrame.
+  Qed.
+
+  (** The wand form, as before, derived from the two *)
+  Lemma na_inv_tok_acc {p sm N F Px} : ↑N ⊆ F →
+    na_inv_tok p N Px -∗ na_own p F -∗ na_inv_wsat p sm -∗
+      sm Px ∗ na_own p (F ∖ ↑N) ∗ na_inv_wsat p sm ∗
+      (sm Px -∗ na_own p (F ∖ ↑N) -∗ na_inv_wsat p sm -∗
+         na_own p F ∗ na_inv_wsat p sm).
+  Proof.
+    move=> NF. iIntros "inv F W".
+    iDestruct (na_inv_tok_open NF with "inv F W") as "($ & $ & o & $)".
+    iIntros "Px rest W".
+    iDestruct (na_inv_tok_close with "o Px rest W") as "(_ & F & $)".
+    have ->: ((F ∖ ↑N) ∪ ↑N) = F.
+    { rewrite difference_union_L union_comm_L.
+      by apply subseteq_union_1_L. }
+    iFrame "F".
   Qed.
 End na_inv.
