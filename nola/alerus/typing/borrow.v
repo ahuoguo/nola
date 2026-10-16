@@ -150,4 +150,77 @@ Section borrow.
     iApply type_seq; [by eapply type_share_instr|solve_typing| |done].
     destruct Extr as [Htrx _]=> ??. apply Htrx. by case.
   Qed.
+
+  (** Dereferencing a shared borrow of an owning pointer.
+
+    The original's guard source is [llctx_interp L] itself; here it has to be
+    a formula, so the context is turned into an [Ltok] for the duration of
+    the read and withdrawn afterwards.  Its [£] and the guard indices it
+    sizes with [leaf_goal laters to …] are gone. *)
+  Lemma type_deref_shr_own_instr {𝔅} {E L I} κ p n (ty : type 𝔅) :
+    lctx_lft_alive E L κ →
+    typed_instr_ty E L I +[p ◁ &shr{κ} (own_ptr n ty)] (!p) (&shr{κ} ty)
+      (λ post '-[(l1, (l2, a))], λ mask π,
+        ∀ l2', of_cloc l2' = l2 → post (l2', a) mask π).
+  Proof.
+    move=> Alv. apply typed_instr_of_memload.
+    move=> [l1 [l2 x2]] v d tid post mask.
+    iIntros "#LFT #PROPH #UNIQ #E L %Hp own #Obs W".
+    iDestruct (Alv with "L E") as "#Alv".
+    iDestruct "own" as "[gho %phys]".
+    destruct d as [|d']; [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
+    rewrite shr_bor_gho /=. iDestruct "gho" as "#(Gp & Ggho & pers)".
+    destruct d' as [|d''].
+    { rewrite own_ptr_gho_pers /=. by iDestruct "pers" as "[]". }
+    iMod (Ltok_alloc with "L W") as "[W (%γ & [#key f])]".
+    iAssert (frac_tok γ 1 &&{Wguard}&&> @[κ])%I as "#Gκ".
+    { iApply (guard_trans with "[] Alv"). iApply (Ltok_guard_frac with "key"). }
+    iModIntro. iFrame "W". iExists l1, l2, (gsrc_fml (GFrac γ 1)).
+    inversion phys. iSplit; [done|].
+    iSplitL "f"; [by iApply (gsrc_fml_sem_2 (s := GFrac γ 1))|].
+    iSplit.
+    { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ 1))).
+      rewrite /= -heap_mapsto_cells_fancy_fmap_eq.
+      iApply (guard_trans with "Gκ Gp"). }
+    iIntros "f W".
+    iDestruct (gsrc_fml_sem_1 (s := GFrac γ 1) with "f") as "f".
+    iMod (Ltok_withdraw with "[$key $f] W") as "[W L]".
+    iModIntro. iFrame "W".
+    iExists ((l2, repeat [] (length (ty_phys ty x2 tid))), x2). iFrame "L".
+    iSplit; last first.
+    { iApply (proph_obs_impl with "Obs")=> π Ha. by apply Ha. }
+    rewrite /ty_own shr_bor_gho /=. iSplit; [|done].
+    iSplit.
+    { iApply (guard_trans with "Ggho []"). iApply guard_intro.
+      iIntros "!> g". rewrite own_ptr_gho /=.
+      iDestruct "g" as "(pt & free & gho)".
+      rewrite -heap_mapsto_cells_fancy_empty. iFrame "pt".
+      iIntros "pt". iFrame. }
+    iSplit.
+    { iApply (guard_trans with "Ggho []"). iApply guard_intro.
+      iIntros "!> g". rewrite own_ptr_gho /=.
+      iDestruct "g" as "(pt & free & gho)".
+      iDestruct (ty_gho_depth_mono ty d'' (S (S d'')) (S (S d''))
+        (S (S (S d''))) x2 tid with "gho") as "[gho back]"; [lia|lia|].
+      iSplitL "gho"; [iExact "gho"|]. iIntros "gho".
+      iDestruct ("back" with "gho") as "$". iFrame. }
+    rewrite own_ptr_gho_pers /=.
+    iApply (ty_gho_pers_depth_mono ty d'' (S (S d'')) (S (S d''))
+      (S (S (S d''))) x2 tid with "pers"); lia.
+  Qed.
+
+  Lemma type_deref_shr_own {𝔄 𝔅l ℭl 𝔇} κ x p e n (ty: type 𝔄)
+      (T: tctx 𝔅l) (T': tctx ℭl) trx tr E I L (C: cctx 𝔇) :
+    Closed (x :b: []) e →
+    tctx_extract_ctx E L +[p ◁ &shr{κ} (own_ptr n ty)] T T' trx →
+    lctx_lft_alive E L κ →
+    (∀v: val, typed_body E L I C (v ◁ &shr{κ} ty +:: T') (subst' x v e) tr) -∗
+    typed_body E L I C T (let: x := !p in e) (trx ∘
+      (λ post '((l1, (l2, a)) -:: bl), λ mask π,
+        ∀ l2', of_cloc l2' = l2 → tr post ((l2', a) -:: bl) mask π))%type.
+  Proof.
+    iIntros (? Extr ?) "?".
+    iApply type_let; [by eapply type_deref_shr_own_instr|solve_typing| |done].
+    destruct Extr as [Htrx _]=> ??. apply Htrx. by case.
+  Qed.
 End borrow.
