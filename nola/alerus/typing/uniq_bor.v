@@ -455,6 +455,54 @@ Global Hint Rewrite @uniq_bor_gho @uniq_bor_gho_pers : fml_sem.
 Section uniq_bor_typing.
   Context `{!typeG FML Σ}.
 
+
+  (** [&uniq{static}] is [Send].
+
+    The original's [⧖ d0] and its [|={…}▷=>^d] go with the time receipts.
+    Changing the borrow's contents to the new thread id needs a way back,
+    which at [static] is vacuous: [[†static]] is [False]. *)
+  Global Instance uniq_send_static {𝔄} (ty: type 𝔄) :
+    Send ty → Send (&uniq{static} ty).
+  Proof.
+    move=> [Hphys Hgho]. split.
+    { move=> ?? [[[[[??]?]?]?]?] [[[[[??]?]?]?]?] Ha. by inversion Ha. }
+    move=> tid tid' [[[[[l x0] ξi] d'] g'] idx] d g γ q κs.
+    iIntros "#LFT #UNIQ #Hg K gho W". rewrite uniq_bor_gho.
+    iDestruct "gho" as "(#Incl & %Hle & (ξVo & Tok & #Bor) & #PtBase & #Pers)".
+    iDestruct (llftl_bor_idx_to_full with "Bor Tok") as "Bor2".
+    iDestruct (llftl_bor_acc NalerusE _ static with "LFT Bor2 []") as "A";
+      [iApply llftl_tok_unit|].
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=NalerusE) with "A")
+      as "A'"; [done|].
+    iMod ("A'" with "W") as "[W [Inner Back]]".
+    iEval (rewrite uniq_body_fml_sem) in "Inner".
+    iDestruct "Inner" as (x1 d1 g1) "(ξPc & Gho & Pt)".
+    iDestruct (uniq_agree with "ξVo ξPc") as %[<- Heq]. inversion Heq.
+    subst d1 g1.
+    iMod (Hgho tid tid' x0 d' g' γ q κs with "LFT UNIQ Hg K Gho W")
+      as "(W & %x' & %off & gho & %Habs & K)".
+    iDestruct (ty_gho_pers_impl with "gho") as "#ghopers".
+    iMod (uniq_update (PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi) x' (vπ x')
+      (d' + off, g') with "UNIQ ξVo ξPc") as "[ξVo ξPc]"; [solve_ndisj|].
+    rewrite (proof_irrel (prval_to_inh (vπ x0)) (prval_to_inh (vπ x'))).
+    iDestruct ("Back" $! (uniq_body_fml ty x' ξi tid' l)
+      with "[] [ξPc gho Pt]") as "B".
+    { iIntros "[_ †]". iExFalso. by iApply llftl_end_unit. }
+    { iApply (uniq_body_fml_sem_2 with "ξPc gho [Pt]").
+      by rewrite -(Hphys tid tid' x0 x' (eq_sym Habs)). }
+    iDestruct (bupdw_incl (W:=alerus_wsat) with "B") as "B'".
+    iMod ("B'" with "W") as "[W [Bor3 _]]".
+    rewrite llftl_bor_idx. iDestruct "Bor3" as (idx2) "[#Bor3 Tok3]".
+    iModIntro. iFrame "W". iExists (l, x', ξi, d' + off, g', idx2), off.
+    iFrame "K". rewrite uniq_bor_gho.
+    iSplitL.
+    - rewrite /uniq_body /uniq_body_pers_component.
+      iSplitR; [iApply "Incl"|]. iSplitR; [iPureIntro; lia|].
+      iSplitL "ξVo Tok3"; [by iFrame "ξVo Tok3 Bor3"|].
+      iSplitR; [iApply "PtBase"|]. iRight. iApply "ghopers".
+    - iPureIntro. by rewrite /= Habs.
+  Qed.
+
   Lemma tctx_uniq_mod_ty_out {𝔄 𝔅 ℭl} κ (f : 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) ty
       (T: tctx ℭl) p E L `{!Isoₛ f fⁱ} :
     lctx_lft_alive E L κ →
