@@ -165,3 +165,102 @@ Section points_to.
     - rewrite !cell_points_to_gho_pers /=. by rewrite Hgp.
   Qed.
 End points_to.
+
+Section typing.
+  Context `{!typeG FML Σ, !PcellFml}.
+
+  Definition PCellFromOwn : val := (λ: ["p"], "p")%V.
+
+  Lemma typed_pcell_from_own {𝔄} (p : path) (ty : type 𝔄) E L I :
+    typed_instr E L I +[p ◁ own_ptr (ty_size ty) ty] (PCellFromOwn [p])
+      (λ v, +[v ◁ own_ptr (ty_size ty)
+                 (prod_ty (pcell_ty (ty_size ty)) (cell_points_to_ty ty))])
+      (λ post '-[(l, x)], λ mask π, ∀ cell_ids : list positive,
+        post -[(l, (cell_ids, (cell_ids, x)))] mask π).
+  Proof.
+    move=> tid post mask iκs vπl.
+    iIntros "#LFT #PROPH #UNIQ #E L I TY #Obs"=>/=.
+    destruct vπl as [[l x][]]. iDestruct "TY" as "(TY & _)".
+    iDestruct "TY" as (pl d Heval) "[Hown %Hphys]".
+    simpl in Hphys. inversion Hphys; subst pl.
+    destruct d as [|d];
+      [by iDestruct (false_fml_sem_1 with "Hown") as "[]"|].
+    rewrite own_ptr_gho /=. iDestruct "Hown" as "(Hl & Hfree & Hgho)".
+    iApply twpw_fupdw_nonval; [done|].
+    wp_bind p. iApply twp_wand; [by iApply twp_eval_path|]. iIntros (?->).
+    wp_rec. iIntros "W".
+    iMod (cell_alloc2 with "Hl") as (γs Hlen) "H↦".
+    iDestruct (bi.equiv_entails_1_1 _ _
+      (heap_mapsto_cells_to_complete_mapsto_fancy_vec
+         (l, (λ γ : cell_id, [γ]) <$> γs) (ty_phys ty x tid)) with "H↦")
+      as "[Hchain Htail]".
+    iDestruct (bi.equiv_entails_1_1 _ _ (heap_complete_mapsto_vec_eq l γs)
+      with "Hchain") as "Hchain".
+    iDestruct (bi.equiv_entails_1_1 _ _
+      (heap_complete_mapsto_fancy_val_vec_eq' l γs (ty_phys ty x tid))
+      with "Htail") as "Htail".
+    rewrite ty_size_eq in Hlen.
+    iModIntro. iFrame "W L I". iExists -[(l, (γs, (γs, x)))].
+    iSplit; last first.
+    { iApply (proph_obs_impl with "Obs")=> ? Ha. apply Ha. }
+    iSplit; [|done]. iExists #l, (S (S d)). iSplit; [done|].
+    rewrite /ty_own own_ptr_gho /= prod_ty_gho /= pcell_ty_gho
+      cell_points_to_gho /= Nat.add_0_r app_nil_r.
+    rewrite (pad_length' (FCell <$> γs) (ty_size ty));
+      [|by rewrite length_fmap Hlen].
+    iDestruct (ty_gho_depth_mono ty d (S d) d (S (S d)) x tid with "Hgho")
+      as "[Hgho _]"; [lia|lia|].
+    iFrame "Hchain Hfree Htail Hgho". by iSplit.
+  Qed.
+
+  Definition PCell2Own : val := (λ: ["pcell"; "perm"], "pcell")%V.
+
+  Lemma typed_pcell_to_own {𝔄} (perm pcell : path) (ty : type 𝔄) E L I :
+    typed_instr E L I
+      +[pcell ◁ own_ptr (ty_size ty) (pcell_ty (ty_size ty));
+        perm ◁ own_ptr 0 (cell_points_to_ty ty)]
+      (PCell2Own [pcell; perm]) (λ v, +[v ◁ own_ptr (ty_size ty) ty])
+      (λ post '-[(l, γs); (_, (γs', x))], λ mask π,
+        γs = γs' ∧ post -[(l, x)] mask π).
+  Proof.
+    move=> tid post mask iκs vπl.
+    iIntros "#LFT #PROPH #UNIQ #E L I TY #Obs"=>/=.
+    destruct vπl as [[l γs] [[l' [γs' x]] []]].
+    iDestruct "TY" as "(Hpcell & Hperm & _)".
+    iDestruct "Hpcell" as (pl d Heval) "[Hown %Hphys]".
+    iDestruct "Hperm" as (pl' d' Heval') "[Hown' %Hphys']".
+    simpl in Hphys, Hphys'. inversion Hphys; subst pl.
+    inversion Hphys'; subst pl'.
+    destruct d as [|d];
+      [by iDestruct (false_fml_sem_1 with "Hown") as "[]"|].
+    destruct d' as [|d'];
+      [by iDestruct (false_fml_sem_1 with "Hown'") as "[]"|].
+    rewrite own_ptr_gho /= pcell_ty_gho.
+    iDestruct "Hown" as "(H↦ & Hfree & %Hlen)".
+    rewrite own_ptr_gho /=. iDestruct "Hown'" as "(_ & _ & Hown')".
+    rewrite cell_points_to_gho.
+    destruct d' as [|d''];
+      [by iDestruct "Hown'" as "[]"|].
+    iDestruct "Hown'" as "[H↦' Hgho]".
+    iApply twpw_fupdw_nonval; [done|].
+    wp_bind pcell. iApply twp_wand; [by iApply twp_eval_path|].
+    iIntros (?->). wp_bind perm.
+    iApply twp_wand; [by iApply twp_eval_path|]. iIntros (?->).
+    wp_rec. iIntros "W".
+    iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
+    rewrite (pad_length' (FCell <$> γs) (ty_size ty));
+      [|by rewrite length_fmap Hlen].
+    iDestruct (bi.equiv_entails_1_2 _ _
+      (heap_complete_mapsto_fancy_val_vec_eq' l γs (ty_phys ty x tid))
+      with "H↦'") as "H↦'".
+    iMod (heap_delete_cell with "H↦ H↦'") as "H↦".
+    iModIntro. iFrame "W L I". iExists -[(l, x)].
+    iSplit; last first.
+    { iApply (proph_obs_impl with "Obs")=> ? [_ Ha]. apply Ha. }
+    iSplit; [|done]. iExists #l, (S (S d'')). iSplit; [done|].
+    rewrite /ty_own own_ptr_gho /=.
+    iDestruct (ty_gho_depth_mono ty d'' (S (S d'')) (S d'') (S (S d'')) x tid
+      with "Hgho") as "[Hgho _]"; [lia|lia|].
+    by iFrame "H↦ Hfree Hgho".
+  Qed.
+End typing.
