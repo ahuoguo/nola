@@ -315,14 +315,14 @@ Section typing.
        inversion Hb. subst pad'. have H1 := pinj_inj _ _ _ _ H0.
        destruct H1 as [-> JM]. f_equal. f_equal. f_equal.
        apply send_change_tid_phys. apply JMeq_eq. trivial.
-    - iIntros (tid tid' x d g γ q κs) "LFT UNIQ #g K Gho".
+    - iIntros (tid tid' x d g γ q κs) "LFT UNIQ lfts K Gho".
       destruct x as [x pad]. replace x with (of_xsum (to_xsum x)).
         2: { apply semi_iso'. typeclasses eauto. }
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       unfold ty_gho, xsum_ty, ty_ghox. rewrite semi_iso'. iIntros "W".
       iMod (@send_change_tid _ _ _ (𝔄l !!ₗ i) (tyl +!! i) (Send i)
-        tid tid' x0 d g γ q κs with "LFT UNIQ g K Gho W")
-        as "(W & %x0' & %off & gho & %Habs & K)".
+        tid tid' x0 d g γ q κs with "LFT UNIQ lfts K Gho W")
+        as "(W & %x0' & %off & gho & %Habs & lfts & K)".
       iModIntro. iFrame "W". iExists (of_xsum (xinj i x0'), pad), off.
       rewrite semi_iso'. iFrame. iPureIntro.
       simpl. do 2 (rewrite psum_map1_pinj). rewrite Habs. trivial.

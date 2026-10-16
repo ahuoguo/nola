@@ -161,8 +161,8 @@ Section typing.
     - move=> ?? [??] [??] Ha. by inversion Ha.
     - move=> tid tid' x d g γ q κs.
       have [_ [Hg _]] := shr_sync κ ty Hsync tid tid' x d g.
-      iIntros "_ _ _ K A $ !>". iExists x, 0. rewrite Nat.add_0_r.
-      iFrame "K". iSplit; [|done]. by iApply (iff_1 Hg).
+      iIntros "_ _ lfts K A $ !>". iExists x, 0. rewrite Nat.add_0_r.
+      iFrame "lfts K". iSplit; [|done]. by iApply (iff_1 Hg).
   Qed.
 
   Global Instance shr_just_loc {𝔄} κ (ty: type 𝔄) : JustLoc (&shr{κ} ty).

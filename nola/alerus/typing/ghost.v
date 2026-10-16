@@ -47,7 +47,8 @@ Section ghost.
   Global Instance ghost_send {𝔄} (ty : type 𝔄) : Send (ghost_ty ty).
   Proof.
     split; [done|]. move=> tid tid' x d g γ q κs.
-    iIntros "_ _ _ K _ $ !>". iExists x, 0. rewrite Nat.add_0_r. iFrame "K".
+    iIntros "_ _ lfts K _ $ !>". iExists x, 0. rewrite Nat.add_0_r.
+    iFrame "lfts K".
     iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
