@@ -311,7 +311,7 @@ Section uniq_util.
     skeleton - halve the share, lend one half to a fresh lifetime [κ'],
     reborrow the contents to [κ'], resolve under it, then let [κ'] die. *)
   Lemma resolve_uniq_body {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E L γ q F :
-    lctx_lft_alive E L κ → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ F →
+    lctx_lft_alive E L κ → NalerusE ⊆ F →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ κ ⊑ ty_lft ty -∗ elctx_interp E -∗
     Ltok γ L q -∗ uniq_body ty x ξi d g idx κ tid l =[alerus_wsat]{F}=∗
       ⟨π, π (PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi) = vπ x π⟩ ∗ Ltok γ L q ∗
@@ -388,7 +388,7 @@ Section uniq_util.
       (PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi) (ξl x) x (d, g) x (vπ x) (d, g)
       with "Hallζ UNIQ PROPH ξVo ξPc [$fb $Gho] W")
       as "[W (#Obs & ξPc & [fb Gho])]";
-      [solve_ndisj|apply syn_indep|].
+      [etrans; [|exact HF]; rewrite /NalerusE; set_solver|apply syn_indep|].
     (* Close the borrow and let [κ'] die. *)
     iDestruct ("ForallQ" $! (uniq_body_at_fml ty x ξi x d g tid l)
       with "[] [ξPc Gho Phys]") as "Cl".
@@ -398,7 +398,7 @@ Section uniq_util.
     iMod ("Cl'" with "W") as "[W [_ κ'tok]]".
     iDestruct (llftl_end' κ' κ'ne with "LFT κ'tok") as "End".
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "End") as "End'";
-      [solve_ndisj|].
+      [etrans; [|exact HF]; rewrite /NalerusE; set_solver|].
     iMod ("End'" with "W") as "[W #†κ']".
     iDestruct ("Back" with "†κ'") as "Bk".
     iDestruct (bupdw_incl (W:=alerus_wsat) with "Bk") as "Bk'".
@@ -563,5 +563,25 @@ Section uniq_util.
     rewrite /basically_dead_fml /basically_dead ex_fml_sem.
     apply bi.exist_proper=> κ'.
     by rewrite bor_sep_sem guard_fml_sem !alive_fml_sem dead_fml_sem.
+  Qed.
+
+  (** An indexed borrow only cares about the semantics of its contents *)
+  Lemma idx_bor_iff {κ i} {Px Px' : FML $oi Σ} :
+    (bor_sem Px ⊣⊢ bor_sem Px') → (&{κ,i} Px ⊣⊢ &{κ,i} Px').
+  Proof.
+    move=> eq. apply bi.equiv_entails. split;
+      (iApply llftl_idx_bor_iff; iIntros "!>"; rewrite eq;
+        iSplit; by iIntros "$").
+  Qed.
+
+  (** Changing the thread id of the borrowed body *)
+  Lemma uniq_body_fml_sem_tid {𝔄} (ty: type 𝔄) x ξi tid tid' l :
+    (∀ y e h, ty_gho ty y e h tid ⊣⊢ ty_gho ty y e h tid') →
+    (∀ y, ty_phys ty y tid = ty_phys ty y tid') →
+    bor_sem (uniq_body_fml ty x ξi tid l) ⊣⊢
+      bor_sem (uniq_body_fml ty x ξi tid' l).
+  Proof.
+    move=> Hg Hp. rewrite !uniq_body_fml_sem.
+    do 3 (apply bi.exist_proper=> ?). by rewrite Hg Hp.
   Qed.
 End uniq_util.

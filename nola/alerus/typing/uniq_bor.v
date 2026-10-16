@@ -206,6 +206,101 @@ Section uniq_bor_sem.
   Global Instance uniq_just_loc {𝔄} κ (ty: type 𝔄) : JustLoc (&uniq{κ} ty).
   Proof. iIntros ([[[[[l x0] ξi] d'] g'] idx] d g tid) "_". by iExists l.1. Qed.
 
+
+
+  Global Instance uniq_sync {𝔄} κ (ty: type 𝔄) : Sync ty → Sync (&uniq{κ} ty).
+  Proof.
+    move=> SyncTy tid tid' [[[[[l x0] ξi] d'] g'] idx] d g.
+    have Hg : ∀ y e h, ty_gho ty y e h tid ⊣⊢ ty_gho ty y e h tid'.
+    { move=> y e h. by have [_ [? _]] := SyncTy tid tid' y e h. }
+    have Hp : ∀ y, ty_phys ty y tid = ty_phys ty y tid'.
+    { move=> y. by have [? _] := SyncTy tid tid' y 0 0. }
+    have Hpc : uniq_body_pers_component ty x0 ξi d' g' idx κ tid l ⊣⊢
+      uniq_body_pers_component ty x0 ξi d' g' idx κ tid' l :=
+      idx_bor_iff (uniq_body_fml_sem_tid ty x0 ξi tid tid' l Hg Hp).
+    have [_ [_ Hps]] := SyncTy tid tid' x0 d' g'.
+    split; [done|]. split.
+    - rewrite !uniq_bor_gho /uniq_body Hps Hpc //.
+    - rewrite !uniq_bor_gho_pers Hps Hpc //.
+  Qed.
+
+  Lemma uniq_resolve {𝔄} E L κ (ty: type 𝔄) :
+    lctx_lft_alive E L κ →
+    resolve E L (&uniq{κ} ty) (λ x π, snd (vπ x π) = fst (vπ x π)).
+  Proof.
+    move=> Alv γ q F [[[[[l x0] ξi] d'] g'] idx] d g tid ?.
+    iIntros "#LFT #PROPH #UNIQ #E tok gho". rewrite uniq_bor_gho.
+    iDestruct "gho" as "(#In & %Hle & uniq & _ & _)". iIntros "W".
+    iMod (resolve_uniq_body with "LFT PROPH UNIQ In E tok uniq W")
+      as "[$ (#Obs & $ & _)]"; [done|done|].
+    iModIntro. iApply proph_obs_eq; [|done]=> ? /=. by f_equal.
+  Qed.
+
+  Lemma uniq_subtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
+    lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
+    subtype E L (&uniq{κ} ty) (&uniq{κ'} ty') idₛ.
+  Proof.
+    move=> In Eqt. rewrite -eqtype_id_unfold in Eqt. iIntros "L".
+    iDestruct (Eqt with "L") as "#Eqt". iDestruct (In with "L") as "#In".
+    iIntros "!> #E". iSplit; [done|].
+    iDestruct ("Eqt" with "E")
+      as (?) "[[#Lfts1 #Lfts2][#EqOwn [#EqPers %EqPhys]]]".
+    iSpecialize ("In" with "E"). iSplit; [by iApply lft_intersect_mono|].
+    iSplit.
+    { iModIntro. iIntros ([[[[[l x0] ξi] d'] g'] idx] d g tid) "gho".
+      rewrite !uniq_bor_gho.
+      iDestruct "gho" as "(#Incl & %Hle & (Vo & Tok & #Bor) & #PtBase & #Pers)".
+      iAssert (basically_dead κ' ∨ ty_gho_pers ty' x0 d' g' tid)%I as "#Pers'".
+      { iDestruct "Pers" as "[Dead|P]".
+        - iLeft. iApply (basically_dead_incl with "In Dead").
+        - iRight. iDestruct ("EqPers" $! x0 d' g' tid) as "[F _]".
+          iApply "F". iApply "P". }
+      iAssert (uniq_body_pers_component ty' x0 ξi d' g' idx κ' tid l)%I
+        as "#Bor'".
+      { iApply (incl_uniq_body_pers_component ty ty' x0 ξi d' g' idx κ κ' tid l
+          with "In EqOwn [] Bor"). iIntros (??). iPureIntro. apply EqPhys. }
+      iDestruct (guard_trans with "In Incl") as "#Incl1".
+      iDestruct (guard_trans with "Incl1 Lfts1") as "#Incl2".
+      iAssert (@[κ'] &&{Wguard}&&> l #↦∗_)%I as "#PtBase'".
+      { iApply (guard_trans with "In PtBase"). }
+      iSplitL "Vo Tok".
+      - iFrame "Pers' Incl2 PtBase' Vo Tok Bor'". iPureIntro. lia.
+      - iIntros "(_ & _ & (Vo & Tok & _) & _ & _)".
+        iFrame "Pers Incl PtBase Vo Tok Bor". iPureIntro. lia. }
+    iSplit.
+    { iModIntro. iIntros ([[[[[l x0] ξi] d'] g'] idx] d g tid) "pers".
+      rewrite !uniq_bor_gho_pers.
+      iDestruct "pers" as "(%Hle & #Pers & #Bor)".
+      iSplit; [iPureIntro; lia|]. iSplit.
+      - iDestruct "Pers" as "[Dead|P]".
+        + iLeft. iApply (basically_dead_incl with "In Dead").
+        + iRight. iDestruct ("EqPers" $! x0 d' g' tid) as "[F _]".
+          iApply "F". iApply "P".
+      - iApply (incl_uniq_body_pers_component ty ty' x0 ξi d' g' idx κ κ' tid l
+          with "In EqOwn [] Bor"). iIntros (??). iPureIntro. apply EqPhys. }
+    { iPureIntro. by move=> [[[[[??]?]?]?]?] ?. }
+  Qed.
+
+  Lemma uniq_eqtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
+    lctx_lft_eq E L κ κ' → eqtype E L ty ty' idₛ idₛ →
+    eqtype E L (&uniq{κ} ty) (&uniq{κ} ty') idₛ idₛ.
+  Proof. move=> [??][??]. by split; apply uniq_subtype. Qed.
+
+  (** Accessors on a unique reference's refinement *)
+  Definition uniq_bor_loc {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : cloc :=
+    match m with (l, x0, ξi, d', g', idx) => l end.
+  Definition uniq_bor_current {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : ~~ 𝔄 :=
+    match m with (l, x0, ξi, d', g', idx) => x0 end.
+  Definition uniq_bor_future {𝔄} (m: ~~ (uniq_borₛ 𝔄)) (π : proph_asn) : 𝔄 :=
+    (vπ m π).2.
+  Definition uniq_bor_ξi {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : positive :=
+    match m with (l, x0, ξi, d', g', idx) => ξi end.
+  Definition uniq_bor_update {𝔄} (m: ~~ (uniq_borₛ 𝔄)) (new: ~~ 𝔄)
+    (m': ~~ (uniq_borₛ 𝔄)) :=
+    match m, m' with
+      (l, x0, ξi, _, _, _), (l', x0', ξi', _, _, _) =>
+        l = l' ∧ x0' = new ∧ ξi' = ξi
+    end.
 End uniq_bor_sem.
 
 Global Hint Rewrite @uniq_bor_gho @uniq_bor_gho_pers : fml_sem.
