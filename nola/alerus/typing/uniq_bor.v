@@ -10,12 +10,21 @@
     borrow of [uniq_body_fml], the guard to [l #↦∗_] and a disjunction with
     [basically_dead κ], and every one of those is a formula now.
 
-  - [TypeContractive] is lost.  VerusBelt gets it from
-    [idx_bor_contractive] and [later_contractive]: a borrow is contractive
-    in its contents exactly because the contents sit under a [▷], and
-    [&uniq{κ}]'s [▷ ty.(ty_gho_pers)] supplies the other one.  Later-free a
-    borrow stores a formula and is merely non-expansive, so [&uniq{κ}] is
-    [TypeNonExpansive] - the same loss as [own_ptr] and [&shr{κ}].
+  - [TypeContractive] is lost, and so is [TypeNonExpansive].  VerusBelt
+    gets contractiveness from [idx_bor_contractive] and
+    [later_contractive]: a borrow is contractive in its contents exactly
+    because the contents sit under a [▷], and [&uniq{κ}]'s
+    [▷ ty.(ty_gho_pers)] supplies the other one.  Later-free a borrow
+    stores a formula and is merely non-expansive - the same loss as
+    [own_ptr] and [&shr{κ}].
+
+    [TypeNonExpansive] goes too, for a reason particular to the syntactic
+    interpretation: its premise about lifetimes is
+    [⊢ ty_lft ty ≡ₗ ty_lft ty'], a *semantic* equivalence, while
+    [&uniq{κ}]'s ghost assertion names [ty_lft ty] inside a formula, where
+    only a syntactic equality would do.  Plain [NonExpansive] is fine -
+    [ty ≡{n}≡ ty'] does give [ty_lfts ty = ty_lfts ty'] - and that is what
+    the type formers above it use.
 
   [uniq_send] is commented out upstream; only [uniq_send_static] is proved,
   and the time receipts it threads through disappear here. *)
@@ -145,3 +154,58 @@ Section uniq_bor.
 End uniq_bor.
 
 Notation "&uniq{ κ }" := (uniq_bor κ) (format "&uniq{ κ }") : lrust_type_scope.
+
+Section uniq_bor_sem.
+  Context `{!typeG FML Σ}.
+
+  (** Unfolding [&uniq{κ}]'s ghost assertion *)
+  Lemma uniq_bor_gho {𝔄} κ (ty: type 𝔄) l x0 ξi d' g' idx d g tid :
+    ty_gho (uniq_bor κ ty) (l, x0, ξi, d', g', idx) d g tid ⊣⊢
+      (κ ⊑ ty_lft ty) ∗ ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗
+      uniq_body ty x0 ξi d' g' idx κ tid l ∗
+      (@[κ] &&{Wguard}&&> l #↦∗_) ∗
+      (basically_dead κ ∨ ty_gho_pers ty x0 d' g' tid).
+  Proof.
+    rewrite /ty_gho /uniq_body /uniq_body_pers_component /= !bor_sep_sem
+      !pure_fml_sem !or_fml_sem !basically_dead_fml_sem !guard_fml_sem
+      !alive_fml_sem !cmapstoany_fml_sem !vo_fml_sem !idx_bor_tok_fml_sem
+      !idxbor_fml_sem //.
+  Qed.
+  Lemma uniq_bor_gho_pers {𝔄} κ (ty: type 𝔄) l x0 ξi d' g' idx d g tid :
+    ty_gho_pers (uniq_bor κ ty) (l, x0, ξi, d', g', idx) d g tid ⊣⊢
+      ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗
+      (basically_dead κ ∨ ty_gho_pers ty x0 d' g' tid) ∗
+      uniq_body_pers_component ty x0 ξi d' g' idx κ tid l.
+  Proof.
+    rewrite /ty_gho_pers /uniq_body_pers_component /= !bor_sep_sem
+      !pure_fml_sem !or_fml_sem !basically_dead_fml_sem !idxbor_fml_sem //.
+  Qed.
+
+  Global Instance uniq_bor_ne {𝔄} κ : NonExpansive (@uniq_bor _ _ _ 𝔄 κ).
+  Proof.
+    move=> n ty ty' [Hsz Hlfts HE Hgho Hpers Hphys]. split=>/=.
+    - done.
+    - by rewrite Hlfts.
+    - by rewrite HE /ty_outlives_E Hlfts.
+    - move=> [[[[[l x0] ξi] d'] g'] idx] d g tid /=.
+      have Hpf : ty_phys ty = ty_phys ty'.
+      { fun_ext=> ?. fun_ext=> ?. apply Hphys. }
+      rewrite /uniq_body_fmlx /uniq_body_fml /uniq_body_at_fml Hlfts Hpf.
+      setoid_rewrite Hgho. by rewrite Hpers.
+    - move=> [[[[[l x0] ξi] d'] g'] idx] d g tid /=.
+      have Hpf : ty_phys ty = ty_phys ty'.
+      { fun_ext=> ?. fun_ext=> ?. apply Hphys. }
+      rewrite /uniq_body_fml /uniq_body_at_fml Hpf.
+      setoid_rewrite Hgho. by rewrite Hpers.
+    - by move=> [[[[[??]?]?]?]?] ?.
+  Qed.
+
+  Lemma uniq_stack_okay {𝔄} κ (ty: type 𝔄) : StackOkay (&uniq{κ} ty).
+  Proof. by move=> [[[[[??]?]?]?]?] ?. Qed.
+
+  Global Instance uniq_just_loc {𝔄} κ (ty: type 𝔄) : JustLoc (&uniq{κ} ty).
+  Proof. iIntros ([[[[[l x0] ξi] d'] g'] idx] d g tid) "_". by iExists l.1. Qed.
+
+End uniq_bor_sem.
+
+Global Hint Rewrite @uniq_bor_gho @uniq_bor_gho_pers : fml_sem.
