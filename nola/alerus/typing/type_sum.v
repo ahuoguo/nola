@@ -245,4 +245,168 @@ Section type_sum.
     rewrite /ty_own own_ptr_gho /=. iFrame "free gho".
     rewrite split_pt_xsum. by iFrame "pt1 pt2 pt3".
   Qed.
+
+  (** ** Shared references *)
+
+  (** The sum's ghost assertion at an injected refinement is the injected
+    type's, up to the [to_xsum]/[pinj] round trip. *)
+  Lemma xsum_gho_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad d g tid :
+    ty_gho (Σ! tyl) (pinj i x0, pad) d g tid ⊣⊢ ty_gho (tyl +!! i) x0 d g tid.
+  Proof. rewrite xsum_ty_gho /= to_xsum_pinj //. Qed.
+  Lemma xsum_gho_pers_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad d g tid :
+    ty_gho_pers (Σ! tyl) (pinj i x0, pad) d g tid ⊣⊢
+      ty_gho_pers (tyl +!! i) x0 d g tid.
+  Proof. rewrite xsum_ty_gho_pers /= to_xsum_pinj //. Qed.
+
+  Lemma tctx_unwrap_shr_xsum {𝔄l 𝔅l} i (tyl: typel 𝔄l) κ p (T: tctx 𝔅l) E L :
+    tctx_incl E L (p ◁ &shr{κ} (Σ! tyl) +:: T)
+      (p +ₗ #1 ◁ &shr{κ} (tyl +!! i) +:: T)
+      (λ post '((l, (s, pad)) -:: bl), λ mask π, ∃a: ~~(𝔄l !!ₗ i),
+        s = pinj i a ∧
+        post ((cloc_take (cloc_skip l 1) (ty_size (tyl +!! i)), a) -:: bl)
+          mask π).
+  Proof.
+    split.
+    { move=> p1 p2 Hyp [[l[s pad]] bl] mask π. split.
+      - move=> [a[Heq Ha]]. exists a. split; [exact Heq|].
+        apply (proj1 (Hyp _ mask π)), Ha.
+      - move=> [a[Heq Ha]]. exists a. split; [exact Heq|].
+        apply (proj2 (Hyp _ mask π)), Ha. }
+    move=> γ q tid [[cl [x pad]] xl] mask post.
+    iIntros "#LFT #PROPH #UNIQ #E tok /=[p T] #Obs W".
+    iMod (proph_obs_sat with "PROPH Obs") as %[π0 X]; [solve_ndisj|].
+    destruct X as [x0 [Heqx _]]. subst x.
+    iDestruct "p" as (v d) "[%Ev [gho %phys]]". inversion phys. subst v.
+    destruct d as [|d'];
+      [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
+    rewrite shr_bor_gho /=. iDestruct "gho" as "#(Gpt & Ggho & Pers)".
+    iDestruct (guard_rhs_iff
+      (split_pt_xsum_cells i tyl x0 pad tid cl.1 cl.2) with "Gpt") as "#Gpt2".
+    iDestruct (guard_rhs_sep_r with "Gpt2") as "#Grest".
+    iDestruct (guard_rhs_sep_l with "Grest") as "#Gmain".
+    iDestruct (guard_rhs_iff (xsum_gho_pinj i tyl x0 pad d' (S d') tid)
+      with "Ggho") as "#Ggho2".
+    rewrite xsum_gho_pers_pinj.
+    iModIntro. iFrame "W tok".
+    iExists ((cloc_take (cloc_skip cl 1) (ty_size (tyl +!! i)), x0) -:: xl).
+    iFrame "T". iSplit; last first.
+    { iApply (proph_obs_impl with "Obs")=> π [xi [Heq Ha]].
+      apply pinj_Inj in Heq. by subst xi. }
+    destruct cl as [cl1 cells].
+    iExists _, (S d'). iSplit; [by rewrite /= Ev|].
+    rewrite /ty_own shr_bor_gho /=. iSplit; [|done].
+    by iFrame "Gmain Ggho2 Pers".
+  Qed.
+
+  Lemma type_case_shr_outer {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
+      (T': tctx ℭl) κ p el el' trx E L I (C: cctx 𝔇) :
+    IntoPlistc el el' →
+    tctx_extract_ctx E L +[p ◁ &shr{κ} (Σ! tyl)] T T' trx →
+    lctx_lft_alive E L κ →
+    ([∗ hlist] ty;- e; tr ∈ tyl;- el'; trl,
+      typed_body E L I C (p ◁ &shr{κ} (Σ! tyl) +:: T') e tr) -∗
+    typed_body E L I C T (case: !p of el)
+      (trx ∘ (λ post '((l, (s, pad)) -:: cl), let 'xinj i _ := to_xsum s in
+        (trl -!! i) post ((l, (s, pad)) -:: cl)))%type.
+  Proof.
+    move=> ->. iIntros (? Alv) "el". iApply typed_body_tctx_incl; [done|].
+    iIntros (tid [s ?] mask post iκs)
+      "#LFT #PROPH #UNIQ #E L I C /=[p T] #Obs".
+    destruct s as [l [x pad]].
+    replace x with (@of_xsum _ (~~) 𝔄l (to_xsum x));
+      last by rewrite semi_iso'.
+    refine (match to_xsum x with xinj i x0 => _ end).
+    wp_bind p. iApply (twp_hasty with "p"). iIntros (v d) "%Hpath [gho %phys]".
+    inversion phys. subst v.
+    destruct d as [|d'];
+      [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
+    rewrite shr_bor_gho /=. iDestruct "gho" as "#(Gpt & Ggho & Pers)".
+    iDestruct (Alv with "L E") as "#Alv".
+    iDestruct (guard_trans with "Alv Gpt") as "#GptL".
+    iDestruct (guard_rhs_iff
+      (split_pt_xsum_cells i tyl x0 pad tid l.1 l.2) with "GptL") as "#Gpt2".
+    iDestruct (guard_rhs_sep_l with "Gpt2") as "#Gdisc".
+    wp_bind (!#l.1)%E.
+    iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iMod (Ltok_alloc with "L W") as "[W (%γ & [#key f])]".
+    iAssert (bor_sem (gsrc_fml (GFrac γ 1)) &&{Wguard}&&>
+      (l.1 ↦[^ take 1 l.2 ]∗ [ #i ]))%I as "#Gdisc'".
+    { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ 1))).
+      iApply (guard_trans with "[] Gdisc").
+      iApply (Ltok_guard_frac with "key"). }
+    iModIntro. iFrame "W".
+    iApply (twp_read_na_guarded_cells_singleton _ _ _ _ _
+      (gsrc_fml (GFrac γ 1)) with "[f]").
+    { iFrame "Gdisc'". by iApply (gsrc_fml_sem_2 (s := GFrac γ 1)). }
+    iIntros "f". iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    iDestruct (gsrc_fml_sem_1 (s := GFrac γ 1) with "f") as "f".
+    iMod (Ltok_withdraw with "[$key $f] W") as "[W L]".
+    iModIntro. iFrame "W".
+    wp_case.
+    { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
+    iDestruct (big_sepHL_2_lookup with "el") as "el".
+    iApply ("el" $! _ (_ -:: _) with "LFT PROPH UNIQ E L I C [-] []");
+      last first.
+    { iApply (proph_obs_impl with "Obs")=> ?. by rewrite to_xsum_pinj. }
+    iFrame "T". iExists #l.1, (S d'). iSplit; [done|].
+    rewrite /ty_own shr_bor_gho /=. by iFrame "Gpt Ggho Pers".
+  Qed.
+
+  Lemma type_case_shr {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
+      (T': tctx ℭl) κ p el el' trx E L I (C: cctx 𝔇) :
+    IntoPlistc el el' →
+    tctx_extract_ctx E L +[p ◁ &shr{κ} (Σ! tyl)] T T' trx →
+    lctx_lft_alive E L κ →
+    ([∗ hlist] ty;- e; tr ∈ tyl;- el'; trl, match tr with
+      | inl otr => typed_body E L I C (p ◁ &shr{κ} (Σ! tyl) +:: T') e otr
+      | inr itr => typed_body E L I C (p +ₗ #1 ◁ &shr{κ} ty +:: T') e itr
+      end) -∗
+    typed_body E L I C T (case: !p of el) (trx ∘
+      (λ post '((l, (s, pad)) -:: cl), let 'xinj i a := to_xsum s in
+        match trl -!! i with
+        | inl otr => otr post ((l, (s, pad)) -:: cl)
+        | inr itr =>
+          itr post ((cloc_take (cloc_skip l 1) (ty_size (tyl +!! i)), a) -:: cl)
+        end)).
+  Proof.
+    iIntros (???) "el". iApply typed_body_tctx_incl; [done|]. via_tr_impl.
+    { iApply (type_case_shr_outer _ (pbyidx (λ i post
+        '((l, (s, pad)) -:: cl), λ mask π, match trl -!! i with
+          | inl otr => otr post ((l, (s, pad)) -:: cl) mask π
+          | inr itr => _ end : Prop)));
+        [apply tctx_incl_refl|done|].
+      rewrite !big_sepHL_2_big_sepN. iApply (big_sepN_impl with "el").
+      iIntros "!>" (i) "?". rewrite pbyidx_plookup.
+      case (trl -!! i)=> ?.
+      { via_tr_impl; first by done.
+        move=> post xl mask π Ha. by destruct xl as [[l [s pad]] cl]. }
+      via_tr_impl.
+      { iApply typed_body_tctx_incl; [apply tctx_unwrap_shr_xsum|done]. }
+      move=>/= ?[[?[??]]?]??. exact id. }
+    move=> ?[[l [s pad]] ?]/= ??. case (to_xsum s) as [i ?] eqn: Eq.
+    rewrite pbyidx_plookup. move: (trl -!! i). case; [done|]=>/= ??.
+    eexists _. split; [|done].
+    move: Eq=> /(f_equal of_xsum)=>/= <-. by rewrite semi_iso'.
+  Qed.
+
+  Lemma type_case_shr_inner {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
+      (T': tctx ℭl) κ p el el' trx E L I (C: cctx 𝔇) :
+    IntoPlistc el el' →
+    tctx_extract_ctx E L +[p ◁ &shr{κ} (Σ! tyl)] T T' trx →
+    lctx_lft_alive E L κ →
+    ([∗ hlist] ty;- e; tr ∈ tyl;- el'; trl,
+      typed_body E L I C (p +ₗ #1 ◁ &shr{κ} ty +:: T') e tr) -∗
+    typed_body E L I C T (case: !p of el) (trx ∘
+      (λ post '((l, (s, pad)) -:: cl), let 'xinj i a := to_xsum s in
+        (trl -!! i) post
+          ((cloc_take (cloc_skip l 1) (ty_size (tyl +!! i)), a) -:: cl))).
+  Proof.
+    iIntros (???) "el". iApply typed_body_tctx_incl; [done|]. via_tr_impl.
+    { iApply (type_case_shr _ (pbyidx (λ i, inr (trl -!! i))));
+        [apply tctx_incl_refl|done|].
+      rewrite !big_sepHL_2_big_sepN. iApply (big_sepN_impl with "el").
+      iIntros "!>" (?) "?". by rewrite pbyidx_plookup. }
+    move=> ?[[l [s pad]] ?]/=. case (to_xsum s)=>/= ??.
+    by rewrite pbyidx_plookup.
+  Qed.
 End type_sum.
