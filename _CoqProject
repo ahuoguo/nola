@@ -193,3 +193,4 @@ nola/alerus/typing/pptr.v
 nola/alerus/typing/programs_util_atomic.v
 nola/alerus/typing/local_inv.v
 nola/alerus/typing/atomic_inv.v
+nola/alerus/typing/pcell.v
