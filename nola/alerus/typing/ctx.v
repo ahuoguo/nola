@@ -265,9 +265,15 @@ Section alerus.
     lrustGS_heapSem := _;
   |}.
 
-  (** The global world satisfaction *)
+  (** The global world satisfaction.
+
+    [na_inv_wsat] is where the *atomic* invariants of [typing/atomic_inv.v]
+    live: the original holds them in Iris invariants, so opening one yields a
+    [▷]; here they are simple invariants over formulas whose world
+    satisfaction has to be threaded explicitly. *)
   Definition alerus_wsat : iProp Σ :=
-    llft_wsat ∗ cna_wsat alerus_WGuard bor_sem.
+    llft_wsat ∗ cna_wsat alerus_WGuard bor_sem ∗
+    na_inv_wsat atomic_threadpool bor_sem.
 
   (** ** Shared access to a local lifetime context
 
@@ -352,23 +358,33 @@ Section alerus.
     explicitly rather than left to the structural instances, which would have
     to unfold [llft_wsat], [llft_wsatG] and the [LlftWG] projections. *)
   #[export] Instance wsat_incl_alerus_llft :
-    WsatIncl alerus_wsat llft_wsat (cna_wsat alerus_WGuard bor_sem).
+    WsatIncl alerus_wsat llft_wsat
+      (cna_wsat alerus_WGuard bor_sem ∗ na_inv_wsat atomic_threadpool bor_sem).
   Proof. done. Qed.
   #[export] Instance wsat_incl_alerus_guard :
     WsatIncl alerus_wsat alerus_WGuard
-      (llft_inv_other ∗ cna_wsat alerus_WGuard bor_sem).
+      (llft_inv_other ∗ cna_wsat alerus_WGuard bor_sem ∗
+        na_inv_wsat atomic_threadpool bor_sem).
   Proof.
     rewrite /WsatIncl /alerus_wsat /alerus_WGuard /llft_wsat. iSplit.
-    - by iIntros "([$$] & $)".
-    - by iIntros "([$ $] & $)".
+    - by iIntros "([$$] & $ & $)".
+    - by iIntros "([$ $] & $ & $)".
   Qed.
   #[export] Instance wsat_incl_alerus_cna :
     WsatIncl alerus_wsat (cna_wsat alerus_WGuard bor_sem ∗ alerus_WGuard)
-      llft_inv_other.
+      (llft_inv_other ∗ na_inv_wsat atomic_threadpool bor_sem).
   Proof.
     rewrite /WsatIncl /alerus_wsat /alerus_WGuard /llft_wsat. iSplit.
-    - by iIntros "([$$] & $)".
-    - by iIntros "([$ $] & $)".
+    - by iIntros "([$$] & $ & $)".
+    - by iIntros "([$ $] & $ & $)".
+  Qed.
+  #[export] Instance wsat_incl_alerus_nainv :
+    WsatIncl alerus_wsat (na_inv_wsat atomic_threadpool bor_sem)
+      (llft_wsat ∗ cna_wsat alerus_WGuard bor_sem).
+  Proof.
+    rewrite /WsatIncl /alerus_wsat. iSplit.
+    - by iIntros "($ & $ & $)".
+    - by iIntros "($ & $ & $)".
   Qed.
   #[export] Instance wsat_incl_alerus_send :
     WsatIncl alerus_WG send_wsat
