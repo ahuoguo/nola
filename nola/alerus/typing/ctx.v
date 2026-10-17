@@ -820,6 +820,12 @@ Class AltSem (FML : oFunctor) Σ
     sem (guard_fml (alive_fml κ) (alive_fml κ')) -∗
     sem (guard_fml (alive_fml κ) (alive_fml κ'')) -∗
     sem (guard_fml (alive_fml κ) (alive_fml (κ' ⊓ κ'')));
+  (** Eternalizing a lifetime gives a *storable* inclusion: the token
+    [eternal_tok] it allocates does not mention the interpretation, so the
+    guard it yields holds at every candidate. *)
+  dincl_eternalize {κ} :
+    @[κ] =[alerus_wsat]=∗
+      bor_sem (guard_fml (alive_fml static) (alive_fml κ));
   (** [llftl_borrow_shared] at the formula level.  The shared borrow it
     allocates is a [sinv_tok], which does not mention the interpretation, and
     [sinv_tok_guard] turns it into a guard at *every* candidate - so this is
@@ -1052,6 +1058,11 @@ Section alt_sem.
     (∀ a, Persistent (sem (Φ a))) → Persistent (sem (ex_fml Φ)).
   Proof. move=> ?. rewrite (ex_sem_at H). exact _. Qed.
 
+  (** A stored guard out of a lifetime token, as the development reads it *)
+  Lemma dguard_alive_sem {κ Qx} :
+    dguard (alive_fml κ) Qx ⊢ @[κ] &&{alerus_WGuard}&&> bor_sem Qx.
+  Proof. rewrite dguard_sem alive_fml_sem //. Qed.
+
   (** ** Lifetime inclusion as a stored guard *)
 
   Definition dincl (κ κ' : lft) : iProp Σ :=
@@ -1082,6 +1093,13 @@ Section alt_sem.
   Proof. apply dincl_of, llftl_intersect_incl_l. Qed.
   Lemma dincl_intersect_r {κ κ'} : ⊢ dincl (κ ⊓ κ') κ'.
   Proof. apply dincl_of, llftl_intersect_incl_r. Qed.
+  Lemma dincl_intersect_mono {κ1 κ1' κ2 κ2'} :
+    dincl κ1 κ1' -∗ dincl κ2 κ2' -∗ dincl (κ1 ⊓ κ2) (κ1' ⊓ κ2').
+  Proof.
+    iIntros "#g1 #g2". iApply dincl_glb.
+    - iApply (dincl_trans with "[] g1"). iApply dincl_intersect_l.
+    - iApply (dincl_trans with "[] g2"). iApply dincl_intersect_r.
+  Qed.
 
   (** [&uniq{κ}]'s "the lifetime is already dead" case, stored *)
   Definition dbasically_dead (κ : lft) : iProp Σ :=

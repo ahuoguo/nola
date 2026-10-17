@@ -160,6 +160,41 @@ build green.
    `dguard_*` where they currently use `guard_*` on a guard that is about to
    be stored, and `dguard_sem` where they actually open one.  Then
    `guard_fml_sem` goes.
+
+   **What a first attempt at this showed.**  A stored guard can only be
+   built out of other stored guards (`Deriv_map`) or out of a source that is
+   storable in the first place (`dguard_borrow_shared`, `dincl_of_incl`,
+   `dincl_eternalize`).  A *raw* guard cannot be promoted: it holds at the
+   ambient interpretation only, and nothing in it says it holds at the
+   others.  So the migration is not local to the type formers - it runs back
+   through everything that *produces* an inclusion:
+
+   * `elctx_elt_interp (κ ⊑ₑ κ')` has to be `dincl κ κ'`, because
+     `ty_outlives_E` entries are where `&uniq{κ}`'s stored `κ ⊑ ty_lft ty`
+     comes from.  Then `lctx_lft_incl`, `lft_equiv`, `type_incl`'s lifetime
+     component and `TypeLftMorphism` all follow (this part works, and is
+     mechanical).
+   * But then `function.v`'s `type_call` has to *store* the inclusions of
+     `fp_E (fp y) ϝ`, and it builds them from `Ltok_guard_frac` and
+     `lctx_lft_alive` - raw guards over world satisfactions the development
+     cannot see at a candidate.  So `lctx_lft_alive`, and the `Ltok` guard
+     under it, have to be candidate-indexed too, which reaches the ~80 sites
+     that use `lctx_lft_alive`.
+   * Likewise `Sync` and `Send`: `&shr{κ}` stores `ty_ghox ty … tid`, so
+     `shr_sync` needs the type's thread-id law at every candidate, which
+     means each type former also needs an `_at` form of its `*_gho`
+     unfolding lemma (~50 lemmas).
+
+   None of this is a soundness problem - every one of these facts is true in
+   the model, because the resources involved (`sinv_tok`, `frac_key_wsat`,
+   `llctx_interp`, the lifetime tokens) never mention the interpretation.
+   It is a question of how much of the development has to be stated `∀ δ`,
+   and the answer is: the same proportion as in `rust_halt`, i.e. nearly all
+   of the type-level interfaces.  The attempt was reverted to keep the build
+   green; `AltSem` already carries the fields it identified
+   (`dguard_borrow_shared`, `dincl_of_incl`, `dincl_eternalize`,
+   `dincl_glb_at`, `guard_fml_pers_at`, `idxbor_fml_pers_at`,
+   `fn_fml_pers_at`).
 5. **The same for `idxbor_fml` and `fn_fml`.**  `idx_bor` carries
    `□ (bor_sem Px' ↔ bor_sem Px)`, which is a judgment in the same sense -
    compare `nola/iris/borrow_deriv.v`.  `fn_fml` is the function type's own
