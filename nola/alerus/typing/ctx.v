@@ -810,6 +810,16 @@ Class AltSem (FML : oFunctor) Σ
   dincl_of_incl {sem} : alt_sem sem → ∀ κ κ',
     (⊢ @[κ] &&{alerus_WGuard}&&> @[κ']) →
     ⊢ sem (guard_fml (alive_fml κ) (alive_fml κ'));
+  (** The lifetime logic's greatest-lower-bound rule for stored inclusions.
+    The other inclusion rules are closed facts, so [dincl_of_incl] covers
+    them; this one transforms two stored inclusions, so like [dguard_trans]
+    it is [Deriv_map] in the model - but its body is a lifetime-logic fact
+    at the candidate's own world satisfaction, which the development cannot
+    see, so it is asked for here. *)
+  dincl_glb_at {sem} : alt_sem sem → ∀ κ κ' κ'',
+    sem (guard_fml (alive_fml κ) (alive_fml κ')) -∗
+    sem (guard_fml (alive_fml κ) (alive_fml κ'')) -∗
+    sem (guard_fml (alive_fml κ) (alive_fml (κ' ⊓ κ'')));
   (** [llftl_borrow_shared] at the formula level.  The shared borrow it
     allocates is a [sinv_tok], which does not mention the interpretation, and
     [sinv_tok_guard] turns it into a guard at *every* candidate - so this is
@@ -1065,6 +1075,13 @@ Section alt_sem.
   Proof. apply dguard_refl. Qed.
   Lemma dincl_trans {κ κ' κ''} : dincl κ κ' -∗ dincl κ' κ'' -∗ dincl κ κ''.
   Proof. apply dguard_trans. Qed.
+  Lemma dincl_glb {κ κ' κ''} :
+    dincl κ κ' -∗ dincl κ κ'' -∗ dincl κ (κ' ⊓ κ'').
+  Proof. apply (dincl_glb_at alt_here). Qed.
+  Lemma dincl_intersect_l {κ κ'} : ⊢ dincl (κ ⊓ κ') κ.
+  Proof. apply dincl_of, llftl_intersect_incl_l. Qed.
+  Lemma dincl_intersect_r {κ κ'} : ⊢ dincl (κ ⊓ κ') κ'.
+  Proof. apply dincl_of, llftl_intersect_incl_r. Qed.
 
   (** [&uniq{κ}]'s "the lifetime is already dead" case, stored *)
   Definition dbasically_dead (κ : lft) : iProp Σ :=
