@@ -50,18 +50,19 @@ Section own.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation.
-    move=> 𝔄 n ty [|d] g d' g' x tid ??.
-    { rewrite /= false_fml_sem. by iIntros "[]". }
-    destruct d' as [|d']; first lia. fml_simpl'.
+    move=> 𝔄 n ty sem H [|d] g d' g' x tid ??.
+    { rewrite /= (false_sem_at H). by iIntros "[]". }
+    destruct d' as [|d']; first lia. rewrite /= !(sep_sem_at H).
     iIntros "(Hown & Hfree & Hgho)".
-    iDestruct (ty.(ty_gho_depth_mono) with "Hgho") as "[$ Hwand]"; [lia|lia|].
+    iDestruct (ty_gho_depth_mono_at ty sem H with "Hgho") as "[$ Hwand]";
+      [lia|lia|].
     iFrame. iIntros "($ & $ & Hgho)". by iApply "Hwand".
   Qed.
   Next Obligation.
-    move=> 𝔄 n ty [|d] g d' g' x tid ??.
-    { rewrite /= false_fml_sem. by iIntros "[]". }
-    destruct d' as [|d']; first lia. simpl. iIntros "H".
-    iApply (ty.(ty_gho_pers_depth_mono) with "H"); lia.
+    move=> 𝔄 n ty sem H [|d] g d' g' x tid ??.
+    { rewrite /= (false_sem_at H). by iIntros "[]". }
+    destruct d' as [|d']; first lia. simpl. iIntros "Hp".
+    iApply (ty_gho_pers_depth_mono_at ty sem H with "Hp"); lia.
   Qed.
   Next Obligation.
     move=> 𝔄 n ty κ x d g tid ξ R Hin. iIntros "#LFT #Incl #Pers".
@@ -73,6 +74,10 @@ Section own.
     iApply (guard_trans with "Rg"). iApply (guard_trans with "[]").
     { iApply (guard_sep_r (P:=((fst x) ↦!∗ ty.(ty_phys) (snd x) tid)%I)). }
     iApply guard_sep_r.
+  Qed.
+  Next Obligation.
+    move=> 𝔄 n ty sem H x d g tid. apply (by_succx_persistent_at H)=> d'.
+    apply (ty_gho_pers_pers_at ty sem H).
   Qed.
   Next Obligation.
     move=> 𝔄 n ty x d g tid. destruct d as [|d'].

@@ -113,6 +113,13 @@ End fn.
 Class FnFml `{!typeG FML Σ} := {
   fn_fml {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
     (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) : FML $oi Σ;
+  (** A function type's ghost assertion is a judgment, so only its
+    persistence is available at a candidate interpretation; see the note on
+    [AltSem] in [typing/ctx.v]. *)
+  fn_fml_pers_at {sem} : alt_sem sem →
+    ∀ {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
+      (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)),
+    Persistent (sem (fn_fml fp spec x));
   fn_fml_sem {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
     (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) :
     bor_sem (fn_fml fp spec x) ⊣⊢
@@ -152,7 +159,7 @@ Section fn.
       pt_ghox (x: ~~ (exec_funₛ ℭ)) tid := fn_fml fp spec x;
       pt_phys (x: ~~ (exec_funₛ ℭ)) tid := [FVal (fst x)];
     |}.
-  Next Obligation. move=> *. rewrite fn_fml_sem. apply _. Qed.
+  Next Obligation. move=> ??? sem H *. by apply (fn_fml_pers_at H). Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.

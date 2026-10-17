@@ -42,17 +42,26 @@ Section shr_bor.
 
     st_phys x tid := [FVal (LitV (x.1).1)];
   |}.
+  Next Obligation.
+    move=> ?? ty sem H x d g tid.
+    apply (by_succx_persistent_at H)=> d'.
+    have ? := guard_fml_pers_at H. have ? := ty_gho_pers_pers_at ty sem H.
+    rewrite !(sep_sem_at H). exact _.
+  Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation.
-    move=> ?? ty d g d' g' x tid ??.
-    destruct d as [|d0]=>/=; [rewrite false_fml_sem; by iIntros "[]"|].
-    destruct d' as [|d'0]; [lia|]=>/=. fml_simpl. iIntros "#A".
+    move=> ?? ty sem H d g d' g' x tid ??.
+    destruct d as [|d0]=>/=; [rewrite (false_sem_at H); by iIntros "[]"|].
+    destruct d' as [|d'0]; [lia|]=>/=.
+    have ? := guard_fml_pers_at H. have ? := ty_gho_pers_pers_at ty sem H.
+    rewrite !(sep_sem_at H). iIntros "#A".
     iDestruct "A" as "(#Phys & #Gho & #Pers)". iFrame "Phys". iSplit.
-    - iApply (guard_trans with "Gho"). iApply guard_intro. iIntros "!> gho".
-      iApply (ty_gho_depth_mono with "gho"); lia.
-    - iApply (ty_gho_pers_depth_mono with "Pers"); lia.
+    - iApply (dguard_trans_at H with "Gho"). iApply (dguard_intro_at H).
+      iIntros (sem' Hs) "!> gho".
+      iApply (ty_gho_depth_mono_at ty sem' Hs with "gho"); lia.
+    - iApply (ty_gho_pers_depth_mono_at ty sem H with "Pers"); lia.
   Qed.
   Next Obligation.
     move=> ?? ty κ0 x d g tid ξ R Hin.

@@ -161,12 +161,15 @@ Section S.
   Qed.
   Next Obligation. intros. apply ty_size_eq2. Qed.
   Next Obligation. intros. apply ty_phys_eq2. Qed.
-  Next Obligation. move=> >. apply ty_gho_depth_mono. Qed.
-  Next Obligation. move=> >. apply ty_gho_pers_depth_mono. Qed.
+  Next Obligation. move=> n sem H. apply (ty_gho_depth_mono_at (Tn n) sem H). Qed.
+  Next Obligation.
+    move=> n sem H. apply (ty_gho_pers_depth_mono_at (Tn n) sem H).
+  Qed.
   Next Obligation.
     move=> n *. iIntros "#LFT #?". iApply (ty_guard_proph with "LFT"); [done|].
     iApply llftl_incl_trans; [done|]. iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
   Qed.
+  Next Obligation. move=> n sem H. apply (ty_gho_pers_pers_at (Tn n) sem H). Qed.
   Next Obligation. move=> >. apply ty_gho_pers_impl. Qed.
 
   Program Definition fix_ty: type 𝔄 := {|
@@ -178,12 +181,16 @@ Section S.
   Next Obligation. intros. apply ty_size_eq2. Qed.
   Next Obligation. intros. apply ty_phys_eq2. Qed.
   Next Obligation.
-    move=> *. apply @limit_preserving_compl; [|move=> ?; by apply ty_gho_depth_mono].
+    move=> sem H *. have ? := alt_sem_ne H.
+    apply @limit_preserving_compl;
+      [|move=> ?; by apply (ty_gho_depth_mono_at (Tn' _) sem H)].
     apply limit_preserving_entails=> ??? Eq; [done|].
     repeat (apply Eq || f_equiv).
   Qed.
   Next Obligation.
-    move=> *. apply @limit_preserving_compl; [|move=> ?; by apply ty_gho_pers_depth_mono].
+    move=> sem H *. have ? := alt_sem_ne H.
+    apply @limit_preserving_compl;
+      [|move=> ?; by apply (ty_gho_pers_depth_mono_at (Tn' _) sem H)].
     apply limit_preserving_entails=> ??? Eq; [done|].
     repeat (apply Eq || f_equiv).
   Qed.
@@ -193,7 +200,9 @@ Section S.
     repeat (apply Eq || f_equiv).
   Qed.
   Next Obligation.
-    move=> *. apply @limit_preserving_compl, _.
+    move=> sem H *. have ? := alt_sem_ne H.
+    apply @limit_preserving_compl;
+      [|move=> ?; by apply (ty_gho_pers_pers_at (Tn' _) sem H)].
     apply limit_preserving_Persistent=> ??? Eq.
     repeat (apply Eq || f_equiv).
   Qed.

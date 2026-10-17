@@ -27,6 +27,7 @@ Section ptr.
        pt_ghox (l: ~~locₛ) _ := empty_fml;
        pt_phys (l: ~~locₛ) _ := [ FVal (LitV (LitLoc l)) ];
     |}.
+  Next Obligation. move=> sem H *. rewrite (empty_sem_at H). exact _. Qed.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
@@ -81,16 +82,22 @@ Section points_to.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation.
-    move=> *. rewrite !bor_sep_sem. iIntros "[HP gho]".
-    iDestruct (ty_gho_depth_mono with "gho") as "[gho wand]"; [done|done|].
+    move=> ? ty Px sem H *. rewrite !(sep_sem_at H). iIntros "[HP gho]".
+    iDestruct (ty_gho_depth_mono_at ty sem H with "gho") as "[gho wand]";
+      [done|done|].
     iFrame "HP gho". iIntros "[$ ?]". by iApply "wand".
   Qed.
-  Next Obligation. intros. by apply ty_gho_pers_depth_mono. Qed.
+  Next Obligation.
+    move=> ? ty Px sem H *. by apply (ty_gho_pers_depth_mono_at ty sem H).
+  Qed.
   Next Obligation.
     move=> *. iIntros "LFT Incl Pers Rk Rg".
     iDestruct (guard_rhs_iff (bor_sep_sem _ _) with "Rg") as "Rg'".
     iDestruct (guard_rhs_sep_r with "Rg'") as "Rg2".
     by iApply (ty_guard_proph with "LFT Incl Pers Rk Rg2").
+  Qed.
+  Next Obligation.
+    move=> ? ty Px sem H *. by apply (ty_gho_pers_pers_at ty sem H).
   Qed.
   Next Obligation.
     move=> *. rewrite bor_sep_sem. iIntros "[_ gho]".

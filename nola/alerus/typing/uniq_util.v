@@ -557,6 +557,14 @@ Section uniq_util.
   Definition basically_dead_fml (κ: lft) : FML $oi Σ :=
     ex_fml (λ κ', ((κ ⊑x κ') ∗ [†x κ'])%FML).
 
+  (** Persistence of the three formulas above, at a candidate *)
+  Lemma basically_dead_pers_at {sem} (H : alt_sem sem) κ :
+    Persistent (sem (basically_dead_fml κ)).
+  Proof.
+    rewrite /basically_dead_fml. apply (ex_pers_at H)=> κ'.
+    apply (sep_pers_at H); [by apply guard_fml_pers_at|by apply dead_pers_at].
+  Qed.
+
   Lemma basically_dead_fml_sem κ :
     bor_sem (basically_dead_fml κ) ⊣⊢ basically_dead κ.
   Proof.

@@ -33,6 +33,7 @@ Section product.
   Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
   Next Obligation. move=> *. by iIntros "$". Qed.
   Next Obligation. intros. set_solver. Qed.
+  Next Obligation. move=> sem H *. rewrite (empty_sem_at H). exact _. Qed.
   Next Obligation. move=> *. by iIntros "$". Qed.
 
   Lemma unit0_gho x d g tid : ty_gho unit0 x d g tid ⊣⊢ True.
@@ -71,19 +72,25 @@ Section product.
   Next Obligation. intros. rewrite length_app !ty_size_eq. trivial. Qed.
   Next Obligation. intros. simpl. by do 2 (rewrite <- ty_size_eq2). Qed.
   Next Obligation. intros. destruct x. simpl. by do 2 (rewrite <- ty_phys_eq2). Qed.
-  Next Obligation. intros ty ty' tty tty' d g d' g'. move=>/= *. fml_simpl.
+  Next Obligation. intros ty ty' tty tty' sem H d g d' g'. move=>/= *.
+    rewrite !(sep_sem_at H).
     iIntros "[A B]".
-    iDestruct ((ty_gho_depth_mono _ d g d' g') with "A") as "[A A']"; trivial.
-    iDestruct ((ty_gho_depth_mono _ d g d' g') with "B") as "[B B']"; trivial.
+    iDestruct ((ty_gho_depth_mono_at tty sem H d g d' g') with "A")
+      as "[A A']"; trivial.
+    iDestruct ((ty_gho_depth_mono_at tty' sem H d g d' g') with "B")
+      as "[B B']"; trivial.
     iFrame. iIntros "[x y]".
     iDestruct ("A'" with "x") as "A'".
     iDestruct ("B'" with "y") as "B'".
     iFrame.
   Qed.
-  Next Obligation. intros ty ty' tty tty' d g d' g'. move=>/= *. fml_simpl.
+  Next Obligation. intros ty ty' tty tty' sem H d g d' g'. move=>/= *.
+    rewrite !(sep_sem_at H).
     iIntros "[A B]".
-    iDestruct ((ty_gho_pers_depth_mono _ d g d' g') with "A") as "A'"; trivial.
-    iDestruct ((ty_gho_pers_depth_mono _ d g d' g') with "B") as "B'"; trivial.
+    iDestruct ((ty_gho_pers_depth_mono_at tty sem H d g d' g') with "A")
+      as "A'"; trivial.
+    iDestruct ((ty_gho_pers_depth_mono_at tty' sem H d g d' g') with "B")
+      as "B'"; trivial.
     iFrame.
   Qed.
   Next Obligation. intros 𝔄 𝔅 ty ty' κ x d g tid ξ R Hin. fml_simpl.
@@ -99,6 +106,12 @@ Section product.
       { rewrite lft_intersect_list_app. iApply (guard_trans with "Incl []").
         iApply llftl_intersect_incl_r. }
       iApply guard_rhs_sep_r. iFrame "Rgho".
+  Qed.
+  Next Obligation.
+    intros 𝔄 𝔅 ty ty' sem H x d g tid.
+    have ? := ty_gho_pers_pers_at ty sem H.
+    have ? := ty_gho_pers_pers_at ty' sem H.
+    rewrite (sep_sem_at H). exact _.
   Qed.
   Next Obligation.
     intros 𝔄 𝔅 ty ty' x d g tid. fml_simpl. iIntros "[A B]".

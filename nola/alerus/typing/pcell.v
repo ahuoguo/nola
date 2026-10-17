@@ -44,9 +44,10 @@ Section pcell.
   Next Obligation. move=> n v tid. by rewrite length_pad. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
-  Next Obligation. move=> *. by iIntros "$". Qed.
+  Next Obligation. move=> ? sem Hsm *. iIntros "$". by iIntros "$". Qed.
+  Next Obligation. move=> ? sem Hsm *. by iIntros "$". Qed.
   Next Obligation. move=> n κ x d g tid ξ R Hin. set_solver. Qed.
+  Next Obligation. move=> ? sem Hsm *. rewrite (pure_sem_at Hsm). exact _. Qed.
   Next Obligation. move=> *. by iIntros "$". Qed.
 
   Lemma pcell_ty_gho n x d g tid :
@@ -90,18 +91,20 @@ Section points_to.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation.
-    move=> ? ty d g d' g' x tid ??. rewrite !by_succx_sem.
-    destruct d as [|d0]; [by iIntros "[]"|].
-    destruct d' as [|d0']; [lia|]. rewrite /= !bor_sep_sem.
+    move=> ? ty sem Hsm d g d' g' x tid ??.
+    destruct d as [|d0]; [rewrite /= (false_sem_at Hsm); by iIntros "[]"|].
+    destruct d' as [|d0']; [lia|]. rewrite /= !(sep_sem_at Hsm).
     iIntros "[$ gho]".
-    iDestruct (ty_gho_depth_mono with "gho") as "[$ Hwand]"; [lia|lia|].
+    iDestruct (ty_gho_depth_mono_at ty sem Hsm with "gho") as "[$ Hwand]";
+      [lia|lia|].
     iIntros "[$ gho]". by iApply "Hwand".
   Qed.
   Next Obligation.
-    move=> ? ty d g d' g' x tid ??. rewrite !by_succx_sem.
-    destruct d as [|d0]; [by iIntros "[]"|].
-    destruct d' as [|d0']; [lia|]. rewrite /= !bor_sep_sem.
-    iIntros "[$ gho]". iApply (ty_gho_pers_depth_mono with "gho"); lia.
+    move=> ? ty sem Hsm d g d' g' x tid ??.
+    destruct d as [|d0]; [rewrite /= (false_sem_at Hsm); by iIntros "[]"|].
+    destruct d' as [|d0']; [lia|]. rewrite /= !(sep_sem_at Hsm).
+    iIntros "[$ gho]".
+    iApply (ty_gho_pers_depth_mono_at ty sem Hsm with "gho"); lia.
   Qed.
   Next Obligation.
     move=> ? ty κ x d g tid ξ R Hin. rewrite !by_succx_sem.
@@ -111,6 +114,12 @@ Section points_to.
     iApply (ty_guard_proph _ ty κ x.2 d' g tid ξ R Hin
       with "LFT Incl Pers Gk").
     iApply (guard_rhs_sep_r with "Ggho").
+  Qed.
+  Next Obligation.
+    move=> ? ty sem Hsm x d g tid.
+    apply (by_succx_persistent_at Hsm)=> d'.
+    have ? := pure_pers_at Hsm. have ? := sep_pers_at Hsm.
+    have ? := ty_gho_pers_pers_at ty sem Hsm. exact _.
   Qed.
   Next Obligation.
     move=> ? ty x d g tid. rewrite !by_succx_sem.

@@ -17,6 +17,7 @@ Section bool.
       pt_ghox (b: ~~boolₛ) _ := empty_fml ;
       pt_phys (b: ~~boolₛ) _ := [ FVal #b ] ;
     |}%I.
+  Next Obligation. move=> sem H *. rewrite (empty_sem_at H). exact _. Qed.
   Next Obligation. move=> *. trivial. Qed.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.

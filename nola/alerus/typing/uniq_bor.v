@@ -74,19 +74,25 @@ Section uniq_bor.
   Next Obligation. done. Qed.
   Next Obligation. move=> ?? ? [[[[[??]?]?]?]?] ?. done. Qed.
   Next Obligation.
-    move=> 𝔄 κ ty d0 g0 d1 g1 [[[[[l x0] ξi] d'] g'] idx] tid ??. rewrite /=.
-    rewrite !bor_sep_sem !pure_fml_sem !or_fml_sem !basically_dead_fml_sem
-      !idxbor_fml_sem !guard_fml_sem !alive_fml_sem !cmapstoany_fml_sem
-      !vo_fml_sem !idx_bor_tok_fml_sem.
+    move=> 𝔄 κ ty sem H d0 g0 d1 g1 [[[[[l x0] ξi] d'] g'] idx] tid ??.
+    rewrite /=.
+    have ? := guard_fml_pers_at H. have ? := idxbor_fml_pers_at H.
+    have ? := ty_gho_pers_pers_at ty sem H.
+    have ? := basically_dead_pers_at H. have ? := or_pers_at H.
+    have ? := pure_pers_at H.
+    rewrite !(sep_sem_at H) !(pure_sem_at H).
     iIntros "(#A & %B & (C1 & C2 & #C3) & #D & #E)". iSplitL.
     - iFrame "E A D C1 C2 C3". iPureIntro. lia.
     - iIntros "(_ & _ & (C1 & C2 & _) & _ & _)". iFrame "E A D C1 C2 C3".
       iPureIntro. lia.
   Qed.
   Next Obligation.
-    move=> 𝔄 κ ty d0 g0 d1 g1 [[[[[l x0] ξi] d'] g'] idx] tid ??. rewrite /=.
-    rewrite !bor_sep_sem !pure_fml_sem !or_fml_sem !basically_dead_fml_sem
-      !idxbor_fml_sem.
+    move=> 𝔄 κ ty sem H d0 g0 d1 g1 [[[[[l x0] ξi] d'] g'] idx] tid ??.
+    rewrite /=.
+    have ? := guard_fml_pers_at H. have ? := idxbor_fml_pers_at H.
+    have ? := ty_gho_pers_pers_at ty sem H.
+    have ? := basically_dead_pers_at H. have ? := or_pers_at H.
+    rewrite !(sep_sem_at H) !(pure_sem_at H).
     iIntros "(%B & #E & #F)". iFrame "E F". iPureIntro. lia.
   Qed.
   Next Obligation.
@@ -139,9 +145,11 @@ Section uniq_bor.
       iApply (guard_rhs_sep_l with "Gin2").
   Qed.
   Next Obligation.
-    move=> 𝔄 κ ty [[[[[l x0] ξi] d'] g'] idx] d g tid. rewrite /=.
-    rewrite !bor_sep_sem !pure_fml_sem !or_fml_sem !basically_dead_fml_sem
-      !idxbor_fml_sem. apply _.
+    move=> 𝔄 κ ty sem H [[[[[l x0] ξi] d'] g'] idx] d g tid.
+    have ? := guard_fml_pers_at H. have ? := idxbor_fml_pers_at H.
+    have ? := ty_gho_pers_pers_at ty sem H.
+    have ? := basically_dead_pers_at H. have ? := or_pers_at H.
+    have ? := pure_pers_at H. have ? := sep_pers_at H. exact _.
   Qed.
   Next Obligation.
     move=> 𝔄 κ ty [[[[[l x0] ξi] d'] g'] idx] d g tid. rewrite /=.

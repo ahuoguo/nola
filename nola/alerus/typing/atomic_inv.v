@@ -214,9 +214,12 @@ Section atomic_invariants.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
-  Next Obligation. move=> *. by iIntros "$". Qed.
+  Next Obligation. move=> ?? ty pred sem Hsm *. iIntros "$". by iIntros "$". Qed.
+  Next Obligation. move=> ?? ty pred sem Hsm *. by iIntros "$". Qed.
   Next Obligation. move=> ?? ty pred κ [[??]?] ???? Hin. set_solver. Qed.
+  Next Obligation.
+    move=> ?? ty pred sem Hsm *. rewrite (empty_sem_at Hsm). exact _.
+  Qed.
   Next Obligation. move=> *. iIntros "_". by iApply empty_fml_sem_2. Qed.
 
   Lemma atomic_inv_ty_gho {𝔄 ℭ} (ty: type 𝔄) pred N γ (c: ~~ℭ) d g tid :
@@ -239,9 +242,12 @@ Section atomic_invariants.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
-  Next Obligation. move=> *. by iIntros "$". Qed.
+  Next Obligation. move=> ??? ty pred sem Hsm *. iIntros "$". by iIntros "$". Qed.
+  Next Obligation. move=> ??? ty pred sem Hsm *. by iIntros "$". Qed.
   Next Obligation. move=> ?? κ ty pred ? [[??]?] ???? Hin. set_solver. Qed.
+  Next Obligation.
+    move=> ??? ty pred sem Hsm *. rewrite (empty_sem_at Hsm). exact _.
+  Qed.
   Next Obligation. move=> *. iIntros "_". by iApply empty_fml_sem_2. Qed.
 
   Lemma atomic_closer_ty_gho {𝔄 ℭ} κ (ty: type 𝔄) pred N γ (c: ~~ℭ) d g tid :

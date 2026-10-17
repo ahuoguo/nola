@@ -78,6 +78,13 @@ Global Instance by_succx_persistent `{!typeG FML Σ} d Φ :
   (∀d', Persistent (bor_sem (Φ d'))) → Persistent (bor_sem (by_succx d Φ)).
 Proof. move=> ?. case d; exact _. Qed.
 
+(** The same at a candidate interpretation *)
+Lemma by_succx_persistent_at `{!typeG FML Σ} {sem} (H : alt_sem sem) d Φ :
+  (∀ d', Persistent (sem (Φ d'))) → Persistent (sem (by_succx d Φ)).
+Proof.
+  move=> ?. case d=>/=; [|done]. rewrite (false_sem_at H). exact _.
+Qed.
+
 Global Instance by_succx_ne `{!typeG FML Σ} n :
   Proper ((=) ==> pointwise_relation _ (dist n) ==> dist n) by_succx.
 Proof. move=> d ? <- ?? Eq. by case d. Qed.
@@ -105,14 +112,23 @@ Record type `{!typeG FML Σ} 𝔄 := {
   ty_size_eq2 : size_of 𝔄 = ty_size;
   ty_phys_eq2 x tid : syn_phys x = ty_phys x tid;
   
-  ty_gho_depth_mono d g d' g' x tid :
-    (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (ty_ghox x d g tid) -∗
-        bor_sem (ty_ghox x d' g' tid) ∗
-          (bor_sem (ty_ghox x d' g' tid) -∗ bor_sem (ty_ghox x d g tid)) ;
+  (** Weakening the depth, *at any candidate interpretation*.
+
+    A shared borrow stores a guard whose right-hand side is a type's ghost
+    assertion, and the one thing the development does to it while rebuilding
+    that guard is weaken the depth - so this law has to hold at every
+    candidate ([typing/ctx.v]'s [AltSem]), exactly as every law of Nola's
+    [Ty] class is stated [∀ δ].  [ty_gho_depth_mono] below is the instance at
+    the ambient interpretation, and is what the rest of the development
+    uses. *)
+  ty_gho_depth_mono_at sem : alt_sem sem → ∀ d g d' g' x tid,
+    (d ≤ d')%nat → (g ≤ g')%nat → sem (ty_ghox x d g tid) -∗
+        sem (ty_ghox x d' g' tid) ∗
+          (sem (ty_ghox x d' g' tid) -∗ sem (ty_ghox x d g tid)) ;
         
-  ty_gho_pers_depth_mono d g d' g' x tid :
+  ty_gho_pers_depth_mono_at sem : alt_sem sem → ∀ d g d' g' x tid,
     (d ≤ d')%nat → (g ≤ g')%nat →
-      bor_sem (ty_gho_persx x d g tid) -∗ bor_sem (ty_gho_persx x d' g' tid);
+      sem (ty_gho_persx x d g tid) -∗ sem (ty_gho_persx x d' g' tid);
   
   (** The original's guard index [n] and the [▷^(d*(g+1))] in front are both
     gone: a guard introduces no later, so composing two of them introduces
@@ -126,8 +142,8 @@ Record type `{!typeG FML Σ} 𝔄 := {
       (R &&{Wguard}&&> bor_sem (ty_ghox x d g tid)) -∗
       (R &&{Wguard}&&> 1:[ξ]);
   
-  ty_gho_pers_pers x d g tid :
-      Persistent (bor_sem (ty_gho_persx x d g tid)) ;
+  ty_gho_pers_pers_at sem : alt_sem sem → ∀ x d g tid,
+      Persistent (sem (ty_gho_persx x d g tid)) ;
   ty_gho_pers_impl x d g tid :
       bor_sem (ty_ghox x d g tid) -∗ bor_sem (ty_gho_persx x d g tid) ;
   
@@ -198,12 +214,27 @@ Arguments ty_ghox {_ _ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_gho_persx {_ _ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_phys {_ _ _ _} _ _ _ / : simpl nomatch.
 Arguments ty_size_eq {_ _ _ _}.
-Arguments ty_gho_depth_mono {_ _ _ _}.
-Arguments ty_gho_pers_depth_mono {_ _ _ _}.
-Global Existing Instance ty_gho_pers_pers.
+Arguments ty_gho_depth_mono_at {_ _ _ _}.
+Arguments ty_gho_pers_depth_mono_at {_ _ _ _}.
+Arguments ty_gho_pers_pers_at {_ _ _ _}.
+Global Instance ty_gho_pers_pers `{!typeG FML Σ} {𝔄} (ty: type 𝔄) x d g tid :
+  Persistent (bor_sem (@ty_gho_persx _ _ _ _ ty x d g tid)).
+Proof. apply (ty_gho_pers_pers_at ty bor_sem alt_here). Qed.
 
 (** The semantic views of the ghost assertion.  Everything outside the record
   and the type formers themselves speaks in terms of these. *)
+(** The depth-weakening law at the ambient interpretation *)
+Lemma ty_gho_depth_mono `{!typeG FML Σ} {𝔄} (ty: type 𝔄) d g d' g' x tid :
+  (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (ty.(ty_ghox) x d g tid) -∗
+    bor_sem (ty.(ty_ghox) x d' g' tid) ∗
+      (bor_sem (ty.(ty_ghox) x d' g' tid) -∗ bor_sem (ty.(ty_ghox) x d g tid)).
+Proof. exact: (ty_gho_depth_mono_at ty _ alt_here). Qed.
+
+Lemma ty_gho_pers_depth_mono `{!typeG FML Σ} {𝔄} (ty: type 𝔄) d g d' g' x tid :
+  (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (ty.(ty_gho_persx) x d g tid) -∗
+    bor_sem (ty.(ty_gho_persx) x d' g' tid).
+Proof. apply (ty_gho_pers_depth_mono_at ty bor_sem alt_here). Qed.
+
 Definition ty_gho `{!typeG FML Σ} {𝔄} (ty: type 𝔄)
   (x: ~~𝔄) (d g: nat) (tid: thread_id) : iProp Σ :=
   bor_sem (ty.(ty_ghox) x d g tid).
@@ -305,15 +336,16 @@ Record simple_type `{!typeG FML Σ} 𝔄 := {
   st_ghox: ~~𝔄 → nat → nat → thread_id → FML $oi Σ;
   st_phys: ~~𝔄 → thread_id → list fancy_val;
   
-  st_gho_persistent x d g tid: Persistent (bor_sem (st_ghox x d g tid));
+  st_gho_persistent_at sem : alt_sem sem → ∀ x d g tid,
+    Persistent (sem (st_ghox x d g tid));
   
   st_size_eq x tid : length (st_phys x tid) = st_size;
   st_size_eq2 : size_of 𝔄 = st_size;
   st_phys_eq2 x tid : syn_phys x = st_phys x tid;
   
-  st_gho_depth_mono d g d' g' x tid :
-    (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (st_ghox x d g tid) -∗
-        bor_sem (st_ghox x d' g' tid) ;
+  st_gho_depth_mono_at sem : alt_sem sem → ∀ d g d' g' x tid,
+    (d ≤ d')%nat → (g ≤ g')%nat → sem (st_ghox x d g tid) -∗
+        sem (st_ghox x d' g' tid) ;
         
   st_guard_proph κ x d g tid ξ R :
       ξ ∈ ξl x →
@@ -326,7 +358,6 @@ Record simple_type `{!typeG FML Σ} 𝔄 := {
       
   st_concrete x tid : all_concrete (st_phys x tid) ;
 }.
-Global Existing Instance st_gho_persistent.
 Global Instance: Params (@vπ) 5 := {}.
 Global Instance: Params (@st_size) 5 := {}.
 Global Instance: Params (@st_lfts) 5 := {}.
@@ -336,6 +367,16 @@ Arguments st_size {_ _ _ _} _ / : simpl nomatch.
 Arguments st_lfts {_ _ _ _} _ / : simpl nomatch.
 Arguments st_E {_ _ _ _} _ / : simpl nomatch.
 Arguments st_ghox {_ _ _ _} _ _ _ _ / : simpl nomatch.
+Arguments st_gho_depth_mono_at {_ _ _ _}.
+Arguments st_gho_persistent_at {_ _ _ _}.
+Global Instance st_gho_persistent `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄)
+  x d g tid : Persistent (bor_sem (@st_ghox _ _ _ _ st x d g tid)).
+Proof. apply (st_gho_persistent_at st bor_sem alt_here). Qed.
+Lemma st_gho_depth_mono `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) d g d' g' x tid :
+  (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (st.(st_ghox) x d g tid) -∗
+    bor_sem (st.(st_ghox) x d' g' tid).
+Proof. apply (st_gho_depth_mono_at st bor_sem alt_here). Qed.
+
 Definition st_gho `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄)
   (x: ~~𝔄) (d g: nat) (tid: thread_id) : iProp Σ :=
   bor_sem (st.(st_ghox) x d g tid).
@@ -353,13 +394,24 @@ Program Definition ty_of_st `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) : typ
 Next Obligation. move=> >. apply st_size_eq. Qed.
 Next Obligation. move=> >. apply st_size_eq2. Qed.
 Next Obligation. move=> >. apply st_phys_eq2. Qed.
-Next Obligation. move=> >. intros. iIntros "#A".
-  iSplit. { by iApply st_gho_depth_mono. } iIntros "_". iFrame "A".
+Next Obligation.
+  intros FML Σ typeG0 𝔄 st sem Hs d g d' g' x tid Hd Hg.
+  have ? := st_gho_persistent_at st sem Hs. iIntros "#A".
+  iSplit. { by iApply (st_gho_depth_mono_at st sem Hs). }
+  iIntros "_". iFrame "A".
 Qed.
-Next Obligation. move=> >. intros. iIntros "#A". by iApply st_gho_depth_mono. Qed.
+Next Obligation.
+  intros FML Σ typeG0 𝔄 st sem Hs d g d' g' x tid Hd Hg.
+  have ? := st_gho_persistent_at st sem Hs. iIntros "#A".
+  by iApply (st_gho_depth_mono_at st sem Hs).
+Qed.
 Next Obligation. intros FML Σ typeG0 𝔄 st κ x d g tid ξ R.
     iIntros. iApply (st_guard_proph 𝔄 st κ x d g tid ξ R); trivial;
     try iFrame. Qed.
+Next Obligation.
+  intros FML Σ typeG0 𝔄 st sem Hs x d g tid.
+  apply (st_gho_persistent_at st sem Hs).
+Qed.
 Next Obligation. move=> >. iIntros. iFrame "#". Qed.
 
 (** Unfolding the ghost assertion of a derived type.
@@ -384,7 +436,8 @@ Record plain_type `{!typeG FML Σ} 𝔄 := {
   pt_size: nat;
   pt_ghox: ~~𝔄 → thread_id → FML $oi Σ;
   pt_phys: ~~𝔄 → thread_id → list fancy_val;
-  pt_gho_persistent x tid : Persistent (bor_sem (pt_ghox x tid));
+  pt_gho_persistent_at sem : alt_sem sem → ∀ x tid,
+    Persistent (sem (pt_ghox x tid));
   pt_size_eq x tid : length (pt_phys x tid) = pt_size;
   pt_size_eq2 : size_of 𝔄 = pt_size;
   pt_phys_eq2 x tid : syn_phys x = pt_phys x tid;
@@ -392,12 +445,15 @@ Record plain_type `{!typeG FML Σ} 𝔄 := {
   pt_concrete x tid : all_concrete (pt_phys x tid);
   pt_non_prophetic (x: ~~𝔄) : ξl x = [];
 }.
-Global Existing Instance pt_gho_persistent.
 Global Instance: Params (@pt_size) 5 := {}.
 Global Instance: Params (@pt_ghox) 5 := {}.
 Global Instance: Params (@pt_phys) 5 := {}.
 Arguments pt_size {_ _ _ _} _ / : simpl nomatch.
 Arguments pt_ghox {_ _ _ _} _ _ _ / : simpl nomatch.
+Arguments pt_gho_persistent_at {_ _ _ _}.
+Global Instance pt_gho_persistent `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄)
+  x tid : Persistent (bor_sem (pt.(pt_ghox) x tid)).
+Proof. apply (pt_gho_persistent_at pt bor_sem alt_here). Qed.
 Definition pt_gho `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄)
   (x: ~~𝔄) (tid: thread_id) : iProp Σ := bor_sem (pt.(pt_ghox) x tid).
 Arguments pt_gho {_ _ _ _} _ _ _ : simpl never.
@@ -410,10 +466,14 @@ Program Definition st_of_pt `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄) : simp
   st_ghox x d g tid := pt.(pt_ghox) x tid;
   st_phys x tid := pt.(pt_phys) x tid;
 |}%I.
+Next Obligation.
+  intros FML Σ typeG0 𝔄 pt sem Hs x d g tid.
+  apply (pt_gho_persistent_at pt sem Hs).
+Qed.
 Next Obligation. move=> >. apply pt_size_eq. Qed.
 Next Obligation. move=> >. apply pt_size_eq2. Qed.
 Next Obligation. move=> >. apply pt_phys_eq2. Qed.
-Next Obligation. iIntros. iFrame "#". Qed.
+Next Obligation. move=> >. intros. by iIntros "$". Qed.
 Next Obligation. move=> >. intros Hin.
   rewrite (pt_non_prophetic) in Hin; trivial. set_solver. Qed.
 Next Obligation. intros. apply pt_concrete. Qed.
@@ -456,6 +516,9 @@ Next Obligation. move=> * //=. by rewrite gt_phys0. Qed.
 Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
 Next Obligation. move=> *. by iIntros "$". Qed.
 Next Obligation. move=> >. intros Hin. rewrite gt_non_prophetic in Hin; trivial. set_solver. Qed.
+Next Obligation.
+  move=> ???? gt sem Hs *. rewrite (empty_sem_at Hs). exact _.
+Qed.
 Next Obligation. move=> *. iIntros "_". by iApply empty_fml_sem_2. Qed.
 
 Lemma ty_of_gt_gho `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄) x d g tid :

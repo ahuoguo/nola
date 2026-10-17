@@ -19,6 +19,7 @@ Section int.
        pt_ghox (z: ~~Zₛ) _ := empty_fml;
        pt_phys (z: ~~Zₛ) _ := [ FVal #z ];
     |}.
+  Next Obligation. move=> sem H *. rewrite (empty_sem_at H). exact _. Qed.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.

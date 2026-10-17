@@ -27,14 +27,19 @@ Section base.
   Next Obligation. intros. apply syn_phys_size_eq. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> *. rewrite false_fml_sem. by iIntros "[]". Qed.
-  Next Obligation. move=> *. rewrite false_fml_sem. by iIntros "[]". Qed.
+  Next Obligation.
+    move=> ? sem H *. rewrite (false_sem_at H). by iIntros "[]".
+  Qed.
+  Next Obligation.
+    move=> ? sem H *. rewrite (false_sem_at H). by iIntros "[]".
+  Qed.
   (** The original composes guard *indices* here with
     [guards_trans_additive]; later-free the content is [False], so
     [guard_false] gives the result outright. *)
   Next Obligation.
     move=> *. rewrite false_fml_sem. iIntros "_ _ []".
   Qed.
+  Next Obligation. move=> ? sem H *. rewrite (false_sem_at H). exact _. Qed.
   Next Obligation. move=> *. rewrite false_fml_sem. by iIntros "[]". Qed.
   
   Lemma base_gho {𝔄} (x: ~~𝔄) d g tid : ty_gho base x d g tid ⊣⊢ False.

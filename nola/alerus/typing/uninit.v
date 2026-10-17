@@ -26,10 +26,11 @@ Section uninit.
   Next Obligation. intros. rewrite length_fmap. rewrite length_vec_to_list. trivial. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. intros; first [set_solver|iIntros "$"; by iIntros "$"]. Qed.
-  Next Obligation. intros; first [set_solver|iIntros "$"; by iIntros "$"]. Qed.
-  Next Obligation. intros; first [set_solver|iIntros "$"; by iIntros "$"]. Qed.
-  Next Obligation. intros; first [set_solver|iIntros "$"; by iIntros "$"]. Qed.
+  Next Obligation. move=> ? sem H *. iIntros "$". by iIntros "$". Qed.
+  Next Obligation. move=> ? sem H *. by iIntros "$". Qed.
+  Next Obligation. intros. set_solver. Qed.
+  Next Obligation. move=> ? sem H *. rewrite (empty_sem_at H). exact _. Qed.
+  Next Obligation. intros. by iIntros "$". Qed.
 End uninit.
 
 Notation "↯" := uninit : lrust_type_scope.

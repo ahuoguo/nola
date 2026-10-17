@@ -95,14 +95,14 @@ Section sum.
             * dependent destruction tyl. simpl. rewrite <- ty_size_eq2. f_equal. apply IH𝔄l.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl d g d' g' [x pad] tid H1 H2. simpl.
+    intros 𝔄l tyl sem H d g d' g' [x pad] tid H1 H2. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
-    apply ty_gho_depth_mono; trivial.
+    apply (ty_gho_depth_mono_at _ sem H); trivial.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl d g d' g' [x pad] tid H1 H2. simpl.
+    intros 𝔄l tyl sem H d g d' g' [x pad] tid H1 H2. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
-    apply ty_gho_pers_depth_mono; trivial.
+    apply (ty_gho_pers_depth_mono_at _ sem H); trivial.
   Qed.
   Next Obligation.
     intros 𝔄l tyl κ [x pad] d g tid ξ R. simpl.
@@ -118,8 +118,9 @@ Section sum.
     iApply lft_intersect_tyl_lfts_lookup_incl.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl [x pad] d g tid.
+    intros 𝔄l tyl sem H [x pad] d g tid.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
+    apply (ty_gho_pers_pers_at _ sem H).
   Qed.
   Next Obligation.
     intros 𝔄l tyl [x pad] d g tid.
