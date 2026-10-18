@@ -24,13 +24,16 @@ Proof. intros κ; unfold llft_intersect; set_solver. Qed.
 Global Instance lft_intersect_right_id : RightId eq static meet.
 Proof. intros κ; unfold llft_intersect; set_solver. Qed.
 
-Definition lft_equiv `{!alerusGS FML Σ} (κ κ': lft) : iProp Σ :=
-  (κ ⊑ κ' ∗ κ' ⊑ κ)%I.
+(** Lifetime equivalence, as a pair of *stored* inclusions: it ends up inside
+  a type's ghost assertion through [type_incl], which is a formula.  See
+  [AltSem] in [typing/ctx.v]. *)
+Definition lft_equiv `{!alerusGS FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
+  !AltSem FML Σ} (κ κ': lft) : iProp Σ := (dincl κ κ' ∗ dincl κ' κ)%I.
 
 Infix "≡ₗ" := lft_equiv (at level 70) : bi_scope.
 
 Section lifetimes.
-  Context `{!alerusGS FML Σ}.
+  Context `{!alerusGS FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ, !AltSem FML Σ}.
   Implicit Type (κ: lft).
 
   Global Instance lft_intersect_comm : Comm (A:=lft) eq (⊓).
@@ -70,12 +73,17 @@ Section lifetimes.
   Proof. iApply guard_refl. Qed.
 
   Lemma lft_equiv_refl κ : ⊢ lft_equiv κ κ.
-  Proof. by iSplit; iApply guard_refl. Qed.
+  Proof. by iSplit; iApply dincl_refl. Qed.
+  Lemma dincl_static κ : ⊢ dincl κ static.
+  Proof. apply dincl_of, lft_incl_static. Qed.
+  Lemma dincl_intersect_list_elem_of κs κ :
+    κ ∈ κs → ⊢ dincl (lft_intersect_list κs) κ.
+  Proof. move=> ?. apply dincl_of. by apply lft_intersect_list_elem_of_incl. Qed.
 
   Lemma lft_intersect_equiv_idemp κ : ⊢ κ ⊓ κ ≡ₗ κ.
   Proof.
     iSplit; unfold meet, llft_intersect;
-      replace (κ ∪ κ) with κ by set_solver; iApply lft_incl_refl.
+      replace (κ ∪ κ) with κ by set_solver; iApply dincl_refl.
   Qed.
 
   Lemma lft_intersect_mono : ∀ κ1 κ1' κ2 κ2',
@@ -93,20 +101,42 @@ Section lifetimes.
   Lemma lft_equiv_trans κ κ' κ'' : ⊢ κ ≡ₗ κ' -∗ κ' ≡ₗ κ'' -∗ κ ≡ₗ κ''.
   Proof.
     iIntros "[H1 H2][H3 H4]". iSplit.
-    - iApply (llftl_incl_trans with "H1 H3").
-    - iApply (llftl_incl_trans with "H4 H2").
+    - iApply (dincl_trans with "H1 H3").
+    - iApply (dincl_trans with "H4 H2").
   Qed.
 
   Lemma lft_intersect_equiv_proper κ1 κ2 κ3 κ4 :
     κ1 ≡ₗ κ3 -∗ κ2 ≡ₗ κ4 -∗ κ1 ⊓ κ2 ≡ₗ κ3 ⊓ κ4.
   Proof.
-    iIntros "[#H1 #H2] [#H3 #H4]". iSplit; by iApply lft_intersect_mono.
+    iIntros "[#H1 #H2] [#H3 #H4]". iSplit; by iApply dincl_intersect_mono.
+  Qed.
+  Lemma dincl_equiv_proper κ1 κ2 κ3 κ4 :
+    (⊢ κ1 ≡ₗ κ3) → (⊢ κ2 ≡ₗ κ4) → dincl κ1 κ2 ⊣⊢ dincl κ3 κ4.
+  Proof.
+    move=> H1 H2. iDestruct H1 as "[#A1 #A2]". iDestruct H2 as "[#B1 #B2]".
+    iSplit; iIntros "#H".
+    - iApply (dincl_trans with "A2"). iApply (dincl_trans with "H B1").
+    - iApply (dincl_trans with "A1"). iApply (dincl_trans with "H B2").
+  Qed.
+  Lemma dincl_equiv_proper_l κ1 κ2 κ3 :
+    (⊢ κ1 ≡ₗ κ3) → dincl κ1 κ2 ⊣⊢ dincl κ3 κ2.
+  Proof.
+    move=> ?. apply dincl_equiv_proper; [done|]. iApply lft_equiv_refl.
+  Qed.
+  Lemma dincl_equiv_proper_r κ1 κ2 κ3 :
+    (⊢ κ2 ≡ₗ κ3) → dincl κ1 κ2 ⊣⊢ dincl κ1 κ3.
+  Proof.
+    move=> ?. apply dincl_equiv_proper; [|done]. iApply lft_equiv_refl.
   Qed.
 
   Lemma lft_incl_equiv_proper κ1 κ2 κ3 κ4 :
     (⊢ κ1 ≡ₗ κ3) → (⊢ κ2 ≡ₗ κ4) → κ1 ⊑ κ2 ⊣⊢ κ3 ⊑ κ4.
   Proof.
-    intros H1 H2. iDestruct H1 as "[??]". iDestruct H2 as "[??]".
+    intros H1 H2.
+    iDestruct H1 as "[A1 A2]". iDestruct (dincl_sem with "A1") as "#A1'".
+    iDestruct (dincl_sem with "A2") as "#A2'".
+    iDestruct H2 as "[B1 B2]". iDestruct (dincl_sem with "B1") as "#B1'".
+    iDestruct (dincl_sem with "B2") as "#B2'".
     by iSplit; iIntros "#H";
     (iApply llftl_incl_trans; [|iApply llftl_incl_trans]; [|iApply "H"|]).
   Qed.

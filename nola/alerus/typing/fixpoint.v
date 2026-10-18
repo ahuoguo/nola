@@ -58,7 +58,9 @@ Section S.
     rewrite (HE (Tn (S n))) IH !HE !assoc -!persistent_sep_dup -!assoc.
     iSplit; iIntros "#H"; repeat iDestruct "H" as "[? H]"; iFrame "#".
     iApply (big_sepL_impl with "H"). iIntros "!> * _". iIntros "#?".
-    iApply llftl_incl_trans; [done|]. iDestruct (Tn_ty_lft_const (S n) 0) as "[_ $]".
+    have Hc : ⊢ dincl (ty_lft (Tn 0)) (ty_lft (Tn (S n)))
+      by iDestruct (Tn_ty_lft_const (S n) 0) as "[_ $]".
+    iApply dincl_trans; [done|]. iApply Hc.
   Qed.
   
   Lemma Tn_cauchy n i : (n ≤ i)%nat →
@@ -167,7 +169,11 @@ Section S.
   Qed.
   Next Obligation.
     move=> n *. iIntros "#LFT #?". iApply (ty_guard_proph with "LFT"); [done|].
-    iApply llftl_incl_trans; [done|]. iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
+    have Hc : ⊢ dincl (ty_lft (Tn 0)) (ty_lft (Tn n))
+      by iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
+    have Hc' : ⊢ llft_incl (ty_lft (Tn 0)) (ty_lft (Tn n))
+      by rewrite -dincl_sem.
+    iApply llftl_incl_trans; [done|]. iApply Hc'.
   Qed.
   Next Obligation. move=> n sem H. apply (ty_gho_pers_pers_at (Tn n) sem H). Qed.
   Next Obligation. move=> >. apply ty_gho_pers_impl. Qed.
@@ -264,9 +270,15 @@ Section fix_ty.
       + iApply lft_equiv_trans; [iApply Hα|iApply lft_equiv_sym; iApply Hα].
     }
     iSplit.
-    { iModIntro. iIntros. rewrite /ty_gho EqOwn'. by iApply bi.equiv_iff. }
+    { iIntros "!>" (sem Hsem x d g tid).
+      have ? := alt_sem_ne Hsem.
+      have ? : Proper ((≡) ==> (≡)) sem := ne_proper _.
+      rewrite (EqOwn' x d g tid). by iApply bi.equiv_iff. }
     iSplit.
-    { iModIntro. iIntros. rewrite /ty_gho_pers EqShr'. by iApply bi.equiv_iff. }
+    { iIntros "!>" (sem Hsem x d g tid).
+      have ? := alt_sem_ne Hsem.
+      have ? : Proper ((≡) ==> (≡)) sem := ne_proper _.
+      rewrite (EqShr' x d g tid). by iApply bi.equiv_iff. }
     { iPureIntro. intros. do 2 (rewrite <- ty_phys_eq2). trivial. }
   Qed.
   Lemma fix_fold_unfold {𝔄} (T: type 𝔄 → type 𝔄) {HT: TypeContractive T} E L :
@@ -376,26 +388,34 @@ Section fix_ty.
     (∀`(!Sync ty), Sync (T ty)) → Sync (fix_ty T).
   Proof.
     move=> ?. have ?: ∀n, Sync (Tn T n) by elim; apply _.
-    rewrite /fix_ty=> tid tid' x d g. rewrite /ty_gho /ty_gho_pers.
+    rewrite /fix_ty=> tid tid' x d g.
     cbn [ty_phys ty_ghox ty_gho_persx].
     unshelve eapply (@limit_preserving_compl _ _ _
       (λ p : prodO (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ)
                    (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ),
         ty_phys (Tn T 0) x tid = ty_phys (Tn T 0) x tid' ∧
-        (bor_sem (p.1 x d g tid) ⊣⊢ bor_sem (p.1 x d g tid')) ∧
-        (bor_sem (p.2 x d g tid) ⊣⊢ bor_sem (p.2 x d g tid')))
+        (∀ sem, alt_sem sem →
+          sem (p.1 x d g tid) ⊣⊢ sem (p.1 x d g tid')) ∧
+        (∀ sem, alt_sem sem →
+          sem (p.2 x d g tid) ⊣⊢ sem (p.2 x d g tid')))
       _ (gho_chain T)).
       + apply limit_preserving_and; [|apply limit_preserving_and].
         * do 2 (rewrite <- ty_phys_eq2). apply limit_preserving_const.
-        * apply (limit_preserving_equiv
+        * apply limit_preserving_forall=> sem.
+          apply limit_preserving_forall=> Hsem.
+          have Hne := alt_sem_ne Hsem.
+          apply (limit_preserving_equiv
             (A:=prodO (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ)
                       (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ))
-            (λ p, bor_sem (p.1 x d g tid)) (λ p, bor_sem (p.1 x d g tid')))
+            (λ p, sem (p.1 x d g tid)) (λ p, sem (p.1 x d g tid')))
             => ??? [Eq _]; f_equiv; apply Eq.
-        * apply (limit_preserving_equiv
+        * apply limit_preserving_forall=> sem.
+          apply limit_preserving_forall=> Hsem.
+          have Hne := alt_sem_ne Hsem.
+          apply (limit_preserving_equiv
             (A:=prodO (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ)
                       (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ))
-            (λ p, bor_sem (p.2 x d g tid)) (λ p, bor_sem (p.2 x d g tid')))
+            (λ p, sem (p.2 x d g tid)) (λ p, sem (p.2 x d g tid')))
             => ??? [_ Eq]; f_equiv; apply Eq.
       + intros. split.
         * do 2 (rewrite <- ty_phys_eq2). done.

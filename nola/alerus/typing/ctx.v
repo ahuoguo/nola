@@ -755,6 +755,11 @@ Class AltSem (FML : oFunctor) Σ
     satisfaction; every candidate maps into itself *)
   alt_here : alt_sem bor_sem;
   alt_into_refl {sem} : alt_sem sem → alt_into sem sem;
+  (** Every candidate can read a judgment stored at the ambient
+    interpretation.  In the model the candidates are the derivability
+    candidates [δ'] with [dinto der δ'], which [Deriv_factor']'s induction
+    hypothesis carries along. *)
+  alt_sem_into {sem} : alt_sem sem → alt_into bor_sem sem;
   alt_WGuard_here : alt_WGuard bor_sem = alerus_WGuard;
   alt_sem_ne {sem} : alt_sem sem → NonExpansive sem;
   (** The non-judgment constructors mean the same at every candidate *)
@@ -800,6 +805,35 @@ Class AltSem (FML : oFunctor) Σ
     here; see the note in README.md. *)
   idxbor_fml_pers_at {sem} : alt_sem sem → ∀ κ idx Px,
     Persistent (sem (idxbor_fml κ idx Px));
+  (** [idx_bor_iff] at a candidate: an indexed borrow only cares about the
+    semantics of its contents. *)
+  idxbor_fml_iff_at {sem} : alt_sem sem → ∀ κ idx Px Qx,
+    □ (∀ sem' (_ : alt_sem sem'), sem' Px ∗-∗ sem' Qx) -∗
+    sem (idxbor_fml κ idx Px) -∗ sem (idxbor_fml κ idx Qx);
+  (** Borrow-state ownership means the same at every candidate.  This is
+    what [idx_bor_tok] is made of. *)
+  bor_state_sem_at {sem} : alt_sem sem → ∀ sn bs,
+    sem (bor_state_fml sn bs) ⊣⊢ bor_sem (bor_state_fml sn bs);
+  (** Reading a stored indexed borrow at a candidate the storing
+    interpretation maps into.  [Deriv_map] in the model, exactly as
+    [guard_fml_sem_into]. *)
+  idxbor_fml_into {sem sem'} :
+    alt_sem sem → alt_sem sem' → alt_into sem sem' → ∀ κ idx Px,
+    sem (idxbor_fml κ idx Px) ⊢ sem' (idxbor_fml κ idx Px);
+  (** [llftl_idx_bor_guard'] for a stored indexed borrow, at a candidate:
+    the lifetime logic's proof is parametric in [BorSem], so it replays at
+    the candidate's own world satisfaction. *)
+  idxbor_fml_guard_at {sem} : alt_sem sem → ∀ κ idx Px (G : iProp Σ),
+    sem (idxbor_fml κ idx Px) -∗
+    (G &&{alt_WGuard sem}&&> @[κ]) -∗
+    (G &&{alt_WGuard sem}&&> idx_bor_tok idx) -∗
+    G &&{alt_WGuard sem}&&> (@[κ] ∗ sem Px);
+  (** [llftl_idx_shorten] for a stored indexed borrow, at a candidate.  Like
+    [dincl_glb_at] this is a lifetime-logic fact about a judgment, so it is
+    [Deriv_map] in the model but cannot be derived here. *)
+  idxbor_fml_shorten_at {sem} : alt_sem sem → ∀ κ κ' idx Px,
+    sem (guard_fml (alive_fml κ') (alive_fml κ)) -∗
+    sem (idxbor_fml κ idx Px) -∗ sem (idxbor_fml κ' idx Px);
   (** Lifetime inclusion is storable.
 
     [llft_incl κ κ'] is itself a guard over [alerus_WGuard], so it has no
@@ -826,6 +860,12 @@ Class AltSem (FML : oFunctor) Σ
   dincl_eternalize {κ} :
     @[κ] =[alerus_wsat]=∗
       bor_sem (guard_fml (alive_fml static) (alive_fml κ));
+  (** [Ltok]'s share guards the local lifetime context at every candidate:
+    [frac_key_wsat llctx_interp] is part of [alerus_WG], which every
+    candidate's guarding world satisfaction contains and which does not
+    mention the interpretation. *)
+  Ltok_guard_frac_at {sem} : alt_sem sem → ∀ γ L q,
+    frac_key_tok γ L ⊢ frac_tok γ q &&{alt_WGuard sem}&&> llctx_interp L;
   (** [llftl_borrow_shared] at the formula level.  The shared borrow it
     allocates is a [sinv_tok], which does not mention the interpretation, and
     [sinv_tok_guard] turns it into a guard at *every* candidate - so this is
@@ -834,12 +874,27 @@ Class AltSem (FML : oFunctor) Σ
     bor_sem Px -∗ |=[alerus_WGuard]=>
       bor_sem (guard_fml (alive_fml κ) Px) ∗
       ([†κ] -∗ |=[alerus_WGuard]=> bor_sem Px);
+  (** [bor_to_guard] at the formula level.  A full borrow token [&{κ} Px] is
+    plain CMRA ownership - it does not mention the interpretation - and
+    [bor_to_guard] is parametric in [BorSem], so the guard it yields holds at
+    every candidate.  This is the second place where a guard can be stored in
+    the first place. *)
+  guard_fml_of_bor {κ Px} :
+    llft_ctx -∗ full_bor κ Px =[alerus_wsat]=∗
+      bor_sem (guard_fml (alive_fml κ) Px);
 }.
+
+(** [alt_sem] is a class, so that a hypothesis [alt_sem sem] in the context
+  makes [sem] non-expansive for [setoid_rewrite] and [f_equiv]. *)
+Existing Class alt_sem.
 
 Section alt_sem.
   Context `{!alerusGS FML Σ, !EmptySem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
     !AltSem FML Σ}.
   Implicit Type Px Qx Rx Sx : FML $oi Σ.
+
+  #[export] Instance alt_sem_ne' {sem} `{Hs : !alt_sem sem} :
+    NonExpansive sem := alt_sem_ne Hs.
 
   (** ** A guard held *as a formula*
 
@@ -916,6 +971,22 @@ Section alt_sem.
     move=> eq. have ? := guard_fml_pers_at H. iIntros "#g". iApply (dguard_of_all_at H).
     iIntros (sem' Hs Hi). iApply (guard_rhs_iff (eq sem' Hs)).
     by iApply (guard_fml_sem_into H Hs Hi).
+  Qed.
+
+  (** The two-sided form of [dguard_rhs_iff_at] *)
+  Lemma dguard_rhs_iff_at' {sem} (H : alt_sem sem) {Px Qx Qx'} :
+    (∀ sem', alt_sem sem' → sem' Qx ⊣⊢ sem' Qx') →
+    sem (guard_fml Px Qx) ⊣⊢ sem (guard_fml Px Qx').
+  Proof.
+    move=> eq. iSplit; [iApply (dguard_rhs_iff_at H eq)|].
+    iApply (dguard_rhs_iff_at H)=> sem' Hs. by rewrite (eq sem' Hs).
+  Qed.
+  Lemma dguard_lhs_iff_at' {sem} (H : alt_sem sem) {Px Px' Qx} :
+    (∀ sem', alt_sem sem' → sem' Px ⊣⊢ sem' Px') →
+    sem (guard_fml Px Qx) ⊣⊢ sem (guard_fml Px' Qx).
+  Proof.
+    move=> eq. iSplit; [iApply (dguard_lhs_iff_at H)=> sem' Hs|
+      iApply (dguard_lhs_iff_at H (eq))]; by rewrite (eq sem' Hs).
   Qed.
 
   Lemma dguard_sep_l_at {sem} (H : alt_sem sem) {Px Qx} :
@@ -1062,6 +1133,31 @@ Section alt_sem.
   Lemma dguard_alive_sem {κ Qx} :
     dguard (alive_fml κ) Qx ⊢ @[κ] &&{alerus_WGuard}&&> bor_sem Qx.
   Proof. rewrite dguard_sem alive_fml_sem //. Qed.
+  (** The same, with the right-hand side's semantics already computed.  Pass
+    the [⊣⊢] of the [BorSem] field, e.g. [cells_fml_sem _ _ _]. *)
+  Lemma dguard_alive_sem' {κ Qx} {Q : iProp Σ} :
+    (bor_sem Qx ⊣⊢ Q) → dguard (alive_fml κ) Qx ⊢
+      @[κ] &&{alerus_WGuard}&&> Q.
+  Proof. move=> <-. exact dguard_alive_sem. Qed.
+
+  (** Reading a guard stored at the ambient interpretation, at a candidate *)
+  Lemma dguard_at {sem} (H : alt_sem sem) {Px Qx} :
+    dguard Px Qx ⊢ sem (guard_fml Px Qx).
+  Proof.
+    iIntros "#g". iApply (dguard_of_all_at H). iIntros (sem' Hs _).
+    iApply (guard_fml_sem_into alt_here Hs (alt_sem_into Hs) with "g").
+  Qed.
+
+  (** A location with no cells is allocated for free *)
+  Lemma dguard_cmapstoany_nil {Px l n} :
+    ⊢ dguard Px (cmapstoany_fml (l, repeat [] n)).
+  Proof.
+    have Heq : ∀ sem, alt_sem sem →
+      sem empty_fml ⊣⊢ sem (cmapstoany_fml (l, repeat [] n)).
+    { move=> sem Hsem. rewrite (empty_sem_at Hsem) (cmapstoany_sem_at Hsem).
+      by rewrite -heap_cloc_mapsto_empty. }
+    iApply (dguard_rhs_iff Heq). iApply dguard_true.
+  Qed.
 
   (** ** Lifetime inclusion as a stored guard *)
 
@@ -1114,6 +1210,25 @@ Section alt_sem.
     bor_sem Px -∗ |=[alerus_WGuard]=>
       dguard (alive_fml κ) Px ∗ ([†κ] -∗ |=[alerus_WGuard]=> bor_sem Px).
   Proof. exact guard_fml_borrow_shared. Qed.
+
+  (** [guard_cloc_combine_fancy] for stored guards: the combination is a
+    fact about the heap, so it replays at every candidate. *)
+  Lemma dguard_cloc_combine_fancy {Px} (l : cloc) (vl : list fancy_val) :
+    dguard Px (cmapstoany_fml l) -∗ dguard Px (ccells_fml l vl) -∗
+    dguard Px (cells_fml l.1 l.2 vl).
+  Proof.
+    have ? := guard_fml_pers_at alt_here.
+    iIntros "#g1 #g2". iApply dguard_of_all. iIntros (sem' Hs Hi).
+    iDestruct (guard_fml_sem_into alt_here Hs Hi with "g1") as "g1'".
+    iDestruct (guard_fml_sem_into alt_here Hs Hi with "g2") as "g2'".
+    rewrite (cells_sem_at Hs) (cmapstoany_sem_at Hs) (ccells_sem_at Hs).
+    iApply (guard_cloc_combine_fancy with "g1' g2'").
+  Qed.
+
+  (** Storing the guard a full borrow gives *)
+  Lemma dguard_of_bor {κ Px} :
+    llft_ctx -∗ full_bor κ Px =[alerus_wsat]=∗ dguard (alive_fml κ) Px.
+  Proof. exact guard_fml_of_bor. Qed.
 End alt_sem.
 
 (** ** Notation for formulas

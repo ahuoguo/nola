@@ -342,7 +342,8 @@ Section product_split.
     iDestruct "gho" as "(#Incl & %Ineqs & UniqBody & #PtBase & #Pers)".
     iDestruct "Pers" as "[Dead|#Pers]".
     { (* [κ] is already dead, so the lifetime context is contradictory *)
-      iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+      iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 f1 Wg") as "[Alive _]".
@@ -419,10 +420,15 @@ Section product_split.
     rewrite (llftl_bor_idx κ
       (uniq_body_fml ty' y0 ζ'i tid (cloc_skip l ty.(ty_size)))).
     iDestruct "Bor2" as (ζ'idx) "[#ζ'Bor ζ'Tok]".
-    iDestruct (guard_rhs_iff (heap_cloc_mapsto_emp_vec_app l (ty_size ty))
+    iDestruct (dguard_rhs_iff
+      (Qx':=(cmapstoany_fml (cloc_take l (ty_size ty)) ∗
+             cmapstoany_fml (cloc_skip l (ty_size ty)))%FML)
+      (λ sem Hsem, ltac:(rewrite (cmapstoany_sem_at Hsem) (sep_sem_at Hsem)
+        !(cmapstoany_sem_at Hsem);
+        exact: (heap_cloc_mapsto_emp_vec_app l (ty_size ty))))
       with "PtBase") as "#PtBase'".
-    iDestruct (guard_rhs_sep_l with "PtBase'") as "#PtBase1".
-    iDestruct (guard_rhs_sep_r with "PtBase'") as "#PtBase2".
+    iDestruct (dguard_rhs_sep_l with "PtBase'") as "#PtBase1".
+    iDestruct (dguard_rhs_sep_r with "PtBase'") as "#PtBase2".
     iAssert (κ ⊑ ty_lft ty)%I as "#Inκ1".
     { iApply (guard_trans with "Incl []").
       rewrite /= lft_intersect_list_app. iApply llftl_intersect_incl_l. }

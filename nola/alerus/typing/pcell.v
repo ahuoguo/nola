@@ -167,11 +167,10 @@ Section points_to.
     Sync ty → Sync (cell_points_to_ty ty).
   Proof.
     move=> HSync tid tid' x d g. split; [done|].
-    destruct d as [|d'].
-    { split; rewrite /ty_gho /ty_gho_pers /=; done. }
-    have [Hp [Hg Hgp]] := HSync tid tid' x.2 d' g. split.
-    - rewrite !cell_points_to_gho /=. by rewrite Hp Hg.
-    - rewrite !cell_points_to_gho_pers /=. by rewrite Hgp.
+    destruct d as [|d']; [by split=> sem Hsem|].
+    have [Hp [Hg Hgp]] := HSync tid tid' x.2 d' g. split=> sem Hsem.
+    - rewrite /= !(sep_sem_at Hsem) Hp (Hg _ Hsem) //.
+    - rewrite /= !(sep_sem_at Hsem) (Hgp _ Hsem) //.
   Qed.
 End points_to.
 
@@ -410,7 +409,8 @@ Section typing.
     iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     rewrite /= length_pad in Hlen'.
     iDestruct "Pers" as "[Dead|#Pers]".
-    { iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+    { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg' Wr']".
       iDestruct (guard_acc with "G3 f Wg'") as "[Alive _]".
@@ -616,7 +616,8 @@ Section typing.
       as "#Gκ'".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γl (1/2)))). iApply "Gκ". }
     iDestruct "Pers" as "[Dead|#Pers]".
-    { iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+    { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 fb Wg") as "[Alive _]".
@@ -748,7 +749,8 @@ Section typing.
       as "#Gκ'".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γl (1/2)))). iApply "Gκ". }
     iDestruct "Pers" as "[Dead|#Pers]".
-    { iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+    { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 fb Wg") as "[Alive _]".

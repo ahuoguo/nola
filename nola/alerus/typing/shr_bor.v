@@ -83,37 +83,42 @@ Section shr_bor.
 
   Lemma shr_bor_st_gho {𝔄} κ (ty: type 𝔄) x d g tid :
     st_gho (shr_bor_st κ ty) x d g tid ⊣⊢ [S(d') := d]
-      ((@[κ] &&{Wguard}&&> ((x.1).1 ↦[^ (x.1).2 ]!∗ ty.(ty_phys) (snd x) tid)) ∗
-       (@[κ] &&{Wguard}&&> ty_gho ty (snd x) d' g tid) ∗
+      (dguard (alive_fml κ)
+         (cells_fml (x.1).1 (x.1).2 (ty.(ty_phys) (snd x) tid)) ∗
+       dguard (alive_fml κ) (ty.(ty_ghox) (snd x) d' g tid) ∗
        ty_gho_pers ty (snd x) d' g tid).
   Proof.
     rewrite /st_gho. destruct d as [|d']; [apply false_fml_sem|].
-    by rewrite /= !bor_sep_sem !guard_fml_sem !alive_fml_sem cells_fml_sem.
+    by rewrite /= !bor_sep_sem.
   Qed.
 
   Lemma shr_bor_gho {𝔄} κ (ty: type 𝔄) x d g tid :
     ty_gho (shr_bor κ ty) x d g tid ⊣⊢ [S(d') := d]
-      ((@[κ] &&{Wguard}&&> ((x.1).1 ↦[^ (x.1).2 ]!∗ ty.(ty_phys) (snd x) tid)) ∗
-       (@[κ] &&{Wguard}&&> ty_gho ty (snd x) d' g tid) ∗
+      (dguard (alive_fml κ)
+         (cells_fml (x.1).1 (x.1).2 (ty.(ty_phys) (snd x) tid)) ∗
+       dguard (alive_fml κ) (ty.(ty_ghox) (snd x) d' g tid) ∗
        ty_gho_pers ty (snd x) d' g tid).
   Proof. apply shr_bor_st_gho. Qed.
   Lemma shr_bor_gho_pers {𝔄} κ (ty: type 𝔄) x d g tid :
     ty_gho_pers (shr_bor κ ty) x d g tid ⊣⊢ [S(d') := d]
-      ((@[κ] &&{Wguard}&&> ((x.1).1 ↦[^ (x.1).2 ]!∗ ty.(ty_phys) (snd x) tid)) ∗
-       (@[κ] &&{Wguard}&&> ty_gho ty (snd x) d' g tid) ∗
+      (dguard (alive_fml κ)
+         (cells_fml (x.1).1 (x.1).2 (ty.(ty_phys) (snd x) tid)) ∗
+       dguard (alive_fml κ) (ty.(ty_ghox) (snd x) d' g tid) ∗
        ty_gho_pers ty (snd x) d' g tid).
   Proof. apply shr_bor_gho. Qed.
 
   Global Instance into_sep_shr_bor_gho {𝔄} κ (ty: type 𝔄) x d' g tid :
     IntoSep (ty_gho (shr_bor κ ty) x (S d') g tid)
-      (@[κ] &&{Wguard}&&> ((x.1).1 ↦[^ (x.1).2 ]!∗ ty.(ty_phys) (snd x) tid))
-      ((@[κ] &&{Wguard}&&> ty_gho ty (snd x) d' g tid) ∗
+      (dguard (alive_fml κ)
+        (cells_fml (x.1).1 (x.1).2 (ty.(ty_phys) (snd x) tid)))
+      (dguard (alive_fml κ) (ty.(ty_ghox) (snd x) d' g tid) ∗
         ty_gho_pers ty (snd x) d' g tid).
   Proof. rewrite /IntoSep shr_bor_gho /=. by iIntros "$". Qed.
   Global Instance from_sep_shr_bor_gho {𝔄} κ (ty: type 𝔄) x d' g tid :
     FromSep (ty_gho (shr_bor κ ty) x (S d') g tid)
-      (@[κ] &&{Wguard}&&> ((x.1).1 ↦[^ (x.1).2 ]!∗ ty.(ty_phys) (snd x) tid))
-      ((@[κ] &&{Wguard}&&> ty_gho ty (snd x) d' g tid) ∗
+      (dguard (alive_fml κ)
+        (cells_fml (x.1).1 (x.1).2 (ty.(ty_phys) (snd x) tid)))
+      (dguard (alive_fml κ) (ty.(ty_ghox) (snd x) d' g tid) ∗
         ty_gho_pers ty (snd x) d' g tid).
   Proof. rewrite /FromSep shr_bor_gho /=. by iIntros "$". Qed.
 
@@ -153,13 +158,16 @@ Section typing.
 
   Global Instance shr_sync {𝔄} κ (ty: type 𝔄) : Sync ty → Sync (&shr{κ} ty).
   Proof.
-    move=> Hsync tid tid' x d g. split; [done|]. split.
-    - rewrite !shr_bor_gho. destruct d as [|d]; [reflexivity|]=>/=.
-      destruct (Hsync tid tid' (snd x) d g) as [phys [gho pers]].
-      by rewrite gho phys pers.
-    - rewrite !shr_bor_gho_pers. destruct d as [|d]; [reflexivity|]=>/=.
-      destruct (Hsync tid tid' (snd x) d g) as [phys [gho pers]].
-      by rewrite gho phys pers.
+    move=> Hsync tid tid' x d g. split; [done|].
+    have Hsh : ∀ sem, alt_sem sem →
+      sem (st_ghox (shr_bor_st κ ty) x d g tid) ⊣⊢
+      sem (st_ghox (shr_bor_st κ ty) x d g tid').
+    { move=> sem Hsem. rewrite /= /by_succx.
+      destruct d as [|dd]; [done|]=>/=.
+      destruct (Hsync tid tid' (snd x) dd g) as [phys [gho pers]].
+      rewrite !(sep_sem_at Hsem) phys (pers _ Hsem).
+      by rewrite (dguard_rhs_iff_at' Hsem (Px:=alive_fml κ) gho). }
+    by split.
   Qed.
 
   (** The original's [⧖ d0] and its [|={…}▷=>^d] are gone with the time
@@ -169,7 +177,7 @@ Section typing.
     move=> Hsync. split.
     - move=> ?? [??] [??] Ha. by inversion Ha.
     - move=> tid tid' x d g G κs.
-      have [_ [Hg _]] := shr_sync κ ty Hsync tid tid' x d g.
+      have [_ [Hg _]] := sync_tid (ty := &shr{κ} ty) tid tid' x d g.
       iIntros "_ _ lfts _ K A $ !>". iExists x, 0. rewrite Nat.add_0_r.
       iFrame "lfts K". iSplit; [|done]. by iApply (iff_1 Hg).
   Qed.
@@ -182,21 +190,31 @@ Section typing.
   Proof. apply resolve_just. Qed.
 
   Lemma shr_type_incl {𝔄 𝔅} κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
-    κ' ⊑ κ -∗ type_incl ty ty' f -∗
+    dincl κ' κ -∗ type_incl ty ty' f -∗
       type_incl (&shr{κ} ty) (&shr{κ'} ty') (at_cloc_mapₛ f).
   Proof.
-    iIntros "#Incl". iDestruct 1 as "(_ & #Incl2 & #Sub & #SubPers & %Phys)".
+    iIntros "#Incl". iDestruct (dincl_sem with "Incl") as "#Incl'".
+    iDestruct 1 as "(_ & #Incl2 & #Sub & #SubPers & %Phys)".
     iApply (@type_incl_simple_type _ _ _ (at_clocₛ 𝔄) (at_clocₛ 𝔅) _ _).
     - done.
-    - rewrite /ty_lfts /ty_of_st /st_lfts. by iApply lft_intersect_mono.
-    - setoid_rewrite shr_bor_st_gho. iIntros "!>" (x d g tid) "A".
-      destruct x as [l x]. destruct d as [|d]; [done|]. rewrite /by_succ /=.
-      iDestruct "A" as "(#Hphys & #Hgho & #Hpers)". iSplit.
-      { rewrite Phys. iApply (guard_trans with "Incl Hphys"). }
+    - rewrite /ty_lfts /ty_of_st /st_lfts. by iApply dincl_intersect_mono.
+    - iIntros "!>" (sem Hsem x d g tid).
+      destruct x as [l x]. destruct d as [|dd];
+        [rewrite /= (false_sem_at Hsem); by iIntros "[]"|].
+      have ? := guard_fml_pers_at Hsem.
+      have ? := ty_gho_pers_pers_at ty sem Hsem.
+      rewrite /= !(sep_sem_at Hsem).
+      iAssert (sem (guard_fml (alive_fml κ') (alive_fml κ))) as "#Incl0".
+      { iApply (dguard_of_all_at Hsem). iIntros (sem' Hs Hi).
+        iApply (guard_fml_sem_into alt_here Hs (alt_sem_into Hs) with "Incl"). }
+      iIntros "#(Hphys & Hgho & Hpers)". iSplit.
+      { rewrite Phys. iApply (dguard_trans_at Hsem with "Incl0 Hphys"). }
       iSplit.
-      + iApply (guard_trans with "Incl"). iApply (guard_trans with "Hgho").
-        iApply guard_intro. iIntros "!> gho". by iApply "Sub".
-      + by iApply "SubPers".
+      + iApply (dguard_trans_at Hsem with "Incl0 []").
+        iApply (dguard_trans_at Hsem with "Hgho []").
+        iApply (dguard_intro_at Hsem). iIntros (sem' Hs) "!> gho".
+        iDestruct ("Sub" $! sem' Hs with "gho") as "[$ $]".
+      + by iApply ("SubPers" $! sem Hsem).
     - iPureIntro. by move=> [l x].
   Qed.
 
@@ -238,8 +256,11 @@ Section typing.
       guards both the physical contents and the inner ghost state. *)
     iAssert (frac_tok γ q &&{Wguard}&&> @[κ])%I as "#G1".
     { iApply (guard_trans with "[] Alv"). iApply Ltok_guard_frac. iFrame "key". }
-    iDestruct (guard_trans with "G1 A") as "#GA".
-    iDestruct (guard_trans with "G1 B") as "#GB".
+    iDestruct (dguard_alive_sem with "A") as "#A'".
+    iDestruct (dguard_alive_sem with "B") as "#B'".
+    iDestruct (guard_trans with "G1 A'") as "#GA0".
+    iDestruct (guard_rhs_iff (cells_fml_sem _ _ _) with "GA0") as "#GA".
+    iDestruct (guard_trans with "G1 B'") as "#GB".
     (* The inner ghost state is persistent, so opening its guard once is
       enough to keep it. *)
     iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".

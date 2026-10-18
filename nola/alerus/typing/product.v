@@ -289,9 +289,9 @@ Section typing.
     move=> S1 S2 tid tid' x d g.
     destruct (S1 tid tid' (fst x) d g) as [S1p [S1g S1gp]].
     destruct (S2 tid tid' (snd x) d g) as [S2p [S2g S2gp]].
-    split; [by rewrite /= S1p S2p|]. split.
-    - rewrite !prod_ty_gho. by rewrite S1g S2g.
-    - rewrite !prod_ty_gho_pers. by rewrite S1gp S2gp.
+    split; [by rewrite /= S1p S2p|]. split=> sem Hsem.
+    - rewrite /= !(sep_sem_at Hsem). by rewrite (S1g _ Hsem) (S2g _ Hsem).
+    - rewrite /= !(sep_sem_at Hsem). by rewrite (S1gp _ Hsem) (S2gp _ Hsem).
   Qed.
 
   Global Instance xprod_copy {𝔄l} (tyl: typel 𝔄l) : ListCopy tyl → Copy (Π! tyl).
@@ -357,17 +357,19 @@ Section typing.
     iDestruct ("Sub'" with "E") as (?) "(#? & #InOwn' & #InOwnPers' & %InPhys')".
     iSplit=>/=; [|iSplit; [|iSplit; [|iSplit]]].
     - iPureIntro. by f_equal.
-    - rewrite !lft_intersect_list_app. by iApply lft_intersect_mono.
-    - setoid_rewrite prod_ty_gho. iModIntro. iIntros "* [A B]".
-      iDestruct ("InOwn" with "A") as "[A1 A2]".
-      iDestruct ("InOwn'" with "B") as "[B1 B2]".
+    - rewrite !lft_intersect_list_app. by iApply dincl_intersect_mono.
+    - iIntros "!>" (sem Hsem x dd gg tid). rewrite /= !(sep_sem_at Hsem).
+      iIntros "[A B]".
+      iDestruct ("InOwn" $! sem Hsem with "A") as "[A1 A2]".
+      iDestruct ("InOwn'" $! sem Hsem with "B") as "[B1 B2]".
       iFrame "A1". iFrame "B1". iIntros "[A3 B3]".
       iDestruct ("A2" with "A3") as "A4".
       iDestruct ("B2" with "B3") as "B4".
       iFrame.
-    - setoid_rewrite prod_ty_gho_pers. iModIntro. iIntros "* [A B]".
-      iDestruct ("InOwnPers" with "A") as "A1".
-      iDestruct ("InOwnPers'" with "B") as "B1".
+    - iIntros "!>" (sem Hsem x dd gg tid). rewrite /= !(sep_sem_at Hsem).
+      iIntros "[A B]".
+      iDestruct ("InOwnPers" $! sem Hsem with "A") as "A1".
+      iDestruct ("InOwnPers'" $! sem Hsem with "B") as "B1".
       iFrame "A1". iFrame "B1".
     - iPureIntro. intros. f_equiv; done.
   Qed.
@@ -406,12 +408,12 @@ Section typing.
     iSplit; [iPureIntro; lia|].
     iSplit; [rewrite (assoc (++)); by iApply lft_equiv_refl|].
     iSplit; [|iSplit].
-    - iIntros "!>" (x) "*". destruct x as [x [y z]].
-      rewrite !prod_ty_gho /=. iSplit.
+    - iIntros "!>" (sem Hsem w) "*". destruct w as [x [y z]].
+      rewrite /= !(sep_sem_at Hsem). iSplit.
       + iIntros "[a [b c]]". iFrame.
       + iIntros "[[a b] c]". iFrame.
-    - iIntros "!>" (x) "*". destruct x as [x [y z]].
-      rewrite !prod_ty_gho_pers /=. iSplit.
+    - iIntros "!>" (sem Hsem w) "*". destruct w as [x [y z]].
+      rewrite /= !(sep_sem_at Hsem). iSplit.
       + iIntros "[a [b c]]". iFrame.
       + iIntros "[[a b] c]". iFrame.
     - iPureIntro. intros [x [y z]]. intros. rewrite assoc. trivial.
@@ -422,14 +424,14 @@ Section typing.
   Proof.
     apply eqtype_unfold; [apply _|]. iIntros "*_!>_/=". iSplit; [done|].
     iSplit; [by iApply lft_equiv_refl|].
-    iSplit. { iModIntro. iIntros (x d g tid). destruct x as [[]x].
-      rewrite prod_ty_gho /=. iSplit.
+    iSplit. { iIntros "!>" (sem Hsem w d g tid). destruct w as [[]x].
+      rewrite /= (sep_sem_at Hsem) (empty_sem_at Hsem). iSplit.
       { iIntros "[_ A]". iFrame "A". }
-      { iIntros "A". iFrame "A". by iApply empty_fml_sem_2. } }
-    iSplit. { iModIntro. iIntros (x d g tid). destruct x as [[]x].
-      rewrite prod_ty_gho_pers /=. iSplit.
+      { iIntros "A". by iFrame "A". } }
+    iSplit. { iIntros "!>" (sem Hsem w d g tid). destruct w as [[]x].
+      rewrite /= (sep_sem_at Hsem) (empty_sem_at Hsem). iSplit.
       { iIntros "[_ A]". iFrame "A". }
-      { iIntros "A". iFrame "A". by iApply empty_fml_sem_2. } }
+      { iIntros "A". by iFrame "A". } }
     { iPureIntro. intros [[]?] tid. done. }
   Qed.
 
@@ -438,14 +440,14 @@ Section typing.
   Proof.
     apply eqtype_unfold; [apply _|]. iIntros "*_!>_/=".
     rewrite !right_id. iSplit; [done|]. iSplit; [by iApply lft_equiv_refl|].
-    iSplit. { iModIntro. iIntros (x d g tid). destruct x as [x[]].
-      rewrite prod_ty_gho /=. iSplit.
+    iSplit. { iIntros "!>" (sem Hsem w d g tid). destruct w as [x[]].
+      rewrite /= (sep_sem_at Hsem) (empty_sem_at Hsem). iSplit.
       { iIntros "[A _]". iFrame "A". }
-      { iIntros "A". iFrame "A". by iApply empty_fml_sem_2. } }
-    iSplit. { iModIntro. iIntros (x d g tid). destruct x as [x[]].
-      rewrite prod_ty_gho_pers /=. iSplit.
+      { iIntros "A". by iFrame "A". } }
+    iSplit. { iIntros "!>" (sem Hsem w d g tid). destruct w as [x[]].
+      rewrite /= (sep_sem_at Hsem) (empty_sem_at Hsem). iSplit.
       { iIntros "[A _]". iFrame "A". }
-      { iIntros "A". iFrame "A". by iApply empty_fml_sem_2. } }
+      { iIntros "A". by iFrame "A". } }
     { iPureIntro. intros [?[]] tid. rewrite <- app_nil_r. done. }
   Qed.
   

@@ -303,8 +303,9 @@ Section atomic_invariants.
       (pred: abstracted_syn_type 𝔄 → ~~ℭ → proph_asn → Prop) :
     Send ty → Sync (atomic_inv_ty ty pred).
   Proof.
-    move=> Hsend tid tid' x d g. split; [done|]. split; [|done].
-    by apply gho_equiv_of_send.
+    move=> Hsend tid tid' [[N γ] c] d g. split; [done|].
+    rewrite /= (atomic_inv_body_send_irrel ty pred c tid tid' Hsend).
+    by split=> sem Hsem.
   Qed.
 
   (** Releasing the global atomic lock.  Acquiring it is [GlobalAtomicLock],

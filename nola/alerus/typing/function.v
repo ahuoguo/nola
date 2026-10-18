@@ -280,7 +280,7 @@ Section typing.
   Qed.
 
   Global Instance fn_sync {A 𝔄l 𝔅 ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) : Sync (fn fp spec).
-  Proof. move=> *. split; [done|]. split; iSplit; iIntros "?"; done. Qed.
+  Proof. move=> *. split; [done|]. by split=> sem Hsem. Qed.
 
   Lemma fn_resolve {A 𝔄l 𝔅 ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) E L : resolve E L (fn fp spec) (const (const True)).
   Proof. apply resolve_just. Qed.
@@ -335,7 +335,7 @@ Section typing.
       iDestruct (Efp with "L") as "#Efp". iDestruct (Il with "L") as "#Il".
       iDestruct (O with "L") as "#O". iIntros "!> E'".
       iSplit; last iSplit; by [iApply "Efp"|iApply "Il"|iApply "O"]. }
-    iIntros "!> #E". iSplit; [done|]. iSplit; [by iApply lft_incl_refl|].
+    iIntros "!> #E". iSplit; [done|]. iSplit; [by iApply dincl_refl|].
     iIntros (tr _ vl). iDestruct 1 as (fb kb bl e H ->) "#fn".
     set eq := plist2_eq_nat_len fl. set bl' := plistc_renew (symmetry eq) bl.
     have Eq: (bl: list _) = bl' by rewrite vec_to_list_plistc_renew.
@@ -367,7 +367,7 @@ Section typing.
     subtype E L (fn fp spec) (fn (fp ∘ σ) spec) idₛ.
   Proof.
     apply subtype_plain_type. iIntros "_ !> _ /=". iSplit; [done|].
-    iSplit; [iApply lft_incl_refl|]. iSplit; last by done. iIntros "*".
+    iSplit; [iApply dincl_refl|]. iSplit; last by done. iIntros "*".
     rewrite /pt_gho /= !fn_fml_sem.
     iIntros "#A". iFrame "A". iSplit; last by (iIntros "_"; done).
     iDestruct "A" as (fb kb bl e H) "[A #B]". iExists fb, kb, bl, e, H. iFrame "A".
@@ -438,7 +438,8 @@ Section typing.
     lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
     (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) κl ++ E) L (fp_E (fp x) ϝ)) →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
-    (frac_tok γ q &&{Wguard}&&> @[lft_intersect_list κl]) -∗ Ltok γ L q -∗
+    dguard (gsrc_fml (GFrac γ q)) (alive_fml (lft_intersect_list κl)) -∗
+    Ltok γ L q -∗
     invctx_interp tid mask iκs (InvCtx Il ϝ' (fp_atomic_state (fp x))) -∗
     tctx_elt_interp tid (p ◁ fn fp spec) efun -∗
     tctx_interp tid (hzip_with (λ _ boxty q, q ◁ boxty)
@@ -466,22 +467,23 @@ Section typing.
       as "#LguardsIl".
     iDestruct ("→W" with "L") as "[W [_ tok]]".
     (* Share the fraction for the call's lifetime. *)
-    iDestruct (llftl_borrow_shared ϝ (gsrc_fml (GFrac γ q)) with "[tok]")
-      as "Sh"; [by iApply gsrc_fml_sem_2|].
+    iDestruct (dguard_borrow_shared (κ:=ϝ) (Px:=gsrc_fml (GFrac γ q))
+      with "[tok]") as "Sh"; [by iApply gsrc_fml_sem_2|].
     iDestruct (bupdw_incl (W:=alerus_wsat) with "Sh") as "Sh'".
     iMod ("Sh'" with "W") as "[W [#fGuardsG0 ToG]]".
     iAssert (@[ϝ] &&{Wguard}&&> frac_tok γ q)%I as "#fGuardsG".
-    { iApply (guard_rhs_iff (gsrc_fml_sem (GFrac γ q))). iApply "fGuardsG0". }
-    iDestruct (guard_trans with "fGuardsG Gguardsκl") as "Borκl".
+    { iDestruct (dguard_alive_sem with "fGuardsG0") as "#G".
+      iApply (guard_rhs_iff (gsrc_fml_sem (GFrac γ q))). iApply "G". }
+    iDestruct (dguard_trans with "fGuardsG0 Gguardsκl") as "#Borκl".
     iDestruct (guard_trans with "fGuardsG [] ") as "fGuardsL";
       [iApply (Ltok_guard_frac with "key")|].
     iDestruct ("EfpPre" with "[$E]") as "#Efp".
     { clear ToEfp. iClear "EfpPre". iClear "Gguardsκl".
       iInduction κl as [|κ κl] "IH"; [done|]=>/=.
-      iSplit. { iApply (llftl_incl_trans with "Borκl []").
-        iApply llftl_intersect_incl_l. }
-      iApply "IH". iModIntro. iApply llftl_incl_trans; [done|].
-      iApply llftl_intersect_incl_r. }
+      iSplit. { iApply (dincl_trans with "Borκl []").
+        iApply dincl_intersect_l. }
+      iApply "IH". iModIntro. iApply (dincl_trans with "Borκl []").
+      iApply dincl_intersect_r. }
     iModIntro. iFrame "W".
     wp_bind p. iApply (twp_hasty with "p"). iIntros (?? _) "[gho %phys]".
     rewrite fn_gho. iDestruct "gho" as (fb kb bl e Hclosed) "[%Hrec #e]".
@@ -521,7 +523,8 @@ Section typing.
     AsVal k → IntoPlistc ql ql' →
     (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) κl ++ E) [] (fp_E (fp x) ϝ)) →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
-    (frac_tok γ q &&{Wguard}&&> @[lft_intersect_list κl]) -∗ Ltok γ [] q -∗
+    dguard (gsrc_fml (GFrac γ q)) (alive_fml (lft_intersect_list κl)) -∗
+    Ltok γ [] q -∗
     invctx_interp tid mask [] (InvCtx [] static (fp_atomic_state (fp x))) -∗
     tctx_elt_interp tid (p ◁ fn fp spec) efun -∗
     tctx_interp tid (hzip_with (λ _ boxty q, q ◁ boxty)
@@ -548,7 +551,7 @@ Section typing.
 
   Lemma type_call {A 𝔄l 𝔅 ℭl 𝔇l 𝔈l 𝔉 ℭ} x (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) p ql ql' k trx
       trk tri E L (C: cctx 𝔉) Il ϝ' (T: tctx ℭl) (T': tctx 𝔇l) (Tk: vec val 1 → tctx 𝔈l) :
-    IntoPlistc ql ql' → Forall (lctx_lft_alive E L) L.*1 →
+    IntoPlistc ql ql' → Forall (lctx_lft_alive_all E L) L.*1 →
     lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
     tctx_extract_ctx E L (p ◁ fn fp spec +::
       hzip_with (λ _ boxty q, q ◁ boxty) (box_typel (fp x).(fp_ityl)) ql') T T' trx →
@@ -563,13 +566,18 @@ Section typing.
     move=> ? Alv ???? InTk. iApply typed_body_tctx_incl; [done|].
     iIntros (?[? adπl]mask post iκs). move: (papp_ex adπl)=> [aπl[dπl->]].
     iIntros "#LFT #PROPH #UNIQ #E L I C /=(p & ql & T') Obs".
-    iDestruct (lctx_lft_alive_tok_list with "L E") as "#Alv"; [done|].
+    have Alv' := lctx_lft_alive_all_tok_list E L _ Alv.
+    iDestruct (lctx_lft_alive_all_guards E L _ Alv' with "L E") as "#AlvAll".
     iApply fupdw_twpw_cont. iIntros "W".
     iMod (Ltok_alloc with "L W") as "[W (%γ & tok)]". iModIntro. iFrame "W".
     iDestruct "tok" as "[#key tok]".
     iApply (type_call_iris' with
       "LFT PROPH UNIQ E [] [$key $tok] I p ql [Obs]"); [done|done|..].
-    { iApply (guard_trans with "[] Alv"). iApply (Ltok_guard_frac with "key"). }
+    { iApply dguard_of_all. iIntros (sem Hs Hi).
+      rewrite (gsrc_sem_at Hs) (alive_sem_at Hs).
+      iApply (guard_trans with "[] []").
+      - iApply (Ltok_guard_frac_at Hs with "key").
+      - iApply ("AlvAll" $! sem with "[//] [//]"). }
     { iApply proph_obs_eq; [|done]=>/= ?. by rewrite papp_sepl papp_sepr. }
     iIntros (ret mask' ?) "tok I ret Obs".
     iApply fupdw_twpw_cont. iIntros "W".
@@ -583,7 +591,7 @@ Section typing.
   Lemma type_letcall {A 𝔄l 𝔅 ℭ ℭl 𝔇l 𝔈} x (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) p ql ql'
                      Il ϝ' (T: tctx ℭl) (T': tctx 𝔇l) b e trx tr E L (C: cctx 𝔈)
                      `{!IntoPlistc ql ql', !Closed (b :b: []) e, !Closed [] p} :
-    TCForall (Closed []) ql → Forall (lctx_lft_alive E L) L.*1 →
+    TCForall (Closed []) ql → Forall (lctx_lft_alive_all E L) L.*1 →
     lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
     tctx_extract_ctx E L (p ◁ fn fp spec +::
       hzip_with (λ _ boxty q, q ◁ boxty) (box_typel (fp x).(fp_ityl)) ql') T T' trx →

@@ -26,12 +26,15 @@ From nola.iris Require Import point.
 Import GuardNotation ModwNotation.
 
 (* External lifetime context. *)
-Definition elctx_elt_interp `{!alerusGS FML Σ} (x : elctx_elt) : iProp Σ :=
-  (x.1 ⊑ x.2)%I.
+(** An external lifetime-context entry is a *stored* inclusion: it ends up
+  inside [&uniq{κ}]'s ghost assertion, which is a formula.  See [AltSem] in
+  [typing/ctx.v]. *)
+Definition elctx_elt_interp `{!alerusGS FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
+  !AltSem FML Σ} (x : elctx_elt) : iProp Σ := dincl x.1 x.2.
 Notation elctx_interp := (big_sepL (λ _, elctx_elt_interp)).
 
 Section lft_contexts.
-  Context `{!alerusGS FML Σ}.
+  Context `{!alerusGS FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ, !AltSem FML Σ}.
   Implicit Type (κ: lft).
 
   Global Instance elctx_interp_permut :
@@ -59,12 +62,13 @@ Section lft_contexts.
       elctx_elt_interp (κ1 ⊑ₑ κ2) ∗ elctx_elt_interp (κ2 ⊑ₑ κ1).
   Proof.
     iDestruct 1 as (κ) "(% & Hκ & _)"; simplify_eq/=.
-    iMod (lft_eternalize with "Hκ") as "#Hincl". iModIntro. iSplit.
-    - iApply llftl_incl_trans; iApply llftl_intersect_incl_l.
-    - iApply (llftl_incl_glb with "[]"); first iApply (llftl_incl_glb with "[]").
-      + iApply lft_incl_refl.
-      + iApply lft_incl_static.
-      + iApply llftl_incl_trans; last done. iApply lft_incl_static.
+    iIntros "W". iMod (dincl_eternalize with "Hκ W") as "[$ #Hincl]".
+    iModIntro. iSplit.
+    - iApply (dincl_trans with "[] []"); iApply dincl_intersect_l.
+    - iApply (dincl_glb with "[]"); first iApply (dincl_glb with "[]").
+      + iApply dincl_refl.
+      + iApply dincl_static.
+      + iApply (dincl_trans with "[] Hincl"). iApply dincl_static.
   Qed.
 
   (** Shared access to a local lifetime context.
@@ -88,7 +92,7 @@ Section lft_contexts.
 
   (* Lifetime inclusion *)
   Definition lctx_lft_incl κ κ' : Prop :=
-    llctx_interp L -∗ □ (elctx_interp E -∗ κ ⊑ κ').
+    llctx_interp L -∗ □ (elctx_interp E -∗ dincl κ κ').
 
   Definition lctx_lft_eq κ κ' : Prop :=
     lctx_lft_incl κ κ' ∧ lctx_lft_incl κ' κ.
@@ -97,7 +101,7 @@ Section lft_contexts.
   Proof. done. Qed.
 
   Lemma lctx_lft_incl_refl κ : lctx_lft_incl κ κ.
-  Proof. iIntros "A". iModIntro. iIntros "B". iApply guard_refl. Qed.
+  Proof. iIntros "A". iModIntro. iIntros "B". iApply dincl_refl. Qed.
 
   Global Instance lctx_lft_incl_preorder : PreOrder lctx_lft_incl.
   Proof.
@@ -105,7 +109,7 @@ Section lft_contexts.
     - iIntros (??? H1 H2) "HL".
       iDestruct (H1 with "HL") as "#H1".
       iDestruct (H2 with "HL") as "#H2".
-      iClear "∗". iIntros "!> #HE". iApply guard_trans.
+      iClear "∗". iIntros "!> #HE". iApply dincl_trans.
       { by iApply "H1". } by iApply "H2".
   Qed.
 
@@ -122,7 +126,7 @@ Section lft_contexts.
   Qed.
 
   Lemma lctx_lft_incl_static κ : lctx_lft_incl κ static.
-  Proof. iIntros "_ !> _". iApply lft_incl_static. Qed.
+  Proof. iIntros "_ !> _". iApply dincl_static. Qed.
 
   Lemma lctx_lft_incl_local κ κ' κs :
     κ ⊑ₗ κs ∈ L → κ' ∈ κs → lctx_lft_incl κ κ'.
@@ -131,8 +135,8 @@ Section lft_contexts.
     iDestruct (big_sepL_elem_of with "H") as "H"; first done.
     iDestruct "H" as (κ'') "[EQ _]". iDestruct "EQ" as %EQ.
     simpl in EQ; subst. iIntros "!> #HE".
-    iApply llftl_incl_trans; first by iApply llftl_intersect_incl_l.
-    by iApply lft_intersect_list_elem_of_incl.
+    iApply dincl_trans; first by iApply dincl_intersect_l.
+    by iApply dincl_intersect_list_elem_of.
   Qed.
 
   Lemma lctx_lft_incl_local' κ κ' κ'' κs :
@@ -155,29 +159,46 @@ Section lft_contexts.
     iIntros (Hκ' Hκ'') "HL".
     iDestruct (Hκ' with "HL") as "#Hκ'".
     iDestruct (Hκ'' with "HL") as "#Hκ''".
-    iIntros "!> #HE". iApply llftl_incl_glb. by iApply "Hκ'". by iApply "Hκ''".
+    iIntros "!> #HE". iApply dincl_glb. by iApply "Hκ'". by iApply "Hκ''".
   Qed.
 
   Lemma lctx_lft_incl_intersect_l κ κ' κ'' :
     lctx_lft_incl κ κ' → lctx_lft_incl (κ ⊓ κ'') κ'.
   Proof.
     iIntros (Hκ') "HL". iDestruct (Hκ' with "HL") as "#Hκ'".
-    iIntros "!> #HE". iApply llftl_incl_trans.
-      by iApply llftl_intersect_incl_l. by iApply "Hκ'".
+    iIntros "!> #HE". iApply dincl_trans.
+      by iApply dincl_intersect_l. by iApply "Hκ'".
   Qed.
 
   Lemma lctx_lft_incl_intersect_r κ κ' κ'' :
     lctx_lft_incl κ κ' → lctx_lft_incl (κ'' ⊓ κ) κ'.
   Proof.
     iIntros (Hκ') "HL". iDestruct (Hκ' with "HL") as "#Hκ'".
-    iIntros "!> #HE". iApply llftl_incl_trans.
-      by iApply llftl_intersect_incl_r. by iApply "Hκ'".
+    iIntros "!> #HE". iApply dincl_trans.
+      by iApply dincl_intersect_r. by iApply "Hκ'".
   Qed.
 
   (* Lifetime aliveness *)
 
   Definition lctx_lft_alive (κ : lft) : Prop :=
     llctx_interp L ⊢ elctx_interp E -∗ (llctx_interp L &&{Wguard}&&> @[κ]).
+
+  (** The same at *every* candidate interpretation.
+
+    A function call stores the inclusions of [fp_E], and it builds them out of
+    this guard; a stored guard can only come from a source that holds at
+    every candidate, so [type_call] asks for this stronger form.  See
+    [AltSem] in [typing/ctx.v]. *)
+  Definition lctx_lft_alive_all (κ : lft) : Prop :=
+    ∀ sem, alt_sem sem → alt_into bor_sem sem →
+      llctx_interp L ⊢ elctx_interp E -∗
+        (llctx_interp L &&{alt_WGuard sem}&&> @[κ]).
+
+  Lemma lctx_lft_alive_all_now κ : lctx_lft_alive_all κ → lctx_lft_alive κ.
+  Proof.
+    move=> Alv. rewrite /lctx_lft_alive -alt_WGuard_here.
+    exact: (Alv _ alt_here (alt_into_refl alt_here)).
+  Qed.
 
   Lemma lctx_lft_alive_static : lctx_lft_alive static.
   Proof. iIntros "**". rewrite -llftl_tok_unit_equiv. iApply guard_true. Qed.
@@ -222,14 +243,72 @@ Section lft_contexts.
      - iDestruct "AB" as "[_ (_ & $ & _)]".
   Qed.
 
+  Lemma lctx_lft_alive_all_static : lctx_lft_alive_all static.
+  Proof.
+    move=> sem ??. iIntros "**". rewrite -llftl_tok_unit_equiv.
+    iApply guard_true.
+  Qed.
+
+  Lemma lctx_lft_alive_all_intersect α β :
+    lctx_lft_alive_all α → lctx_lft_alive_all β → lctx_lft_alive_all (α ⊓ β).
+  Proof.
+    move=> alα alβ sem Hs Hi. iIntros "L #E".
+    iDestruct (alα sem Hs Hi with "L E") as "#gα".
+    iDestruct (alβ sem Hs Hi with "L E") as "#gβ".
+    iApply (guard_and (point_prop0 := point_prop_llft_alive _) with "gα gβ").
+    by rewrite llftl_tok_inter_and.
+  Qed.
+
+  Lemma lctx_lft_alive_all_tok_list κs :
+    Forall lctx_lft_alive_all κs →
+    lctx_lft_alive_all (lft_intersect_list κs).
+  Proof.
+    elim; [exact: lctx_lft_alive_all_static|]=>/= ????.
+    by apply lctx_lft_alive_all_intersect.
+  Qed.
+
+  Lemma lctx_lft_alive_all_local κ κs :
+    κ ⊑ₗ κs ∈ L → Forall lctx_lft_alive_all κs → lctx_lft_alive_all κ.
+  Proof.
+    move=> Hin Hf sem Hs Hi.
+    have H2 := lctx_lft_alive_all_tok_list _ Hf sem Hs Hi.
+    iIntros "HL #HE". iDestruct (H2 with "HL HE") as "#Alv".
+    iAssert (llctx_interp L &&{alt_WGuard sem}&&>
+      llctx_elt_interp (κ ⊑ₗ κs))%I with "[HL]" as "#HL1".
+    { iApply guard_intro. iIntros "!> A".
+      destruct (list_elem_of_lookup_1 _ _ Hin) as [i Hso].
+      by iApply (big_sepL_lookup_acc with "A"). }
+    iApply (guard_and (point_prop0 := point_prop_llft_alive _)
+      with "Alv HL1").
+    iIntros "AB".
+    unfold llctx_elt_interp. rewrite bi.and_exist_l. iDestruct "AB" as (κ') "AB".
+    simpl.
+    iAssert (⌜κ = foldr meet static κs ⊓ κ'⌝)%I with "[AB]" as "%Hk".
+      { iDestruct "AB" as "[_ [$ _]]". } subst κ.
+    rewrite llftl_tok_inter_and. iSplit.
+     - iDestruct "AB" as "[$ _]".
+     - iDestruct "AB" as "[_ (_ & $ & _)]".
+  Qed.
+
+  (** The guard of [lctx_lft_alive_all], packaged so that it can be read off
+    before the local lifetime context is consumed *)
+  Lemma lctx_lft_alive_all_guards κ : lctx_lft_alive_all κ →
+    llctx_interp L -∗ elctx_interp E -∗
+      ∀ sem, ⌜alt_sem sem⌝ → ⌜alt_into bor_sem sem⌝ →
+        llctx_interp L &&{alt_WGuard sem}&&> @[κ].
+  Proof.
+    move=> Alv. iIntros "L #E" (sem Hs Hi). iApply (Alv sem Hs Hi with "L E").
+  Qed.
+
   Lemma lctx_lft_alive_incl κ κ':
     lctx_lft_alive κ → lctx_lft_incl κ κ' → lctx_lft_alive κ'.
   Proof.
     unfold lctx_lft_alive, lctx_lft_incl.
     intros Ha Hb. iIntros "HL #HE".
     iDestruct (Hb with "HL HE") as "#Hb".
+    iDestruct (dincl_sem with "Hb") as "#Hb'".
     iDestruct (Ha with "HL HE") as "Ha".
-    iApply (guard_trans with "Ha Hb").
+    iApply (guard_trans with "Ha Hb'").
   Qed.
 
   Lemma lctx_lft_alive_external κ κ':
@@ -294,19 +373,22 @@ Section lft_contexts.
   Qed.
 End lft_contexts.
 
-Arguments lctx_lft_incl {_ _ _} _ _ _ _.
-Arguments lctx_lft_eq {_ _ _} _ _ _ _.
-Arguments lctx_lft_alive {_ _ _} _ _ _.
-Arguments elctx_sat {_ _ _} _ _ _.
-Arguments lctx_lft_incl_incl {_ _ _ _ _} _ _.
+Arguments lctx_lft_incl {_ _ _ _ _ _} _ _ _ _.
+Arguments lctx_lft_eq {_ _ _ _ _ _} _ _ _ _.
+Arguments lctx_lft_alive {_ _ _ _ _ _} _ _ _.
+Arguments lctx_lft_alive_all {_ _ _ _ _ _} _ _ _.
+Arguments elctx_sat {_ _ _ _ _ _} _ _ _.
+Arguments lctx_lft_incl_incl {_ _ _ _ _ _ _ _} _ _.
 
-Lemma elctx_sat_submseteq `{!alerusGS FML Σ} E E' L :
+Lemma elctx_sat_submseteq `{!alerusGS FML Σ, !GsrcSem FML Σ,
+  !TypeFml FML Σ, !AltSem FML Σ} E E' L :
   E' ⊆+ E → elctx_sat E L E'.
 Proof. iIntros (HE') "_ !> H". by iApply big_sepL_submseteq. Qed.
 
 (** The original takes a fancy update at [↑NllftG ⊆ F]; here the guard is
   simply opened against the world satisfaction. *)
-Lemma lctx_lft_alive_get_guards `{!alerusGS FML Σ, !WsatIncl W Wguard Wr}
+Lemma lctx_lft_alive_get_guards `{!alerusGS FML Σ, !GsrcSem FML Σ,
+    !TypeFml FML Σ, !AltSem FML Σ, !WsatIncl W Wguard Wr}
     γ q E L κ :
   lctx_lft_alive E L κ →
   ([∗ list] x ∈ E, elctx_elt_interp x) -∗ Ltok γ L q -∗ W -∗

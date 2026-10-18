@@ -92,11 +92,10 @@ Section typing.
         + intros. refine (match x with vnil => _ end). trivial.
     }
     iIntros "_!>_". iSplit; [done|]. iSplit; [iApply lft_equiv_refl|].
-    iSplit; first iModIntro=>/=.
-    - iIntros (??? vl). naive_solver. 
-    - iSplit.
-    + iIntros (??? vl). naive_solver. 
-    + iPureIntro. intros. refine (match x with vnil => _ end). trivial.
+    iSplit; [|iSplit].
+    - iIntros "!>" (sem Hsem ????)=>/=. naive_solver.
+    - iIntros "!>" (sem Hsem ????)=>/=. naive_solver.
+    - iPureIntro. intros. refine (match x with vnil => _ end). trivial.
   Qed.
   Lemma uninit_unit_1 E L : subtype E L (↯ 0) () (uninit0_to_unitₛ).
   Proof. eapply proj1, uninit_unit. Qed.
@@ -143,12 +142,12 @@ Section typing.
     }
     iIntros "_!>_". iSplit; [done|]. iSplit; [iApply lft_equiv_refl|].
     iSplit.
-    { iModIntro. iIntros (????).
-      rewrite uninit_gho prod_ty_gho !uninit_gho.
+    { iIntros "!>" (sem Hsem ????).
+      rewrite /= (sep_sem_at Hsem) !(empty_sem_at Hsem).
       iSplit; iIntros "_"; first [done|by iSplit]. }
     iSplit.
-    { iModIntro. iIntros (????).
-      rewrite uninit_gho_pers prod_ty_gho_pers !uninit_gho_pers.
+    { iIntros "!>" (sem Hsem ????).
+      rewrite /= (sep_sem_at Hsem) !(empty_sem_at Hsem).
       iSplit; iIntros "_"; first [done|by iSplit]. }
     iPureIntro. rewrite /ty_phys /=.
     intros x tid. rewrite <- fmap_app. rewrite <- vec_to_list_app.

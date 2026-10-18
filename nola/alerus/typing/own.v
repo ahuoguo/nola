@@ -94,6 +94,18 @@ Section own.
     rewrite /ty_gho. destruct d as [|d']; [apply false_fml_sem|].
     by rewrite /= !bor_sep_sem mapsto_fml_sem freeable_fml_sem.
   Qed.
+  (** [own_ptr_gho] at an arbitrary candidate interpretation *)
+  Lemma own_ptr_gho_at {sem} (H : alt_sem sem) {𝔄} n (ty: type 𝔄) x d g tid :
+    sem ((own_ptr n ty).(ty_ghox) x d g tid) ⊣⊢ [S(d') := d]
+      ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid ∗
+       freeable_sz n ty.(ty_size) (fst x) ∗
+       sem (ty.(ty_ghox) (snd x) d' g tid)).
+  Proof.
+    destruct d as [|d']; [apply (false_sem_at H)|].
+    rewrite /= !(sep_sem_at H) /mapsto_fml (cells_sem_at H)
+      (freeable_sem_at H) //.
+  Qed.
+
   Lemma own_ptr_gho_pers {𝔄} n (ty: type 𝔄) x d g tid :
     ty_gho_pers (own_ptr n ty) x d g tid ⊣⊢ [S(d') := d]
       (ty_gho_pers ty (snd x) d' g tid).
@@ -151,11 +163,11 @@ Section own.
   Global Instance own_sync {𝔄} n (ty: type 𝔄) : Sync ty → Sync (own_ptr n ty).
   Proof.
     move=> HSync tid tid' x d g. split; [done|].
-    destruct d as [|d]; [split; reflexivity|].
+    destruct d as [|d]; [split=> sem Hsem; reflexivity|].
     destruct (HSync tid tid' (snd x) d g) as [Hp [Hg Hgp]].
-    split.
-    - rewrite !own_ptr_gho /=. by rewrite Hp Hg.
-    - rewrite !own_ptr_gho_pers /=. by rewrite Hgp.
+    split=> sem Hsem.
+    - rewrite /= !(sep_sem_at Hsem) /mapsto_fml Hp (Hg _ Hsem) //.
+    - rewrite /= (Hgp _ Hsem) //.
   Qed.
 
   Global Instance own_just_loc {𝔄} n (ty: type 𝔄) : JustLoc (own_ptr n ty).
@@ -185,19 +197,19 @@ Section own.
     iIntros "(%Eq & #Incl & #InOwn & #InOwnPers & %Phys)".
     do 2 (iSplit; [done|]).
     iSplit.
-    { iIntros "!>" ([l x0] [|d] g tid) "Hown".
-      { by iDestruct (false_fml_sem_1 with "Hown") as "[]". }
-      rewrite !own_ptr_gho /=.
+    { iIntros "!>" (sem Hsem [l x0] [|d] g tid) "Hown".
+      { rewrite /= (false_sem_at Hsem). by iDestruct "Hown" as "[]". }
+      rewrite /= !(sep_sem_at Hsem).
       iDestruct "Hown" as "(Hown & Hfree & Hgho)".
-      iDestruct ("InOwn" with "Hgho") as "(Hgho & Hwand)".
+      iDestruct ("InOwn" $! sem Hsem with "Hgho") as "(Hgho & Hwand)".
       iSplitL "Hown Hfree Hgho".
       - rewrite Eq Phys. iFrame.
       - iIntros "(Hown & Hfree & Hgho)". rewrite Eq Phys. iFrame.
         by iApply "Hwand". }
     iSplit.
-    { iIntros "!>" ([l x0] [|d] g tid) "Hown".
-      { by iDestruct (false_fml_sem_1 with "Hown") as "[]". }
-      rewrite !own_ptr_gho_pers /=. by iApply "InOwnPers". }
+    { iIntros "!>" (sem Hsem [l x0] [|d] g tid) "Hown".
+      { rewrite /= (false_sem_at Hsem). by iDestruct "Hown" as "[]". }
+      rewrite /=. by iApply ("InOwnPers" $! sem Hsem). }
     { iPureIntro. by move=> [l x0] tid. }
   Qed.
 

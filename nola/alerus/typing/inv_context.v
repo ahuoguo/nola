@@ -27,7 +27,8 @@ Inductive invctx : Type :=
 Local Definition thread_id := gname.
 
 Section inv_contexts.
-  Context `{!alerusGS FML Σ, !HeapSem FML Σ}.
+  Context `{!alerusGS FML Σ, !HeapSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
+    !AltSem FML Σ}.
   Implicit Type (κ: lft).
 
   Definition ATOMIC_POOL : na_inv_pool_name := atomic_threadpool.

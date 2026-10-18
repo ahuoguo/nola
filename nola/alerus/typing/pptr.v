@@ -335,7 +335,8 @@ Section typing.
     iAssert (frac_tok γ 1 &&{Wguard}&&> @[κ])%I as "#Gκ".
     { iApply (guard_trans with "Gfrac Alv"). }
     iDestruct "Pers" as "[Dead|#Pers]".
-    { iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+    { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 f Wg") as "[Alive _]".
@@ -397,7 +398,7 @@ Section typing.
     rewrite /ty_own uniq_bor_gho. iSplit; [|done].
     iSplitR; [iApply "Incl"|]. iSplitR; [iPureIntro; lia|].
     iFrame "UniqBody". iSplitR.
-    { rewrite -heap_cloc_mapsto_empty. iApply guard_true. }
+    { iApply dguard_cmapstoany_nil. }
     iRight. iApply (ty_gho_pers_depth_mono with "Pers"); lia.
   Qed.
 End typing.

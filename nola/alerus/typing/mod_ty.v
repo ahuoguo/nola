@@ -145,7 +145,7 @@ Section typing.
 
   Lemma mod_ty_in {𝔄 𝔅} E L `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty : subtype E L ty (<{f;fⁱ}> ty) f.
   Proof.
-    iIntros "*_!>_". iSplit; [done|]. iSplit; [by iApply lft_incl_refl|].
+    iIntros "*_!>_". iSplit; [done|]. iSplit; [by iApply dincl_refl|].
     rewrite /ty_gho /ty_gho_pers. unfold mod_ty; simpl.
     iSplit. { iModIntro. iIntros. rewrite semi_iso'. iFrame. iIntros. done. }
     iSplit. { iModIntro. iIntros. rewrite semi_iso'. done. }
@@ -155,7 +155,7 @@ Section typing.
   Lemma mod_ty_out {𝔄 𝔅} E L f fⁱ `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty :
     subtype E L (<{f;fⁱ}> ty) ty fⁱ.
   Proof.
-    iIntros "*_!>_". iSplit; [done|]. iSplit; [by iApply lft_incl_refl|].
+    iIntros "*_!>_". iSplit; [done|]. iSplit; [by iApply dincl_refl|].
     rewrite /ty_gho /ty_gho_pers. unfold mod_ty; simpl.
     iSplit. { iModIntro. iIntros. iFrame. iIntros. done. }
     iSplit. { iModIntro. iIntros. done. }

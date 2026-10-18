@@ -186,7 +186,8 @@ Section typing.
     have [[?[?[?[??]]]]|[?[?[??]]]]:
       ((∃α βs E, (∀ty, ⊢ ty_lft (T ty) ≡ₗ α ⊓ ty_lft ty) ∧
         (∀ty, elctx_interp (T ty).(ty_E) ⊣⊢
-          elctx_interp E ∗ elctx_interp ty.(ty_E) ∗ [∗ list] β ∈ βs, lifetime_full.llft_incl β (ty_lft ty))) ∨
+          elctx_interp E ∗ elctx_interp ty.(ty_E) ∗
+          [∗ list] β ∈ βs, dincl β (ty_lft ty))) ∨
       (∃α E, (∀ty, ⊢ ty_lft (T ty) ≡ₗ α) ∧
         (∀ty, elctx_interp (T ty).(ty_E) ⊣⊢ elctx_interp E))); [|by eleft|by eright].
     induction All as [|???? H ? IH]=>/=.
@@ -392,9 +393,10 @@ Section typing.
       iDestruct ("IH" with "L") as "#IH'".
       iIntros "!> E /=". iDestruct ("Sub" with "E") as (->) "#_".
       by iDestruct ("IH'" with "E") as %->. }
-    iAssert (□ (elctx_interp E -∗ tyl_lft tyl' ⊑ tyl_lft tyl))%I as "#InLft".
+    iAssert (□ (elctx_interp E -∗ dincl (tyl_lft tyl') (tyl_lft tyl)))%I
+      as "#InLft".
     { iClear "EqSz". iInduction Subs as [|?????????? Sub Subs] "IH".
-      { iIntros "!>_". by iApply lft_incl_refl. }
+      { iIntros "!>_". by iApply dincl_refl. }
       iDestruct (Sub with "L") as "#Sub".
       destruct Xl.
       { destruct Yl => //. 
@@ -405,7 +407,7 @@ Section typing.
       iDestruct ("IH" with "L") as "#IH'".
       iIntros "!> E /=". iDestruct ("Sub" with "E") as (?) "#[?_]".
       iDestruct ("IH'" with "E") as "#?".
-      rewrite /tyl_lft !lft_intersect_list_app. by iApply lft_intersect_mono. }
+      rewrite /tyl_lft !lft_intersect_list_app. by iApply dincl_intersect_mono. }
     move/subtypel_llctx_lookup in Subs. iDestruct (Subs with "L") as "#InTyl".
     iIntros "!> #E". iDestruct ("EqSz" with "E") as %EqSz.
     iSpecialize ("InLft" with "E"). iSpecialize ("InTyl" with "E").
@@ -414,12 +416,12 @@ Section typing.
     (* iDestruct ("InTyl" $! i) as (?) "[#?[#InOwn %Hphys]]". *)
     iSplit; simpl; [iPureIntro; by f_equal|]. iSplit; [done|].
     iSplit. { (* gho *)
-      iModIntro. iIntros (x d g tid). destruct x as [x pad].
+      iIntros "!>" (sem Hsem x d g tid). destruct x as [x pad].
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'; trivial.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
     
       iDestruct ("InTyl" $! i) as "(%Hsize & Incl & #Gho & _)".
-      iSpecialize ("Gho" $! x0 d g tid). simpl.
+      iSpecialize ("Gho" $! sem Hsem x0 d g tid). simpl.
       
       rewrite psum_map_p2lookup_pinj.
       (*replace (psum_map (@syn_type_morphism_fn -2<$> fl) (pinj i x0))
@@ -428,11 +430,11 @@ Section typing.
       unfold ty_gho, ty_ghox, xsum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "Gho".
     } 
     iSplit. { (* gho_pers *)
-      iModIntro. iIntros (x d g tid). destruct x as [x pad].
+      iIntros "!>" (sem Hsem x d g tid). destruct x as [x pad].
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'; trivial.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       iDestruct ("InTyl" $! i) as "(%Hsize & Incl & _ & #GhoPers & _)".
-      iSpecialize ("GhoPers" $! x0 d g tid). simpl.
+      iSpecialize ("GhoPers" $! sem Hsem x0 d g tid). simpl.
       rewrite psum_map_p2lookup_pinj.
       unfold ty_gho_pers, ty_gho_persx, xsum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "GhoPers".
     }

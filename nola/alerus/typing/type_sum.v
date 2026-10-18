@@ -446,7 +446,8 @@ Section type_sum.
     iDestruct "gho" as "(#Incl & %Ineqs & UniqBody & #PtBase & #Pers)".
     iDestruct "Pers" as "[Dead|#Pers]".
     { (* [κ] is already dead, so the lifetime context is contradictory *)
-      iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+      iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 f Wg") as "[Alive _]".

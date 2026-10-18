@@ -78,11 +78,11 @@ Section base.
   Proof.
     move=> Eq Eq2 Eq3. iIntros "L". iModIntro. iIntros "E". iSplit; [|iSplit; [|iSplit; [|iSplit]]].
       - iPureIntro. rewrite <- ty_size_eq2. by rewrite <- ty_size_eq2.
-      - iApply lft_incl_refl.
-      - iModIntro. iIntros (????) "A".
-        by iDestruct (false_fml_sem_1 with "A") as "[]".
-      - iModIntro. iIntros (????) "A".
-        by iDestruct (false_fml_sem_1 with "A") as "[]".
+      - iApply dincl_refl.
+      - iIntros "!>" (sem Hsem ????) "A".
+        rewrite (false_sem_at Hsem). by iDestruct "A" as "[]".
+      - iIntros "!>" (sem Hsem ????) "A".
+        rewrite (false_sem_at Hsem). by iDestruct "A" as "[]".
       - iPureIntro. simpl. intros. rewrite Eq3. trivial.
   Qed.
 
