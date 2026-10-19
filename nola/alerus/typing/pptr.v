@@ -269,13 +269,9 @@ Section typing.
       by iDestruct "Hpers" as "[]". }
     rewrite shr_bor_gho /=. iDestruct "Hshr" as "#(_ & Hshr & Hpers)".
     rewrite tracked_ty_gho_pers own_ptr_gho_pers /=.
-    iDestruct (guard_rhs_iff (tracked_ty_gho (own_ptr (ty_size ty) ty)
-      (l', x) (S d') (S (S d')) tid) with "Hshr") as "#Hshr1".
-    iDestruct (guard_rhs_iff (own_ptr_gho (ty_size ty) ty (l', x)
-      (S d') (S (S d')) tid) with "Hshr1") as "#Hshr2".
-    iDestruct (guard_rhs_sep_l with "Hshr2") as "#Hshrpt".
-    iDestruct (guard_rhs_sep_r with "Hshr2") as "#Hshr3".
-    iDestruct (guard_rhs_sep_r with "Hshr3") as "#Hshrgho".
+    iDestruct (dguard_rhs_sep_l with "Hshr") as "#Hshrpt".
+    iDestruct (dguard_rhs_sep_r with "Hshr") as "#Hshr3".
+    iDestruct (dguard_rhs_sep_r with "Hshr3") as "#Hshrgho".
     iApply twpw_fupdw_nonval; [done|].
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
@@ -289,12 +285,14 @@ Section typing.
     iSplit; [|done]. iExists (LitV (LitLoc l)), (S (S (S d'))).
     iSplit; [done|].
     rewrite /ty_own shr_bor_gho /=. iSplit; [|done]. iSplit.
-    { iApply (guard_rhs_iff (mapsto_empty_cells ty l x tid)
-        with "Hshrpt"). }
+    { have Hpt : ∀ sem', alt_sem sem' →
+        sem' (mapsto_fml l (ty_phys ty x tid)) ⊣⊢
+        sem' (cells_fml (l, repeat (@nil cell_id) (ty_size ty)).1
+               (l, repeat (@nil cell_id) (ty_size ty)).2 (ty_phys ty x tid)).
+      { move=> sem' Hs. rewrite /mapsto_fml !(cells_sem_at Hs) ty_size_eq //. }
+      iApply (dguard_rhs_iff Hpt with "Hshrpt"). }
     iSplit.
-    { iApply (guard_trans with "Hshrgho []"). iApply guard_intro.
-      iIntros "!> gho".
-      iApply (ty_gho_depth_mono with "gho"); lia. }
+    { iApply (dguard_depth_mono ty with "Hshrgho"); lia. }
     iApply (ty_gho_pers_depth_mono with "Hpers"); lia.
   Qed.
 

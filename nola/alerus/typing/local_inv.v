@@ -275,14 +275,13 @@ Section local_invariants.
     rewrite shr_bor_gho /=.
     iDestruct "shrgho" as "#(_ & KguardsGho & _)".
     iDestruct (Halive with "L E") as "#LguardsK".
-    iDestruct (guard_rhs_iff
-      (local_inv_ty_gho ty pred ns γ γt d0 c d (S (S d)) tid)
-      with "KguardsGho") as "#KguardsGho2".
-    iDestruct (guard_rhs_sep_l with "KguardsGho2") as "#KguardsActive".
-    iDestruct (guard_rhs_sep_r with "KguardsGho2") as "#KguardsRest".
-    iDestruct (guard_rhs_sep_r with "KguardsRest") as "#KguardsInv".
+    iDestruct (dguard_rhs_sep_l with "KguardsGho") as "#KguardsActive".
+    iDestruct (dguard_rhs_sep_r with "KguardsGho") as "#KguardsRest".
+    iDestruct (dguard_rhs_sep_r with "KguardsRest") as "#KguardsInv".
     (* read the invariant token out of the shared reference *)
-    iDestruct (guard_trans with "LguardsK KguardsInv") as "#LguardsInv".
+    iDestruct (dguard_alive_sem' (cna_inv_fml_sem _ _ _ _) with "KguardsInv")
+      as "#KguardsInv0".
+    iDestruct (guard_trans with "LguardsK KguardsInv0") as "#LguardsInv".
     iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
     iDestruct (guard_acc with "LguardsInv L Wg") as "[#inv back]".
     iDestruct ("back" with "inv") as "[Wg L]".
@@ -291,8 +290,10 @@ Section local_invariants.
     iDestruct "I" as (na_mask at_mask)
       "[%Hm [[Ilifetimes #ϝIncl] [Iown Iat]]]".
     destruct Hm as [Hm1 Hm2].
+    iDestruct (dguard_alive_sem' (cna_active_fml_sem _) with "KguardsActive")
+      as "#KguardsActive0".
     iMod (cna_inv_acc_with_lifetime_guard with
-      "inv Iown Ilifetimes LguardsK KguardsActive L W")
+      "inv Iown Ilifetimes LguardsK KguardsActive0 L W")
       as "(W & Iown & Ilifetimes & L & P & Closer)"; [set_solver|].
     rewrite local_inv_body_sem.
     iDestruct "P" as (x'' d' g') "[gho %Hpred]".

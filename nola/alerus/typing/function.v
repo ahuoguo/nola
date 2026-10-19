@@ -120,6 +120,15 @@ Class FnFml `{!typeG FML Σ} := {
     ∀ {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
       (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)),
     Persistent (sem (fn_fml fp spec x));
+  (** Specialising a function type's parameter.  [fn_fml] is a judgment, so
+    like [idxbor_fml_iff_at] in [AltSem] this transformation is [Deriv_map]
+    in the model: the body it asks for is exactly the body of the judgment
+    at the candidate, with the parameter range cut down along [σ]. *)
+  fn_fml_specialize_at {sem} : alt_sem sem →
+    ∀ {A B : Type} {𝔄l 𝔅 ℭ} (σ : A → B)
+      (fp : B → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅)) (spec : fn_spec 𝔄l 𝔅 ℭ)
+      (x : ~~ (exec_funₛ ℭ)),
+    sem (fn_fml fp spec x) ⊢ sem (fn_fml (fp ∘ σ) spec x);
   fn_fml_sem {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
     (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) :
     bor_sem (fn_fml fp spec x) ⊣⊢
@@ -367,11 +376,10 @@ Section typing.
     subtype E L (fn fp spec) (fn (fp ∘ σ) spec) idₛ.
   Proof.
     apply subtype_plain_type. iIntros "_ !> _ /=". iSplit; [done|].
-    iSplit; [iApply dincl_refl|]. iSplit; last by done. iIntros "*".
-    rewrite /pt_gho /= !fn_fml_sem.
-    iIntros "#A". iFrame "A". iSplit; last by (iIntros "_"; done).
-    iDestruct "A" as (fb kb bl e H) "[A #B]". iExists fb, kb, bl, e, H. iFrame "A".
-    iModIntro. iIntros (y ϝ k wl). iApply "B".
+    iSplit; [iApply dincl_refl|]. iSplit; last by done.
+    iIntros (sem Hs v tid). have ? := fn_fml_pers_at Hs.
+    iIntros "#A". iSplitR; [by iApply (fn_fml_specialize_at Hs)|].
+    iIntros "_". iApply "A".
   Qed.
 
   Local Lemma twp_app_hasty_box {𝔄l} vl r (f: val)

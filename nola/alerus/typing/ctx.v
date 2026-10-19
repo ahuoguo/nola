@@ -1159,6 +1159,14 @@ Section alt_sem.
     iApply (dguard_rhs_iff Heq). iApply dguard_true.
   Qed.
 
+  (** A stored guard to an empty cell list is trivial *)
+  Lemma dguard_cells_nil {Px l} : ⊢ dguard Px (cells_fml l [] []).
+  Proof.
+    have Heq : ∀ sem, alt_sem sem → sem empty_fml ⊣⊢ sem (cells_fml l [] []).
+    { move=> sem Hsem. rewrite (empty_sem_at Hsem) (cells_sem_at Hsem) //. }
+    iApply (dguard_rhs_iff Heq). iApply dguard_true.
+  Qed.
+
   (** ** Lifetime inclusion as a stored guard *)
 
   Definition dincl (κ κ' : lft) : iProp Σ :=

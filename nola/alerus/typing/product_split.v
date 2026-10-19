@@ -282,13 +282,21 @@ Section product_split.
     rewrite shr_bor_gho /=.
     iDestruct "gho" as "#(G↦ & Ggho & Pers)".
     rewrite prod_ty_gho_pers /=. iDestruct "Pers" as "#[Pers1 Pers2]".
-    iEval (rewrite heap_mapsto_cells_fancy_vec_app ty_size_eq) in "G↦".
-    iDestruct (guard_rhs_sep_l with "G↦") as "#G↦1".
-    iDestruct (guard_rhs_sep_r with "G↦") as "#G↦2".
-    iDestruct (guard_rhs_iff (prod_ty_gho ty ty' (x, y) d' (S d') tid)
-      with "Ggho") as "#Ggho'".
-    iDestruct (guard_rhs_sep_l with "Ggho'") as "#Ggho1".
-    iDestruct (guard_rhs_sep_r with "Ggho'") as "#Ggho2".
+    have Hsplit : ∀ sem', alt_sem sem' →
+      sem' (cells_fml l.1 l.2 (ty_phys ty x tid ++ ty_phys ty' y tid)) ⊣⊢
+      sem' (bor_sep
+        (cells_fml (cloc_take l (ty_size ty)).1 (cloc_take l (ty_size ty)).2
+          (ty_phys ty x tid))
+        (cells_fml (cloc_skip l (ty_size ty)).1 (cloc_skip l (ty_size ty)).2
+          (ty_phys ty' y tid))).
+    { move=> sem' Hs. rewrite (cells_sem_at Hs) (sep_sem_at Hs)
+        !(cells_sem_at Hs) heap_mapsto_cells_fancy_vec_app
+        /cloc_take /cloc_skip /= ty_size_eq //. }
+    iDestruct (dguard_rhs_iff Hsplit with "G↦") as "#G↦'".
+    iDestruct (dguard_rhs_sep_l with "G↦'") as "#G↦1".
+    iDestruct (dguard_rhs_sep_r with "G↦'") as "#G↦2".
+    iDestruct (dguard_rhs_sep_l with "Ggho") as "#Ggho1".
+    iDestruct (dguard_rhs_sep_r with "Ggho") as "#Ggho2".
     inversion phys. subst v. iModIntro. iFrame "W tok".
     iExists -[(cloc_take l ty.(ty_size), x); (cloc_skip l ty.(ty_size), y)].
     iSplit; last first.
@@ -420,21 +428,26 @@ Section product_split.
     rewrite (llftl_bor_idx κ
       (uniq_body_fml ty' y0 ζ'i tid (cloc_skip l ty.(ty_size)))).
     iDestruct "Bor2" as (ζ'idx) "[#ζ'Bor ζ'Tok]".
-    iDestruct (dguard_rhs_iff
-      (Qx':=(cmapstoany_fml (cloc_take l (ty_size ty)) ∗
-             cmapstoany_fml (cloc_skip l (ty_size ty)))%FML)
-      (λ sem Hsem, ltac:(rewrite (cmapstoany_sem_at Hsem) (sep_sem_at Hsem)
-        !(cmapstoany_sem_at Hsem);
-        exact: (heap_cloc_mapsto_emp_vec_app l (ty_size ty))))
-      with "PtBase") as "#PtBase'".
+    have HsplitPt : ∀ sem', alt_sem sem' →
+      sem' (cmapstoany_fml l) ⊣⊢
+      sem' (bor_sep (cmapstoany_fml (cloc_take l (ty_size ty)))
+                    (cmapstoany_fml (cloc_skip l (ty_size ty)))).
+    { move=> sem' Hs. rewrite (cmapstoany_sem_at Hs) (sep_sem_at Hs)
+        !(cmapstoany_sem_at Hs).
+      apply (heap_cloc_mapsto_emp_vec_app l (ty_size ty)). }
+    iDestruct (dguard_rhs_iff HsplitPt with "PtBase") as "#PtBase'".
     iDestruct (dguard_rhs_sep_l with "PtBase'") as "#PtBase1".
     iDestruct (dguard_rhs_sep_r with "PtBase'") as "#PtBase2".
-    iAssert (κ ⊑ ty_lft ty)%I as "#Inκ1".
-    { iApply (guard_trans with "Incl []").
-      rewrite /= lft_intersect_list_app. iApply llftl_intersect_incl_l. }
-    iAssert (κ ⊑ ty_lft ty')%I as "#Inκ2".
-    { iApply (guard_trans with "Incl []").
-      rewrite /= lft_intersect_list_app. iApply llftl_intersect_incl_r. }
+    have Hl1 : ⊢ llft_incl (foldr meet static (ty_lfts ty ++ ty_lfts ty'))
+                 (ty_lft ty).
+    { rewrite lft_intersect_list_app. iApply llftl_intersect_incl_l. }
+    have Hl2 : ⊢ llft_incl (foldr meet static (ty_lfts ty ++ ty_lfts ty'))
+                 (ty_lft ty').
+    { rewrite lft_intersect_list_app. iApply llftl_intersect_incl_r. }
+    iAssert (dincl κ (ty_lft ty)) as "#Inκ1".
+    { iApply (dincl_trans with "Incl"). by iApply (dincl_of Hl1). }
+    iAssert (dincl κ (ty_lft ty')) as "#Inκ2".
+    { iApply (dincl_trans with "Incl"). by iApply (dincl_of Hl2). }
     rewrite prod_ty_gho_pers /=. iDestruct "Pers" as "#[Pers1 Pers2]".
     inversion Phys as [Eqv]. subst v. iModIntro. iFrame "W L I".
     iExists -[(cloc_take l ty.(ty_size), x0, ζi, d', g', ζidx);

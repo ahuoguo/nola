@@ -468,11 +468,12 @@ Section atomic_invariants.
       [by iDestruct (false_fml_sem_1 with "shrgho") as "[]"|].
     rewrite shr_bor_gho /=. iDestruct "shrgho" as "#(_ & KguardsGho & _)".
     iDestruct (Halive with "L E") as "#LguardsK".
-    iDestruct (guard_rhs_iff
-      (atomic_inv_ty_gho ty pred ns γ c d (S (S d)) tid)
-      with "KguardsGho") as "#KguardsGho2".
-    iDestruct (guard_rhs_sep_l with "KguardsGho2") as "#KguardsActive".
-    iDestruct (guard_rhs_sep_r with "KguardsGho2") as "#KguardsInv".
+    iDestruct (dguard_rhs_sep_l with "KguardsGho") as "#KguardsActive0".
+    iDestruct (dguard_rhs_sep_r with "KguardsGho") as "#KguardsInv0".
+    iDestruct (dguard_alive_sem' (active_fml_sem _) with "KguardsActive0")
+      as "#KguardsActive".
+    iDestruct (dguard_alive_sem' (na_inv_tok_fml_sem _ _) with "KguardsInv0")
+      as "#KguardsInv".
     iDestruct (guard_trans with "LguardsK KguardsInv") as "#LguardsInv".
     iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
     iDestruct (guard_acc with "LguardsInv L Wg") as "[#inv back]".
