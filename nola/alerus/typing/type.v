@@ -44,9 +44,11 @@ Implicit Type (𝔄 𝔅 ℭ: syn_type) (𝔄l 𝔅l: syn_typel).
 
 Class typeG (FML : oFunctor) Σ : Type := TypeG {
   #[global] type_alerusGS :: alerusGS FML Σ;
+  #[global] type_alerusSem :: AlerusSem FML Σ;
   #[global] type_heapSem :: HeapSem FML Σ;
   #[global] type_gsrcSem :: GsrcSem FML Σ;
   #[global] type_typeFml :: TypeFml FML Σ;
+  #[global] type_altSem :: AltSem FML Σ;
 }.
 
 Definition lrustN := nroot .@ "lrust".
@@ -77,6 +79,13 @@ Global Instance by_succx_persistent `{!typeG FML Σ} d Φ :
   (∀d', Persistent (bor_sem (Φ d'))) → Persistent (bor_sem (by_succx d Φ)).
 Proof. move=> ?. case d; exact _. Qed.
 
+(** The same at a candidate interpretation *)
+Lemma by_succx_persistent_at `{!typeG FML Σ} {sem} (H : alt_sem sem) d Φ :
+  (∀ d', Persistent (sem (Φ d'))) → Persistent (sem (by_succx d Φ)).
+Proof.
+  move=> ?. case d=>/=; [|done]. rewrite (false_sem_at H). exact _.
+Qed.
+
 Global Instance by_succx_ne `{!typeG FML Σ} n :
   Proper ((=) ==> pointwise_relation _ (dist n) ==> dist n) by_succx.
 Proof. move=> d ? <- ?? Eq. by case d. Qed.
@@ -104,14 +113,23 @@ Record type `{!typeG FML Σ} 𝔄 := {
   ty_size_eq2 : size_of 𝔄 = ty_size;
   ty_phys_eq2 x tid : syn_phys x = ty_phys x tid;
   
-  ty_gho_depth_mono d g d' g' x tid :
-    (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (ty_ghox x d g tid) -∗
-        bor_sem (ty_ghox x d' g' tid) ∗
-          (bor_sem (ty_ghox x d' g' tid) -∗ bor_sem (ty_ghox x d g tid)) ;
+  (** Weakening the depth, *at any candidate interpretation*.
+
+    A shared borrow stores a guard whose right-hand side is a type's ghost
+    assertion, and the one thing the development does to it while rebuilding
+    that guard is weaken the depth - so this law has to hold at every
+    candidate ([typing/ctx.v]'s [AltSem]), exactly as every law of Nola's
+    [Ty] class is stated [∀ δ].  [ty_gho_depth_mono] below is the instance at
+    the ambient interpretation, and is what the rest of the development
+    uses. *)
+  ty_gho_depth_mono_at sem : alt_sem sem → ∀ d g d' g' x tid,
+    (d ≤ d')%nat → (g ≤ g')%nat → sem (ty_ghox x d g tid) -∗
+        sem (ty_ghox x d' g' tid) ∗
+          (sem (ty_ghox x d' g' tid) -∗ sem (ty_ghox x d g tid)) ;
         
-  ty_gho_pers_depth_mono d g d' g' x tid :
+  ty_gho_pers_depth_mono_at sem : alt_sem sem → ∀ d g d' g' x tid,
     (d ≤ d')%nat → (g ≤ g')%nat →
-      bor_sem (ty_gho_persx x d g tid) -∗ bor_sem (ty_gho_persx x d' g' tid);
+      sem (ty_gho_persx x d g tid) -∗ sem (ty_gho_persx x d' g' tid);
   
   (** The original's guard index [n] and the [▷^(d*(g+1))] in front are both
     gone: a guard introduces no later, so composing two of them introduces
@@ -125,8 +143,8 @@ Record type `{!typeG FML Σ} 𝔄 := {
       (R &&{Wguard}&&> bor_sem (ty_ghox x d g tid)) -∗
       (R &&{Wguard}&&> 1:[ξ]);
   
-  ty_gho_pers_pers x d g tid :
-      Persistent (bor_sem (ty_gho_persx x d g tid)) ;
+  ty_gho_pers_pers_at sem : alt_sem sem → ∀ x d g tid,
+      Persistent (sem (ty_gho_persx x d g tid)) ;
   ty_gho_pers_impl x d g tid :
       bor_sem (ty_ghox x d g tid) -∗ bor_sem (ty_gho_persx x d g tid) ;
   
@@ -197,12 +215,38 @@ Arguments ty_ghox {_ _ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_gho_persx {_ _ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_phys {_ _ _ _} _ _ _ / : simpl nomatch.
 Arguments ty_size_eq {_ _ _ _}.
-Arguments ty_gho_depth_mono {_ _ _ _}.
-Arguments ty_gho_pers_depth_mono {_ _ _ _}.
-Global Existing Instance ty_gho_pers_pers.
+Arguments ty_gho_depth_mono_at {_ _ _ _}.
+Arguments ty_gho_pers_depth_mono_at {_ _ _ _}.
+Arguments ty_gho_pers_pers_at {_ _ _ _}.
+Global Instance ty_gho_pers_pers `{!typeG FML Σ} {𝔄} (ty: type 𝔄) x d g tid :
+  Persistent (bor_sem (@ty_gho_persx _ _ _ _ ty x d g tid)).
+Proof. apply (ty_gho_pers_pers_at ty bor_sem alt_here). Qed.
 
 (** The semantic views of the ghost assertion.  Everything outside the record
   and the type formers themselves speaks in terms of these. *)
+(** The depth-weakening law at the ambient interpretation *)
+Lemma ty_gho_depth_mono `{!typeG FML Σ} {𝔄} (ty: type 𝔄) d g d' g' x tid :
+  (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (ty.(ty_ghox) x d g tid) -∗
+    bor_sem (ty.(ty_ghox) x d' g' tid) ∗
+      (bor_sem (ty.(ty_ghox) x d' g' tid) -∗ bor_sem (ty.(ty_ghox) x d g tid)).
+Proof. exact: (ty_gho_depth_mono_at ty _ alt_here). Qed.
+
+Lemma ty_gho_pers_depth_mono `{!typeG FML Σ} {𝔄} (ty: type 𝔄) d g d' g' x tid :
+  (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (ty.(ty_gho_persx) x d g tid) -∗
+    bor_sem (ty.(ty_gho_persx) x d' g' tid).
+Proof. apply (ty_gho_pers_depth_mono_at ty bor_sem alt_here). Qed.
+
+(** Weakening the depth inside a *stored* guard *)
+Lemma dguard_depth_mono `{!typeG FML Σ} {𝔄} (ty: type 𝔄) {Px} d g d' g' x tid :
+  (d ≤ d')%nat → (g ≤ g')%nat →
+  dguard Px (ty.(ty_ghox) x d g tid) ⊢ dguard Px (ty.(ty_ghox) x d' g' tid).
+Proof.
+  move=> ??. have ? := guard_fml_pers_at alt_here.
+  iIntros "#g". iApply (dguard_trans with "g").
+  iApply dguard_intro. iIntros (sem' Hs) "!>".
+  by iApply (ty_gho_depth_mono_at ty sem' Hs).
+Qed.
+
 Definition ty_gho `{!typeG FML Σ} {𝔄} (ty: type 𝔄)
   (x: ~~𝔄) (d g: nat) (tid: thread_id) : iProp Σ :=
   bor_sem (ty.(ty_ghox) x d g tid).
@@ -246,16 +290,16 @@ Proof.
 Qed.
 
 Lemma elctx_interp_ty_outlives_E `{!typeG FML Σ} {𝔄} (ty: type 𝔄) α :
-  elctx_interp (ty_outlives_E ty α) ⊣⊢ α ⊑ ty_lft ty.
+  elctx_interp (ty_outlives_E ty α) ⊣⊢ dincl α (ty_lft ty).
 Proof.
   rewrite /ty_outlives_E /elctx_elt_interp big_sepL_fmap /=.
   elim ty.(ty_lfts)=>/= [|κ l ->].
-  { iSplit; iIntros "_"; [|done]. iApply lft_incl_static. }
+  { iSplit; iIntros "_"; [|done]. iApply dincl_static. }
   iSplit.
-  - iIntros "#[??]". by iApply llftl_incl_glb.
+  - iIntros "#[??]". by iApply dincl_glb.
   - iIntros "#Incl".
-    iSplit; (iApply llftl_incl_trans; [iApply "Incl"|]);
-      [iApply llftl_intersect_incl_l|iApply llftl_intersect_incl_r].
+    iSplit; (iApply (dincl_trans with "Incl []"));
+      [iApply dincl_intersect_l|iApply dincl_intersect_r].
 Qed.
 
 Definition tyl_lfts `{!typeG FML Σ} {𝔄l} (tyl: typel 𝔄l) : list lft :=
@@ -304,15 +348,16 @@ Record simple_type `{!typeG FML Σ} 𝔄 := {
   st_ghox: ~~𝔄 → nat → nat → thread_id → FML $oi Σ;
   st_phys: ~~𝔄 → thread_id → list fancy_val;
   
-  st_gho_persistent x d g tid: Persistent (bor_sem (st_ghox x d g tid));
+  st_gho_persistent_at sem : alt_sem sem → ∀ x d g tid,
+    Persistent (sem (st_ghox x d g tid));
   
   st_size_eq x tid : length (st_phys x tid) = st_size;
   st_size_eq2 : size_of 𝔄 = st_size;
   st_phys_eq2 x tid : syn_phys x = st_phys x tid;
   
-  st_gho_depth_mono d g d' g' x tid :
-    (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (st_ghox x d g tid) -∗
-        bor_sem (st_ghox x d' g' tid) ;
+  st_gho_depth_mono_at sem : alt_sem sem → ∀ d g d' g' x tid,
+    (d ≤ d')%nat → (g ≤ g')%nat → sem (st_ghox x d g tid) -∗
+        sem (st_ghox x d' g' tid) ;
         
   st_guard_proph κ x d g tid ξ R :
       ξ ∈ ξl x →
@@ -325,7 +370,6 @@ Record simple_type `{!typeG FML Σ} 𝔄 := {
       
   st_concrete x tid : all_concrete (st_phys x tid) ;
 }.
-Global Existing Instance st_gho_persistent.
 Global Instance: Params (@vπ) 5 := {}.
 Global Instance: Params (@st_size) 5 := {}.
 Global Instance: Params (@st_lfts) 5 := {}.
@@ -335,6 +379,16 @@ Arguments st_size {_ _ _ _} _ / : simpl nomatch.
 Arguments st_lfts {_ _ _ _} _ / : simpl nomatch.
 Arguments st_E {_ _ _ _} _ / : simpl nomatch.
 Arguments st_ghox {_ _ _ _} _ _ _ _ / : simpl nomatch.
+Arguments st_gho_depth_mono_at {_ _ _ _}.
+Arguments st_gho_persistent_at {_ _ _ _}.
+Global Instance st_gho_persistent `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄)
+  x d g tid : Persistent (bor_sem (@st_ghox _ _ _ _ st x d g tid)).
+Proof. apply (st_gho_persistent_at st bor_sem alt_here). Qed.
+Lemma st_gho_depth_mono `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) d g d' g' x tid :
+  (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (st.(st_ghox) x d g tid) -∗
+    bor_sem (st.(st_ghox) x d' g' tid).
+Proof. apply (st_gho_depth_mono_at st bor_sem alt_here). Qed.
+
 Definition st_gho `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄)
   (x: ~~𝔄) (d g: nat) (tid: thread_id) : iProp Σ :=
   bor_sem (st.(st_ghox) x d g tid).
@@ -352,13 +406,24 @@ Program Definition ty_of_st `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) : typ
 Next Obligation. move=> >. apply st_size_eq. Qed.
 Next Obligation. move=> >. apply st_size_eq2. Qed.
 Next Obligation. move=> >. apply st_phys_eq2. Qed.
-Next Obligation. move=> >. intros. iIntros "#A".
-  iSplit. { by iApply st_gho_depth_mono. } iIntros "_". iFrame "A".
+Next Obligation.
+  intros FML Σ typeG0 𝔄 st sem Hs d g d' g' x tid Hd Hg.
+  have ? := st_gho_persistent_at st sem Hs. iIntros "#A".
+  iSplit. { by iApply (st_gho_depth_mono_at st sem Hs). }
+  iIntros "_". iFrame "A".
 Qed.
-Next Obligation. move=> >. intros. iIntros "#A". by iApply st_gho_depth_mono. Qed.
+Next Obligation.
+  intros FML Σ typeG0 𝔄 st sem Hs d g d' g' x tid Hd Hg.
+  have ? := st_gho_persistent_at st sem Hs. iIntros "#A".
+  by iApply (st_gho_depth_mono_at st sem Hs).
+Qed.
 Next Obligation. intros FML Σ typeG0 𝔄 st κ x d g tid ξ R.
     iIntros. iApply (st_guard_proph 𝔄 st κ x d g tid ξ R); trivial;
     try iFrame. Qed.
+Next Obligation.
+  intros FML Σ typeG0 𝔄 st sem Hs x d g tid.
+  apply (st_gho_persistent_at st sem Hs).
+Qed.
 Next Obligation. move=> >. iIntros. iFrame "#". Qed.
 
 (** Unfolding the ghost assertion of a derived type.
@@ -383,7 +448,8 @@ Record plain_type `{!typeG FML Σ} 𝔄 := {
   pt_size: nat;
   pt_ghox: ~~𝔄 → thread_id → FML $oi Σ;
   pt_phys: ~~𝔄 → thread_id → list fancy_val;
-  pt_gho_persistent x tid : Persistent (bor_sem (pt_ghox x tid));
+  pt_gho_persistent_at sem : alt_sem sem → ∀ x tid,
+    Persistent (sem (pt_ghox x tid));
   pt_size_eq x tid : length (pt_phys x tid) = pt_size;
   pt_size_eq2 : size_of 𝔄 = pt_size;
   pt_phys_eq2 x tid : syn_phys x = pt_phys x tid;
@@ -391,12 +457,15 @@ Record plain_type `{!typeG FML Σ} 𝔄 := {
   pt_concrete x tid : all_concrete (pt_phys x tid);
   pt_non_prophetic (x: ~~𝔄) : ξl x = [];
 }.
-Global Existing Instance pt_gho_persistent.
 Global Instance: Params (@pt_size) 5 := {}.
 Global Instance: Params (@pt_ghox) 5 := {}.
 Global Instance: Params (@pt_phys) 5 := {}.
 Arguments pt_size {_ _ _ _} _ / : simpl nomatch.
 Arguments pt_ghox {_ _ _ _} _ _ _ / : simpl nomatch.
+Arguments pt_gho_persistent_at {_ _ _ _}.
+Global Instance pt_gho_persistent `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄)
+  x tid : Persistent (bor_sem (pt.(pt_ghox) x tid)).
+Proof. apply (pt_gho_persistent_at pt bor_sem alt_here). Qed.
 Definition pt_gho `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄)
   (x: ~~𝔄) (tid: thread_id) : iProp Σ := bor_sem (pt.(pt_ghox) x tid).
 Arguments pt_gho {_ _ _ _} _ _ _ : simpl never.
@@ -409,10 +478,14 @@ Program Definition st_of_pt `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄) : simp
   st_ghox x d g tid := pt.(pt_ghox) x tid;
   st_phys x tid := pt.(pt_phys) x tid;
 |}%I.
+Next Obligation.
+  intros FML Σ typeG0 𝔄 pt sem Hs x d g tid.
+  apply (pt_gho_persistent_at pt sem Hs).
+Qed.
 Next Obligation. move=> >. apply pt_size_eq. Qed.
 Next Obligation. move=> >. apply pt_size_eq2. Qed.
 Next Obligation. move=> >. apply pt_phys_eq2. Qed.
-Next Obligation. iIntros. iFrame "#". Qed.
+Next Obligation. move=> >. intros. by iIntros "$". Qed.
 Next Obligation. move=> >. intros Hin.
   rewrite (pt_non_prophetic) in Hin; trivial. set_solver. Qed.
 Next Obligation. intros. apply pt_concrete. Qed.
@@ -455,6 +528,9 @@ Next Obligation. move=> * //=. by rewrite gt_phys0. Qed.
 Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
 Next Obligation. move=> *. by iIntros "$". Qed.
 Next Obligation. move=> >. intros Hin. rewrite gt_non_prophetic in Hin; trivial. set_solver. Qed.
+Next Obligation.
+  move=> ???? gt sem Hs *. rewrite (empty_sem_at Hs). exact _.
+Qed.
 Next Obligation. move=> *. iIntros "_". by iApply empty_fml_sem_2. Qed.
 
 Lemma ty_of_gt_gho `{!typeG FML Σ} {𝔄} (gt: ghost_type 𝔄) x d g tid :
@@ -796,7 +872,8 @@ Inductive TypeLftMorphism `{!typeG FML Σ} {𝔄 𝔅} (T: type 𝔄 → type �
 | type_lft_morphism_add α βs E :
     (∀ty, ⊢ ty_lft (T ty) ≡ₗ α ⊓ ty_lft ty) →
     (∀ty, elctx_interp (T ty).(ty_E) ⊣⊢
-      elctx_interp E ∗ elctx_interp ty.(ty_E) ∗ [∗ list] β ∈ βs, β ⊑ ty_lft ty) →
+      elctx_interp E ∗ elctx_interp ty.(ty_E) ∗
+      [∗ list] β ∈ βs, dincl β (ty_lft ty)) →
     TypeLftMorphism T
 | type_lft_morphism_const α E :
     (∀ty, ⊢ ty_lft (T ty) ≡ₗ α) →
@@ -836,21 +913,21 @@ Proof.
     + iApply lft_equiv_trans. iApply HTα. rewrite -assoc.
       iApply lft_intersect_equiv_proper; [iApply lft_equiv_refl|iApply HUα].
     + rewrite HTE HUE !elctx_interp_app big_sepL_app -!assoc.
-      setoid_rewrite (lft_incl_equiv_proper_r _ _ _ (HUα _)). iSplit.
+      setoid_rewrite (dincl_equiv_proper_r _ _ _ (HUα _)). iSplit.
       * iIntros "($ & $ & $ & $ & H)". rewrite big_sepL_fmap.
         iSplit; iApply (big_sepL_impl with "H"); iIntros "!> * _ #H";
-        (iApply llftl_incl_trans; [done|]);
-        [iApply llftl_intersect_incl_l|iApply llftl_intersect_incl_r].
+        (iApply (dincl_trans with "H []"));
+        [iApply dincl_intersect_l|iApply dincl_intersect_r].
       * iIntros "($ & $ & H1 & $ & H2 & $)".
         rewrite big_sepL_fmap. iCombine "H1 H2" as "H".
         rewrite -big_sepL_sep. iApply (big_sepL_impl with "H").
-        iIntros "!> * _ #[??]". by iApply llftl_incl_glb.
+        iIntros "!> * _ #[??]". by iApply dincl_glb.
   - apply (type_lft_morphism_const _ (αT ⊓ αU)
             (ET ++ EU ++ ((λ β, β ⊑ₑ αU) <$> βst)))=>ty.
     + iApply lft_equiv_trans. iApply HTα.
       iApply lft_intersect_equiv_proper; [iApply lft_equiv_refl|iApply HUα].
     + rewrite HTE HUE !elctx_interp_app big_sepL_fmap.
-      do 5 f_equiv. by apply lft_incl_equiv_proper_r.
+      do 5 f_equiv. by apply dincl_equiv_proper_r.
   - apply (type_lft_morphism_const _ αT ET)=>//=.
   - apply (type_lft_morphism_const _ αT ET)=>//=.
 Qed.
@@ -873,7 +950,7 @@ Lemma type_lft_morphism_elctx_interp_proper {𝔄 𝔅} (T: type 𝔄 → type �
   elctx_interp (T ty).(ty_E) ≡ elctx_interp (T ty').(ty_E).
 Proof.
   move=> EqvE EqvLft. move: HT=> [|] > ? HE; [|by rewrite !HE].
-  rewrite !HE EqvE. do 5 f_equiv. by apply lft_incl_equiv_proper_r.
+  rewrite !HE EqvE. do 5 f_equiv. by apply dincl_equiv_proper_r.
 Qed.
 End type_lft_morphism.
 
@@ -1057,12 +1134,30 @@ Global Instance: Params (@Send) 5 := {}.
 
 Notation ListSend := (TCHForall (λ 𝔄, @Send _ _ _ 𝔄)).
 
+(** [Sync] at every candidate interpretation.
+
+  [&shr{κ} ty] stores [ty_ghox ty … tid] as the right-hand side of a guard,
+  and rebuilding that guard at another thread id means transforming it - so
+  this law, like the depth laws of [type], has to hold at every candidate
+  ([AltSem] in [typing/ctx.v]).  [sync_tid] below is the instance at the
+  ambient interpretation. *)
 Class Sync `{!typeG FML Σ} {𝔄} (ty: type 𝔄) :=
   sync_change_tid tid tid' x d g :
     (ty.(ty_phys) x tid = ty.(ty_phys) x tid') ∧
-    ((ty_gho ty) x d g tid ⊣⊢ (ty_gho ty) x d g tid') ∧
-    ((ty_gho_pers ty) x d g tid ⊣⊢ (ty_gho_pers ty) x d g tid').
+    (∀ sem, alt_sem sem →
+      sem (ty.(ty_ghox) x d g tid) ⊣⊢ sem (ty.(ty_ghox) x d g tid')) ∧
+    (∀ sem, alt_sem sem →
+      sem (ty.(ty_gho_persx) x d g tid) ⊣⊢ sem (ty.(ty_gho_persx) x d g tid')).
 Global Instance: Params (@Sync) 5 := {}.
+
+Lemma sync_tid `{!typeG FML Σ} {𝔄} {ty: type 𝔄} `{!Sync ty} tid tid' x d g :
+  (ty.(ty_phys) x tid = ty.(ty_phys) x tid') ∧
+  (ty_gho ty x d g tid ⊣⊢ ty_gho ty x d g tid') ∧
+  (ty_gho_pers ty x d g tid ⊣⊢ ty_gho_pers ty x d g tid').
+Proof.
+  have [Hp [Hg Hgp]] := sync_change_tid (ty:=ty) tid tid' x d g.
+  split; [done|]. split; [exact: (Hg _ alt_here)|exact: (Hgp _ alt_here)].
+Qed.
 
 Notation ListSync := (TCHForall (λ 𝔄, @Sync _ _ _ 𝔄)).
 
@@ -1097,11 +1192,15 @@ Section traits.
   Qed.
 
   Global Instance sync_equiv {𝔄} : Proper ((≡) ==> impl) (Sync (𝔄:=𝔄)).
-  Proof. move=> ?? [_ _ _ Eqv Eqv2 Eqv3] Hyp. rewrite /Sync=> *. split.
-    - rewrite -!Eqv3. apply Hyp. { auto. } { auto. }
-    - split.
-      + rewrite /ty_gho -!(Eqv _ _ _ _). apply Hyp.
-      + rewrite /ty_gho_pers -!(Eqv2 _ _ _ _). apply Hyp.
+  Proof.
+    move=> ?? [_ _ _ Eqv Eqv2 Eqv3] Hyp. rewrite /Sync=> t t' x d g.
+    have [Hp [Hg Hgp]] := Hyp t t' x d g. split.
+    - rewrite -!Eqv3. apply Hp.
+    - split=> sem Hsem;
+        have Hne := alt_sem_ne Hsem;
+        have ? : Proper ((≡) ==> (≡)) sem := ne_proper _.
+      + rewrite -!(Eqv _ _ _ _). by apply Hg.
+      + rewrite -!(Eqv2 _ _ _ _). by apply Hgp.
   Qed.
 
   (* VerusBelt: this doesn't work anymore; Sync is proved on a per-type basis
@@ -1173,11 +1272,33 @@ End resolve.
 
 Definition type_incl `{!typeG FML Σ} {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
   : iProp Σ :=
-  ⌜ty.(ty_size) = ty'.(ty_size)⌝ ∗ (ty_lft ty' ⊑ ty_lft ty) ∗
-  (□ ∀x d g tid, (ty_gho ty) x d g tid -∗ (ty_gho ty') (f ~~$ₛ x) d g tid
-                    ∗ ((ty_gho ty') (f ~~$ₛ x) d g tid -∗ (ty_gho ty) x d g tid)) ∗
-  (□ ∀x d g tid, (ty_gho_pers ty) x d g tid -∗ (ty_gho_pers ty') (f ~~$ₛ x) d g tid) ∗
+  ⌜ty.(ty_size) = ty'.(ty_size)⌝ ∗ dincl (ty_lft ty') (ty_lft ty) ∗
+  (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+     sem (ty.(ty_ghox) x d g tid) -∗ sem (ty'.(ty_ghox) (f ~~$ₛ x) d g tid)
+       ∗ (sem (ty'.(ty_ghox) (f ~~$ₛ x) d g tid) -∗
+          sem (ty.(ty_ghox) x d g tid))) ∗
+  (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+     sem (ty.(ty_gho_persx) x d g tid) -∗
+     sem (ty'.(ty_gho_persx) (f ~~$ₛ x) d g tid)) ∗
   ⌜∀x tid, ty.(ty_phys) x tid = ty'.(ty_phys) (f ~~$ₛ x) tid⌝.
+
+(** The ghost components of [type_incl] at the ambient interpretation *)
+Lemma type_incl_gho_now `{!typeG FML Σ} {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) f :
+  (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+     sem (ty.(ty_ghox) x d g tid) -∗ sem (ty'.(ty_ghox) (f ~~$ₛ x) d g tid)
+       ∗ (sem (ty'.(ty_ghox) (f ~~$ₛ x) d g tid) -∗
+          sem (ty.(ty_ghox) x d g tid))) ⊢
+  □ ∀x d g tid, ty_gho ty x d g tid -∗ ty_gho ty' (f ~~$ₛ x) d g tid ∗
+    (ty_gho ty' (f ~~$ₛ x) d g tid -∗ ty_gho ty x d g tid).
+Proof. iIntros "#H !>" (????). iApply ("H" $! bor_sem alt_here). Qed.
+Lemma type_incl_gho_pers_now `{!typeG FML Σ} {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅)
+    f :
+  (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+     sem (ty.(ty_gho_persx) x d g tid) -∗
+     sem (ty'.(ty_gho_persx) (f ~~$ₛ x) d g tid)) ⊢
+  □ ∀x d g tid, ty_gho_pers ty x d g tid -∗
+    ty_gho_pers ty' (f ~~$ₛ x) d g tid.
+Proof. iIntros "#H !>" (????). iApply ("H" $! bor_sem alt_here). Qed.
 Global Instance: Params (@type_incl) 5 := {}.
 
 Definition subtype `{!typeG FML Σ} {𝔄 𝔅} E L (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
@@ -1208,31 +1329,41 @@ Section subtyping.
   Lemma eqtype_unfold {𝔄 𝔅} E L f g `{!Isoₛ f g} (ty : type 𝔄) (ty' : type 𝔅) :
     (llctx_interp L -∗ □ (elctx_interp E -∗
       ⌜ty.(ty_size) = ty'.(ty_size)⌝ ∗ ty_lft ty ≡ₗ ty_lft ty' ∗
-      (□ ∀x d g tid, (ty_gho ty) x d g tid ↔ (ty_gho ty') (f ~~$ₛ x) d g tid) ∗
-      (□ ∀x d g tid, (ty_gho_pers ty) x d g tid ↔ (ty_gho_pers ty') (f ~~$ₛ x) d g tid) ∗
+      (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+         sem (ty.(ty_ghox) x d g tid) ↔
+         sem (ty'.(ty_ghox) (f ~~$ₛ x) d g tid)) ∗
+      (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+         sem (ty.(ty_gho_persx) x d g tid) ↔
+         sem (ty'.(ty_gho_persx) (f ~~$ₛ x) d g tid)) ∗
       ⌜∀x tid, ty.(ty_phys) x tid = ty'.(ty_phys) (f ~~$ₛ x) tid⌝))
     ↔ eqtype E L ty ty' f g.
   Proof.
     split.
     - move=> Eqt. split; iIntros "L".
       + iDestruct (Eqt with "L") as "#Eqt". iIntros "!> #E".
-        iDestruct ("Eqt" with "E") as "(%EqSize & [#EqLft1 #EqLft2] & EqOwn & EqOwnPers & %EqPhys)".
-        iSplit; [done|]. iSplit; [done|]. iSplit.
-        * iIntros "!>". iIntros. iSplitL.
-          { iApply "EqOwn". iFrame. }
-          { iIntros. iApply "EqOwn". iFrame. }
-        * iSplitL.
-          { iModIntro. iIntros. iApply "EqOwnPers". iFrame "#". } 
-          done.
+        iDestruct ("Eqt" with "E")
+          as "(%EqSize & [#EqLft1 #EqLft2] & #EqOwn & #EqOwnPers & %EqPhys)".
+        iSplit; [done|]. iSplit; [done|]. iSplit; [|iSplit; [|done]].
+        * iIntros "!>" (sem Hsem x dd gg tid) "x".
+          iDestruct ("EqOwn" $! sem Hsem x dd gg tid) as "[F B]".
+          iSplitL "x"; [by iApply "F"|iIntros "y"; by iApply "B"].
+        * iIntros "!>" (sem Hsem x dd gg tid) "x".
+          iDestruct ("EqOwnPers" $! sem Hsem x dd gg tid) as "[F _]".
+          by iApply "F".
       + iDestruct (Eqt with "L") as "#Eqt". iIntros "!> #E".
-        iDestruct ("Eqt" with "E") as "(%EqSize & [#EqLft1 #EqLft2] & EqOwn & EqOwnPers & %EqPhys)".
+        iDestruct ("Eqt" with "E")
+          as "(%EqSize & [#EqLft1 #EqLft2] & #EqOwn & #EqOwnPers & %EqPhys)".
         iSplit; [done|]. iSplit; [done|]. iSplit; [|iSplit].
-        * iIntros "!>". iIntros. iSplitL. { iApply "EqOwn". iFrame.
-            destruct Isoₛ0. rewrite semi_iso'. done. }
-          { iIntros "x". iDestruct ("EqOwn" with "x") as "x".
-            destruct Isoₛ0. rewrite semi_iso'. done. }
-        * iIntros "!>". iIntros.
-            { iIntros. iApply "EqOwnPers". destruct Isoₛ0. rewrite semi_iso'. done. }
+        * iIntros "!>" (sem Hsem x dd gg tid) "x".
+          iDestruct ("EqOwn" $! sem Hsem (g ~~$ₛ x) dd gg tid) as "[F B]".
+          have Hiso : (f ~~$ₛ (g ~~$ₛ x)) = x
+            by destruct Isoₛ0; rewrite semi_iso'.
+          rewrite Hiso. iSplitL "x"; [by iApply "B"|iIntros "y"; by iApply "F"].
+        * iIntros "!>" (sem Hsem x dd gg tid) "x".
+          iDestruct ("EqOwnPers" $! sem Hsem (g ~~$ₛ x) dd gg tid) as "[_ B]".
+          have Hiso : (f ~~$ₛ (g ~~$ₛ x)) = x
+            by destruct Isoₛ0; rewrite semi_iso'.
+          rewrite Hiso. by iApply "B".
         * iPureIntro. iIntros (x tid). rewrite (EqPhys (g ~~$ₛ x)).
             destruct Isoₛ0. rewrite semi_iso'. trivial.
     - iIntros ([Sub Sub']) "L". iDestruct (Sub with "L") as "#Sub".
@@ -1241,13 +1372,14 @@ Section subtyping.
       iDestruct ("Sub'" with "E") as "[D[F[InOwn' [InPers' InPhys']]]]".
       iFrame "A". iFrame "B". iFrame "F".
       iSplit; [|iSplit].
-      + iIntros "!>*". iSplit.
-        { iIntros "x". iDestruct ("InOwn" with "x") as "[y y']". iFrame "y". }
-        { iIntros "x". iDestruct ("InOwn'" with "x") as "[y y']".
+      + iIntros "!>" (sem Hsem). iIntros "*". iSplit.
+        { iIntros "x". iDestruct ("InOwn" $! sem Hsem with "x") as "[y y']".
+          iFrame "y". }
+        { iIntros "x". iDestruct ("InOwn'" $! sem Hsem with "x") as "[y y']".
           destruct Isoₛ0. rewrite semi_iso'. iFrame "y". }
-      + iIntros "!>*". iSplit.
-        { iIntros "X". iApply "InPers". iFrame "X". }
-        { iIntros "X". iDestruct ("InPers'" with "X") as "X".
+      + iIntros "!>" (sem Hsem). iIntros "*". iSplit.
+        { iIntros "X". iApply ("InPers" $! sem Hsem). iFrame "X". }
+        { iIntros "X". iDestruct ("InPers'" $! sem Hsem with "X") as "X".
             destruct Isoₛ0. rewrite semi_iso'. iFrame "X". }
       + iApply "InPhys".
   Qed.
@@ -1255,8 +1387,11 @@ Section subtyping.
   Lemma eqtype_id_unfold {𝔄} E L (ty ty': type 𝔄) :
     (llctx_interp L -∗ □ (elctx_interp E -∗
       ⌜ty.(ty_size) = ty'.(ty_size)⌝ ∗ ty_lft ty ≡ₗ ty_lft ty' ∗
-      (□ ∀vπ d g tid, (ty_gho ty) vπ d g tid ↔ (ty_gho ty') vπ d g tid) ∗
-      (□ ∀vπ d g tid, (ty_gho_pers ty) vπ d g tid ↔ (ty_gho_pers ty') vπ d g tid) ∗
+      (□ ∀ sem (_ : alt_sem sem), ∀vπ d g tid,
+         sem (ty.(ty_ghox) vπ d g tid) ↔ sem (ty'.(ty_ghox) vπ d g tid)) ∗
+      (□ ∀ sem (_ : alt_sem sem), ∀vπ d g tid,
+         sem (ty.(ty_gho_persx) vπ d g tid) ↔
+         sem (ty'.(ty_gho_persx) vπ d g tid)) ∗
       ⌜∀vπ tid, ty.(ty_phys) vπ tid = ty'.(ty_phys) vπ tid⌝)) ↔
     eqtype E L ty ty' idₛ idₛ.
   Proof. split.
@@ -1271,11 +1406,39 @@ Section subtyping.
   Global Instance type_incl_ne {𝔄 𝔅} n :
     Proper (dist n ==> dist n ==> (=) ==> dist n) (type_incl (𝔄:=𝔄) (𝔅:=𝔅)).
   Proof.
-    rewrite /type_incl /ty_gho /ty_gho_pers.
+    rewrite /type_incl.
     move=> ??[->->_ EqvOwn EqvOwnPers EqvPhys]??[->->_ EqvOwn' EqvOwnPers' EqvPhys']??->.
-    setoid_rewrite EqvOwn. setoid_rewrite EqvOwn'.
-    setoid_rewrite EqvOwnPers. setoid_rewrite EqvOwnPers'.
-    setoid_rewrite EqvPhys. setoid_rewrite EqvPhys'. trivial.
+    setoid_rewrite EqvPhys. setoid_rewrite EqvPhys'.
+    have HOwn : ∀ (T T' : type 𝔄) (U U' : type 𝔅) (h : 𝔄 →ₛ 𝔅),
+      (∀ x d g tid, T.(ty_ghox) x d g tid ≡{n}≡ T'.(ty_ghox) x d g tid) →
+      (∀ x d g tid, U.(ty_ghox) x d g tid ≡{n}≡ U'.(ty_ghox) x d g tid) →
+      (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+         sem (T.(ty_ghox) x d g tid) -∗ sem (U.(ty_ghox) (h ~~$ₛ x) d g tid)
+           ∗ (sem (U.(ty_ghox) (h ~~$ₛ x) d g tid) -∗
+              sem (T.(ty_ghox) x d g tid)))%I ≡{n}≡
+      (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+         sem (T'.(ty_ghox) x d g tid) -∗ sem (U'.(ty_ghox) (h ~~$ₛ x) d g tid)
+           ∗ (sem (U'.(ty_ghox) (h ~~$ₛ x) d g tid) -∗
+              sem (T'.(ty_ghox) x d g tid)))%I.
+    { move=> > E1 E2. f_equiv. apply bi.forall_ne=> sem.
+      apply bi.forall_ne=> Hsem. have ? := alt_sem_ne Hsem.
+      do 4 (apply bi.forall_ne=> ?). setoid_rewrite E1. by setoid_rewrite E2. }
+    have HPers : ∀ (T T' : type 𝔄) (U U' : type 𝔅) (h : 𝔄 →ₛ 𝔅),
+      (∀ x d g tid,
+        T.(ty_gho_persx) x d g tid ≡{n}≡ T'.(ty_gho_persx) x d g tid) →
+      (∀ x d g tid,
+        U.(ty_gho_persx) x d g tid ≡{n}≡ U'.(ty_gho_persx) x d g tid) →
+      (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+         sem (T.(ty_gho_persx) x d g tid) -∗
+         sem (U.(ty_gho_persx) (h ~~$ₛ x) d g tid))%I ≡{n}≡
+      (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+         sem (T'.(ty_gho_persx) x d g tid) -∗
+         sem (U'.(ty_gho_persx) (h ~~$ₛ x) d g tid))%I.
+    { move=> > E1 E2. f_equiv. apply bi.forall_ne=> sem.
+      apply bi.forall_ne=> Hsem. have ? := alt_sem_ne Hsem.
+      do 4 (apply bi.forall_ne=> ?). setoid_rewrite E1. by setoid_rewrite E2. }
+    rewrite (HOwn _ _ _ _ _ EqvOwn EqvOwn') (HPers _ _ _ _ _ EqvOwnPers
+      EqvOwnPers') //.
   Qed.
 
   Global Instance type_incl_persistent {𝔄 𝔅} (ty : type 𝔄) (ty' : type 𝔅) f :
@@ -1283,11 +1446,11 @@ Section subtyping.
 
   Lemma type_incl_refl {𝔄} (ty: type 𝔄) : ⊢ type_incl ty ty idₛ.
   Proof.
-    iIntros. 
-    iSplit; [done|]. iSplit; [by iApply lft_incl_refl|].
-      iSplit. { iModIntro. iIntros. iFrame. iIntros. done. }
-      iSplit. { iModIntro. iIntros. iIntros. iFrame "#". }
-      trivial.
+    iIntros.
+    iSplit; [done|]. iSplit; [by iApply dincl_refl|].
+    iSplit; [|iSplit; [|done]].
+    - iIntros "!>" (sem Hsem ????) "x". iFrame "x". by iIntros "$".
+    - by iIntros "!>" (sem Hsem ????) "$".
   Qed.
 
   Lemma type_incl_trans {𝔄 𝔅 ℭ} f g (ty : type 𝔄) (ty' : type 𝔅) (ty'' : type ℭ) :
@@ -1298,14 +1461,14 @@ Section subtyping.
     iDestruct "B" as "[%Sz'[#InLft' [#InOwn' [#InOwnPers' %Phys']]]]".
     iSplit; [|iSplit; [|iSplit; [|iSplit]]].
     - iPureIntro. by etrans.
-    - iApply llftl_incl_trans; [iApply "InLft'"|iApply "InLft"].
-    - iIntros "!>*". iIntros "x".
-      iDestruct ("InOwn" with "x") as "[y yx]".
-      iDestruct ("InOwn'" with "y") as "[z zy]".
-      iFrame "z". iIntros. iApply "yx". iApply "zy". done.
-    - iModIntro. iIntros (x d g0 tid) "x".
-        iDestruct ("InOwnPers" with "x") as "x".
-        iDestruct ("InOwnPers'" with "x") as "x".
+    - iApply dincl_trans; [iApply "InLft'"|iApply "InLft"].
+    - iIntros "!>" (sem Hsem ????) "x".
+      iDestruct ("InOwn" $! sem Hsem with "x") as "[y yx]".
+      iDestruct ("InOwn'" $! sem Hsem with "y") as "[z zy]".
+      iFrame "z". iIntros "z'". iApply "yx". by iApply "zy".
+    - iIntros "!>" (sem Hsem x d g0 tid) "x".
+        iDestruct ("InOwnPers" $! sem Hsem with "x") as "x".
+        iDestruct ("InOwnPers'" $! sem Hsem with "x") as "x".
         iFrame "x".
     - iPureIntro. intros. etrans. { apply Phys. } { apply Phys'. } 
   Qed.
@@ -1314,9 +1477,16 @@ Section subtyping.
   Proof.
     move=> Eqv. iIntros "_!>_".
     iSplit. { iPureIntro. apply Eqv. }
-    iSplit. { rewrite Eqv. iApply lft_incl_refl. }
-    iSplit. { iIntros "!>*"; rewrite Eqv; iIntros "$". iIntros "x". done. }
-    iSplit. { iIntros "!>*"; rewrite Eqv. iIntros. iFrame "#". }
+    iSplit. { rewrite Eqv. iApply dincl_refl. }
+    have [_ _ _ EqGho EqPers _] := Eqv.
+    iSplit. { iIntros "!>" (sem Hsem x d g0 tid).
+      have ? := alt_sem_ne Hsem;
+        have ? : Proper ((≡) ==> (≡)) sem := ne_proper _.
+      rewrite (EqGho x d g0 tid). iIntros "$". by iIntros "$". }
+    iSplit. { iIntros "!>" (sem Hsem x d g0 tid).
+      have ? := alt_sem_ne Hsem;
+        have ? : Proper ((≡) ==> (≡)) sem := ne_proper _.
+      rewrite (EqPers x d g0 tid). by iIntros "$". }
     { iPureIntro. intros. rewrite Eqv. trivial. }
   Qed.
 
@@ -1414,8 +1584,10 @@ Section subtyping.
   (** Simple Type *)
 
   Lemma type_incl_simple_type {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (st: simple_type 𝔄) (st': simple_type 𝔅):
-    st.(st_size) = st'.(st_size) → ty_lft st' ⊑ ty_lft st -∗
-    (□ ∀x d g tid, (st_gho st) x d g tid -∗ (st_gho st') (f ~~$ₛ x) d g tid) -∗
+    st.(st_size) = st'.(st_size) → dincl (ty_lft st') (ty_lft st) -∗
+    (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+       sem (st.(st_ghox) x d g tid) -∗
+       sem (st'.(st_ghox) (f ~~$ₛ x) d g tid)) -∗
     ⌜∀x tid, st.(st_phys) x tid = st'.(st_phys) (f ~~$ₛ x) tid⌝ -∗
     type_incl st st' f.
   Proof.
@@ -1423,16 +1595,17 @@ Section subtyping.
     iSplit; [done|].
     iSplit; [done|].
     iSplit; [|iSplit; done].
-    + iModIntro. iIntros (x d g tid) "#Gho".
-      iSplit.
-        { iApply "InOwn". done. }
-        { iIntros. iApply "Gho". }
+    + iIntros "!>" (sem Hsem x d g tid).
+      have ? := st_gho_persistent_at st sem Hsem. iIntros "#Gho".
+      iSplitR; [by iApply ("InOwn" $! sem Hsem)|by iIntros "_"].
   Qed.
 
   Lemma subtype_simple_type {𝔄 𝔅} E L (f : 𝔄 →ₛ 𝔅) (st: simple_type 𝔄) (st': simple_type 𝔅) :
     (llctx_interp L -∗ □ (elctx_interp E -∗
-      ⌜st.(st_size) = st'.(st_size)⌝ ∗ ty_lft st' ⊑ ty_lft st ∗
-      (□ ∀x d g tid, (st_gho st) x d g tid -∗ (st_gho st') (f ~~$ₛ x) d g tid) ∗
+      ⌜st.(st_size) = st'.(st_size)⌝ ∗ dincl (ty_lft st') (ty_lft st) ∗
+      (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
+         sem (st.(st_ghox) x d g tid) -∗
+         sem (st'.(st_ghox) (f ~~$ₛ x) d g tid)) ∗
       ⌜∀x tid, st.(st_phys) x tid = st'.(st_phys) (f ~~$ₛ x) tid⌝)) →
     subtype E L st st' f.
   Proof.
@@ -1444,9 +1617,10 @@ Section subtyping.
   (** Plain Type *)
   
   Lemma type_incl_plain_type {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (pt: plain_type 𝔄) (pt': plain_type 𝔅):
-    pt.(pt_size) = pt'.(pt_size) → ty_lft pt' ⊑ ty_lft pt -∗
-    □ (∀v tid, (pt_gho pt) v tid -∗ (pt_gho pt') (f ~~$ₛ v) tid
-            ∗ ((pt_gho pt') (f ~~$ₛ v) tid -∗ (pt_gho pt) v tid)
+    pt.(pt_size) = pt'.(pt_size) → dincl (ty_lft pt') (ty_lft pt) -∗
+    □ (∀ sem (_ : alt_sem sem), ∀v tid,
+        sem (pt.(pt_ghox) v tid) -∗ sem (pt'.(pt_ghox) (f ~~$ₛ v) tid)
+          ∗ (sem (pt'.(pt_ghox) (f ~~$ₛ v) tid) -∗ sem (pt.(pt_ghox) v tid))
     ) -∗
     ⌜∀v tid, pt.(pt_phys) v tid = pt'.(pt_phys) (f ~~$ₛ v) tid⌝ -∗
     type_incl pt pt' f.
@@ -1455,17 +1629,19 @@ Section subtyping.
     iSplit. { iPureIntro. trivial. }
     do 1 (iSplit; [done|]).
       iSplit; [|iSplit].
-    - iIntros "!>*/=". iIntros "gho".
-      iDestruct ("InOwn" with "gho") as "[x y]". iFrame.
-    - iModIntro. iIntros (x d g tid) "x". iDestruct ("InOwn" with "x") as "[x _]". iFrame "x".
+    - iIntros "!>" (sem Hsem ????) "gho".
+      iDestruct ("InOwn" $! sem Hsem with "gho") as "[x y]". iFrame.
+    - iIntros "!>" (sem Hsem x d g tid) "x".
+      iDestruct ("InOwn" $! sem Hsem with "x") as "[x _]". iFrame "x".
     - intros. iPureIntro. intros. apply Phys.
   Qed.
 
   Lemma subtype_plain_type {𝔄 𝔅} E L (f : 𝔄 →ₛ 𝔅) (pt: plain_type 𝔄) (pt': plain_type 𝔅) :
     (llctx_interp L -∗ □ (elctx_interp E -∗
-      ⌜pt.(pt_size) = pt'.(pt_size)⌝ ∗ ty_lft pt' ⊑ ty_lft pt ∗
-      (∀v tid, (pt_gho pt) v tid -∗ (pt_gho pt') (f ~~$ₛ v) tid
-          ∗ ((pt_gho pt') (f ~~$ₛ v) tid -∗ (pt_gho pt) v tid)
+      ⌜pt.(pt_size) = pt'.(pt_size)⌝ ∗ dincl (ty_lft pt') (ty_lft pt) ∗
+      (∀ sem (_ : alt_sem sem), ∀v tid,
+        sem (pt.(pt_ghox) v tid) -∗ sem (pt'.(pt_ghox) (f ~~$ₛ v) tid)
+          ∗ (sem (pt'.(pt_ghox) (f ~~$ₛ v) tid) -∗ sem (pt.(pt_ghox) v tid))
       ) ∗
       ⌜∀v tid, pt.(pt_phys) v tid = pt'.(pt_phys) (f ~~$ₛ v) tid⌝
       )) →
@@ -1479,23 +1655,26 @@ Section subtyping.
   (** Ghost Type *)
 
   Lemma type_incl_ghost_type {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (gt: ghost_type 𝔄) (gt': ghost_type 𝔅):
-    □ (∀v tid, (gt_gho gt) v tid -∗ (gt_gho gt') (f ~~$ₛ v) tid
-            ∗ ((gt_gho gt') (f ~~$ₛ v) tid -∗ (gt_gho gt) v tid)) -∗
+    □ (∀ sem (_ : alt_sem sem), ∀v tid,
+        sem (gt.(gt_ghox) v tid) -∗ sem (gt'.(gt_ghox) (f ~~$ₛ v) tid)
+          ∗ (sem (gt'.(gt_ghox) (f ~~$ₛ v) tid) -∗ sem (gt.(gt_ghox) v tid))) -∗
     type_incl gt gt' f.
   Proof.
     iIntros "#InOwn".
     iSplit. { iPureIntro. trivial. }
-    iSplit. { simpl. by iApply lft_incl_static. }
+    iSplit. { simpl. by iApply dincl_static. }
     iSplit; [|iSplit; [|done]].
-    - rewrite /ty_gho /ty_of_gt //=. iIntros "!> % % % % H".
-      iDestruct ("InOwn" with "H") as "[H H']". iFrame.
-    - rewrite /ty_gho_pers /ty_of_gt //=. iIntros "!> % % % % _".
-      by iApply empty_fml_sem_2.
+    - iIntros "!>" (sem Hsem ????) "H".
+      iDestruct ("InOwn" $! sem Hsem with "H") as "[H H']". iFrame.
+    - iIntros "!>" (sem Hsem ????) "_". rewrite (empty_sem_at Hsem). done.
   Qed.
 
   Lemma subtype_ghost_type {𝔄 𝔅} E L (f : 𝔄 →ₛ 𝔅) (gt: ghost_type 𝔄) (gt': ghost_type 𝔅) :
     (llctx_interp L -∗ □ (elctx_interp E -∗
-    □ (∀v tid, (gt_gho gt) v tid -∗ (gt_gho gt') (f ~~$ₛ v) tid ∗ ((gt_gho gt') (f ~~$ₛ v) tid -∗ (gt_gho gt) v tid)))) →
+    □ (∀ sem (_ : alt_sem sem), ∀v tid,
+        sem (gt.(gt_ghox) v tid) -∗ sem (gt'.(gt_ghox) (f ~~$ₛ v) tid)
+          ∗ (sem (gt'.(gt_ghox) (f ~~$ₛ v) tid) -∗
+             sem (gt.(gt_ghox) v tid))))) →
     subtype E L gt gt' f.
   Proof.
     move=> Sub. iIntros "L". iDestruct (Sub with "L") as "#Incl".
@@ -1513,7 +1692,7 @@ Section subtyping.
     iDestruct (Sub with "L1") as "#Sub".
     iDestruct ("back" with "L1") as "[W tok]".
     iDestruct ("Sub" with "E") as "#(_ & _ & #InOwn & _)".
-    iDestruct ("InOwn" with "ty") as "[ty' _]".
+    iDestruct ("InOwn" $! bor_sem alt_here with "ty") as "[ty' _]".
     unfold "∘".
     by iApply (Rslv with "LFT PROPH UNIQ E tok ty' W").
   Qed.

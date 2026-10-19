@@ -250,6 +250,50 @@ Section type_sum.
 
   (** The sum's ghost assertion at an injected refinement is the injected
     type's, up to the [to_xsum]/[pinj] round trip. *)
+  (** The same at the formula level, so that it applies at every candidate
+    interpretation and inside a stored guard. *)
+  Lemma xsum_ghox_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad d g tid :
+    (Σ! tyl).(ty_ghox) (pinj i x0, pad) d g tid =
+      (tyl +!! i).(ty_ghox) x0 d g tid.
+  Proof. unfold ty_ghox, xsum_ty. by rewrite to_xsum_pinj. Qed.
+  Lemma xsum_gho_persx_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad d g tid :
+    (Σ! tyl).(ty_gho_persx) (pinj i x0, pad) d g tid =
+      (tyl +!! i).(ty_gho_persx) x0 d g tid.
+  Proof. unfold ty_gho_persx, xsum_ty. by rewrite to_xsum_pinj. Qed.
+
+  (** [split_pt_xsum_cells] at the formula level *)
+  Lemma split_pt_xsum_cells_at {sem} (H : alt_sem sem) {𝔄l} i
+      (tyl: typel 𝔄l) x0 pad tid l cells :
+    sem (cells_fml l cells (ty_phys (Σ! tyl) (pinj i x0, pad) tid)) ⊣⊢
+    sem (bor_sep (cells_fml l (take 1 cells) (FVal <$> [ #i ]))
+         (bor_sep
+           (cells_fml (l +ₗ 1) (take (ty_size (tyl +!! i)) (drop 1 cells))
+              (ty_phys (tyl +!! i) x0 tid))
+           (cells_fml (l +ₗ S (ty_size (tyl +!! i)))
+              (drop (S (ty_size (tyl +!! i))) cells)
+              (fmap FVal (vec_to_list
+                 (padding_to_vec (sum_pad_size tyl (tyl +!! i)) pad)))))).
+  Proof.
+    rewrite !(sep_sem_at H) !(cells_sem_at H)
+      (heap_mapsto_cells_fancy_fmap_eq l (take 1 cells) [ #i ]).
+    apply split_pt_xsum_cells.
+  Qed.
+
+  (** [split_pt_xsum_cells'] at the formula level *)
+  Lemma split_pt_xsum_cells'_at {sem} (H : alt_sem sem) {𝔄l} i
+      (tyl: typel 𝔄l) (l : cloc) :
+    sem (cmapstoany_fml l) ⊣⊢
+    sem (bor_sep (cmapstoany_fml (l.1, take 1 l.2))
+         (bor_sep
+           (cmapstoany_fml
+              (l.1 +ₗ 1, take (ty_size (tyl +!! i)) (drop 1 l.2)))
+           (cmapstoany_fml (l.1 +ₗ S (ty_size (tyl +!! i)),
+              drop (S (ty_size (tyl +!! i))) l.2)))).
+  Proof.
+    rewrite !(sep_sem_at H) !(cmapstoany_sem_at H).
+    apply (split_pt_xsum_cells' i tyl l.1 l.2).
+  Qed.
+
   Lemma xsum_gho_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad d g tid :
     ty_gho (Σ! tyl) (pinj i x0, pad) d g tid ⊣⊢ ty_gho (tyl +!! i) x0 d g tid.
   Proof. rewrite xsum_ty_gho /= to_xsum_pinj //. Qed.
@@ -280,13 +324,13 @@ Section type_sum.
     destruct d as [|d'];
       [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
     rewrite shr_bor_gho /=. iDestruct "gho" as "#(Gpt & Ggho & Pers)".
-    iDestruct (guard_rhs_iff
-      (split_pt_xsum_cells i tyl x0 pad tid cl.1 cl.2) with "Gpt") as "#Gpt2".
-    iDestruct (guard_rhs_sep_r with "Gpt2") as "#Grest".
-    iDestruct (guard_rhs_sep_l with "Grest") as "#Gmain".
-    iDestruct (guard_rhs_iff (xsum_gho_pinj i tyl x0 pad d' (S d') tid)
-      with "Ggho") as "#Ggho2".
-    rewrite xsum_gho_pers_pinj.
+    iDestruct (dguard_rhs_iff
+      (λ sem' Hs, split_pt_xsum_cells_at Hs i tyl x0 pad tid cl.1 cl.2)
+      with "Gpt") as "#Gpt2".
+    iDestruct (dguard_rhs_sep_r with "Gpt2") as "#Grest".
+    iDestruct (dguard_rhs_sep_l with "Grest") as "#Gmain".
+    rewrite xsum_ghox_pinj xsum_gho_pers_pinj.
+    iDestruct "Ggho" as "#Ggho2".
     iModIntro. iFrame "W tok".
     iExists ((cloc_take (cloc_skip cl 1) (ty_size (tyl +!! i)), x0) -:: xl).
     iFrame "T". iSplit; last first.
@@ -322,7 +366,8 @@ Section type_sum.
       [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
     rewrite shr_bor_gho /=. iDestruct "gho" as "#(Gpt & Ggho & Pers)".
     iDestruct (Alv with "L E") as "#Alv".
-    iDestruct (guard_trans with "Alv Gpt") as "#GptL".
+    iDestruct (dguard_alive_sem' (cells_fml_sem _ _ _) with "Gpt") as "#Gpt0".
+    iDestruct (guard_trans with "Alv Gpt0") as "#GptL".
     iDestruct (guard_rhs_iff
       (split_pt_xsum_cells i tyl x0 pad tid l.1 l.2) with "GptL") as "#Gpt2".
     iDestruct (guard_rhs_sep_l with "Gpt2") as "#Gdisc".
@@ -446,14 +491,15 @@ Section type_sum.
     iDestruct "gho" as "(#Incl & %Ineqs & UniqBody & #PtBase & #Pers)".
     iDestruct "Pers" as "[Dead|#Pers]".
     { (* [κ] is already dead, so the lifetime context is contradictory *)
-      iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+      iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 f Wg") as "[Alive _]".
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
     rewrite xsum_gho_pers_pinj.
     iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
-    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "ξBorFull".
+    iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBorFull".
     iAssert (bor_sem (gsrc_fml (GFrac γ q)) &&{Wguard}&&> @[κ])%I as "#Gκx".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ q))). iApply "Gκ". }
     iDestruct (llftl_bor_acc_guarded ⊤ (gsrc_fml (GFrac γ q)) κ
@@ -502,13 +548,14 @@ Section type_sum.
       [set_solver|].
     iMod ("B'" with "W") as "[W [Bor f]]".
     iDestruct (gsrc_fml_sem_1 (s := GFrac γ q) with "f") as "f".
-    rewrite (llftl_bor_idx κ (uniq_body_fml (tyl +!! i) x1 ζi tid
+    rewrite (idxbor_fml_of_bor (κ:=κ) (Px:=uniq_body_fml (tyl +!! i) x1 ζi tid
       (cloc_take (cloc_skip l 1) (ty_size (tyl +!! i))))).
     iDestruct "Bor" as (ζidx) "[#ζBor ζTok]".
-    iDestruct (guard_rhs_iff (split_pt_xsum_cells' i tyl l.1 l.2)
+    iDestruct (dguard_rhs_iff
+      (λ sem' Hs, split_pt_xsum_cells'_at Hs i tyl l)
       with "PtBase") as "#PtBase'".
-    iDestruct (guard_rhs_sep_r with "PtBase'") as "#PtBasex".
-    iDestruct (guard_rhs_sep_l with "PtBasex") as "#PtBase2".
+    iDestruct (dguard_rhs_sep_r with "PtBase'") as "#PtBasex".
+    iDestruct (dguard_rhs_sep_l with "PtBasex") as "#PtBase2".
     inversion Phys as [Eqv]. subst v.
     iModIntro. iFrame "W key f".
     destruct l as [l1 cells].
@@ -522,8 +569,8 @@ Section type_sum.
     iExists _, d. iSplit; [by rewrite /= Ev|].
     rewrite /ty_own uniq_bor_gho. iSplit; [|done].
     iSplitR.
-    { iApply (guard_trans with "Incl []").
-      iApply lft_intersect_tyl_lfts_lookup_incl. }
+    { iApply (dincl_trans with "Incl").
+      iApply (dincl_of (lft_intersect_tyl_lfts_lookup_incl tyl i)). }
     iSplitR; [iPureIntro; lia|]. iFrame "ζVo ζTok ζBor".
     iFrame "PtBase2". by iRight.
   Qed.
@@ -595,7 +642,9 @@ Section type_sum.
       with "LFT uniq_pers GuS GκS") as "#Gu".
     iDestruct (guard_rhs_sep_r with "Gu") as "#Gu2".
     iDestruct (guard_cloc_combine_fancy with "[] Gu2") as "#Gpt".
-    { iApply (guard_trans with "GκS pt"). }
+    { iDestruct (dguard_alive_sem' (cmapstoany_fml_sem l) with "pt")
+        as "#pt0".
+      iApply (guard_trans with "GκS pt0"). }
     iDestruct (guard_rhs_iff
       (split_pt_xsum_cells i tyl x0 pad tid l.1 l.2) with "Gpt") as "#Gpt2".
     iDestruct (guard_rhs_sep_l with "Gpt2") as "#Gdisc".
@@ -841,7 +890,7 @@ Section type_sum.
       iFrame "↦1 ↦2". iSplitL.
       { iAssert (ty_own () () d' (S d') tid []) as "Hu";
           [by rewrite unit_ty_own|]. iDestruct "Hu" as "[Hu _]".
-        iDestruct ("Sgho" $! () d' (S d') tid with "Hu") as "[$ _]". }
+        iDestruct ("Sgho" $! bor_sem alt_here () d' (S d') tid with "Hu") as "[$ _]". }
       iPureIntro. rewrite /ty_phys /xsum_ty /= to_xsum_pinj -Sphys /=.
       apply pad_length'. rewrite /= length_fmap Hlen2.
       rewrite Eq in Sz. simpl in Sz. simpl. lia. }

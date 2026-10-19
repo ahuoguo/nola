@@ -27,6 +27,7 @@ Section ptr.
        pt_ghox (l: ~~locₛ) _ := empty_fml;
        pt_phys (l: ~~locₛ) _ := [ FVal (LitV (LitLoc l)) ];
     |}.
+  Next Obligation. move=> sem H *. rewrite (empty_sem_at H). exact _. Qed.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
@@ -81,16 +82,22 @@ Section points_to.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation.
-    move=> *. rewrite !bor_sep_sem. iIntros "[HP gho]".
-    iDestruct (ty_gho_depth_mono with "gho") as "[gho wand]"; [done|done|].
+    move=> ? ty Px sem H *. rewrite !(sep_sem_at H). iIntros "[HP gho]".
+    iDestruct (ty_gho_depth_mono_at ty sem H with "gho") as "[gho wand]";
+      [done|done|].
     iFrame "HP gho". iIntros "[$ ?]". by iApply "wand".
   Qed.
-  Next Obligation. intros. by apply ty_gho_pers_depth_mono. Qed.
+  Next Obligation.
+    move=> ? ty Px sem H *. by apply (ty_gho_pers_depth_mono_at ty sem H).
+  Qed.
   Next Obligation.
     move=> *. iIntros "LFT Incl Pers Rk Rg".
     iDestruct (guard_rhs_iff (bor_sep_sem _ _) with "Rg") as "Rg'".
     iDestruct (guard_rhs_sep_r with "Rg'") as "Rg2".
     by iApply (ty_guard_proph with "LFT Incl Pers Rk Rg2").
+  Qed.
+  Next Obligation.
+    move=> ? ty Px sem H *. by apply (ty_gho_pers_pers_at ty sem H).
   Qed.
   Next Obligation.
     move=> *. rewrite bor_sep_sem. iIntros "[_ gho]".
@@ -262,13 +269,9 @@ Section typing.
       by iDestruct "Hpers" as "[]". }
     rewrite shr_bor_gho /=. iDestruct "Hshr" as "#(_ & Hshr & Hpers)".
     rewrite tracked_ty_gho_pers own_ptr_gho_pers /=.
-    iDestruct (guard_rhs_iff (tracked_ty_gho (own_ptr (ty_size ty) ty)
-      (l', x) (S d') (S (S d')) tid) with "Hshr") as "#Hshr1".
-    iDestruct (guard_rhs_iff (own_ptr_gho (ty_size ty) ty (l', x)
-      (S d') (S (S d')) tid) with "Hshr1") as "#Hshr2".
-    iDestruct (guard_rhs_sep_l with "Hshr2") as "#Hshrpt".
-    iDestruct (guard_rhs_sep_r with "Hshr2") as "#Hshr3".
-    iDestruct (guard_rhs_sep_r with "Hshr3") as "#Hshrgho".
+    iDestruct (dguard_rhs_sep_l with "Hshr") as "#Hshrpt".
+    iDestruct (dguard_rhs_sep_r with "Hshr") as "#Hshr3".
+    iDestruct (dguard_rhs_sep_r with "Hshr3") as "#Hshrgho".
     iApply twpw_fupdw_nonval; [done|].
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
@@ -282,12 +285,14 @@ Section typing.
     iSplit; [|done]. iExists (LitV (LitLoc l)), (S (S (S d'))).
     iSplit; [done|].
     rewrite /ty_own shr_bor_gho /=. iSplit; [|done]. iSplit.
-    { iApply (guard_rhs_iff (mapsto_empty_cells ty l x tid)
-        with "Hshrpt"). }
+    { have Hpt : ∀ sem', alt_sem sem' →
+        sem' (mapsto_fml l (ty_phys ty x tid)) ⊣⊢
+        sem' (cells_fml (l, repeat (@nil cell_id) (ty_size ty)).1
+               (l, repeat (@nil cell_id) (ty_size ty)).2 (ty_phys ty x tid)).
+      { move=> sem' Hs. rewrite /mapsto_fml !(cells_sem_at Hs) ty_size_eq //. }
+      iApply (dguard_rhs_iff Hpt with "Hshrpt"). }
     iSplit.
-    { iApply (guard_trans with "Hshrgho []"). iApply guard_intro.
-      iIntros "!> gho".
-      iApply (ty_gho_depth_mono with "gho"); lia. }
+    { iApply (dguard_depth_mono ty with "Hshrgho"); lia. }
     iApply (ty_gho_pers_depth_mono with "Hpers"); lia.
   Qed.
 
@@ -328,7 +333,8 @@ Section typing.
     iAssert (frac_tok γ 1 &&{Wguard}&&> @[κ])%I as "#Gκ".
     { iApply (guard_trans with "Gfrac Alv"). }
     iDestruct "Pers" as "[Dead|#Pers]".
-    { iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+    { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 f Wg") as "[Alive _]".
@@ -341,7 +347,7 @@ Section typing.
     destruct c as [cl cs]. destruct cs as [|cs0 cs]; last first.
     { (* the permission's own cell list is empty, so this cannot happen *)
       iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
-      iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "Bor".
+      iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor".
       iAssert (bor_sem (gsrc_fml (GFrac γ 1)) &&{Wguard}&&> @[κ])%I as "#Gκx".
       { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ 1))). iApply "Gκ". }
       iDestruct (llftl_bor_acc_guarded ⊤ (gsrc_fml (GFrac γ 1)) κ
@@ -371,8 +377,8 @@ Section typing.
       iExists (S e), h. rewrite tracked_ty_gho own_ptr_gho /=.
       iEval (rewrite -(cloc_mapsto_empty_cells ty l y tid)) in "pt2".
       iFrame "pt gho2 free pt2". }
-    { iApply (llftl_idx_bor_iff with "[] ξBor"). iIntros "!>".
-      rewrite !uniq_body_fml_sem /=.
+    { iApply (idxbor_fml_iff_at alt_here with "[] ξBor").
+      iIntros "!>" (sem' Hs). rewrite !(uniq_body_fml_sem_at Hs) /=.
       iSplit; iIntros "H"; iDestruct "H" as (x0 d0 g0) "(A & B & _)";
         iExists x0, d0, g0; iFrame "A B";
         by iApply (bi.equiv_entails_1_2 (heap_complete_mapsto_fancy_empty _)). }
@@ -390,7 +396,7 @@ Section typing.
     rewrite /ty_own uniq_bor_gho. iSplit; [|done].
     iSplitR; [iApply "Incl"|]. iSplitR; [iPureIntro; lia|].
     iFrame "UniqBody". iSplitR.
-    { rewrite -heap_cloc_mapsto_empty. iApply guard_true. }
+    { iApply dguard_cmapstoany_nil. }
     iRight. iApply (ty_gho_pers_depth_mono with "Pers"); lia.
   Qed.
 End typing.

@@ -30,8 +30,34 @@ Section pcell.
     cellsvec_fml : list cell_id → list fancy_val → FML $oi Σ;
     cellsvec_fml_sem cs fv :
       bor_sem (cellsvec_fml cs fv) ⊣⊢ cs ^↦!∗ fv;
+    (** The constructor means the same at every candidate interpretation;
+      see [AltSem] in [typing/ctx.v]. *)
+    cellsvec_sem_at {sem} : alt_sem sem → ∀ cs fv,
+      sem (cellsvec_fml cs fv) ⊣⊢ cs ^↦!∗ fv;
   }.
   Context `{!PcellFml}.
+
+  (** [guard_cloc_combine_fancy'] for stored guards *)
+  Lemma dguard_cloc_combine_fancy' {Px} (l : cloc) (γs : list cell_id)
+      (fv : list fancy_val) :
+    dguard Px (cells_fml l.1 l.2 (FCell <$> γs)) -∗
+    dguard Px (cellsvec_fml γs fv) -∗
+    dguard Px (cells_fml (cloc_flat_insert l γs).1
+                 (cloc_flat_insert l γs).2 fv).
+  Proof.
+    have ? := guard_fml_pers_at alt_here.
+    iIntros "#g1 #g2". iApply dguard_of_all. iIntros (sem' Hs Hi).
+    iDestruct (guard_fml_sem_into alt_here Hs Hi with "g1") as "#G1".
+    iDestruct (guard_fml_sem_into alt_here Hs Hi with "g2") as "#G2".
+    iDestruct (guard_rhs_iff (cells_sem_at Hs _ _ _) with "G1") as "#G1'".
+    iDestruct (guard_rhs_iff (cellsvec_sem_at Hs _ _) with "G2") as "#G2'".
+    have Heq : (cloc_flat_insert l γs).1 ↦[^ (cloc_flat_insert l γs).2 ]!∗ fv
+      ⊣⊢ sem' (cells_fml (cloc_flat_insert l γs).1
+                 (cloc_flat_insert l γs).2 fv).
+    { by rewrite (cells_sem_at Hs). }
+    iApply (guard_rhs_iff Heq).
+    iApply (guard_cloc_combine_fancy' with "G1' G2'").
+  Qed.
 
   Program Definition pcell_ty n : type (pcellₛ n) :=
     {| ty_size := n;
@@ -44,9 +70,10 @@ Section pcell.
   Next Obligation. move=> n v tid. by rewrite length_pad. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
-  Next Obligation. move=> *. by iIntros "$". Qed.
+  Next Obligation. move=> ? sem Hsm *. iIntros "$". by iIntros "$". Qed.
+  Next Obligation. move=> ? sem Hsm *. by iIntros "$". Qed.
   Next Obligation. move=> n κ x d g tid ξ R Hin. set_solver. Qed.
+  Next Obligation. move=> ? sem Hsm *. rewrite (pure_sem_at Hsm). exact _. Qed.
   Next Obligation. move=> *. by iIntros "$". Qed.
 
   Lemma pcell_ty_gho n x d g tid :
@@ -90,18 +117,20 @@ Section points_to.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation.
-    move=> ? ty d g d' g' x tid ??. rewrite !by_succx_sem.
-    destruct d as [|d0]; [by iIntros "[]"|].
-    destruct d' as [|d0']; [lia|]. rewrite /= !bor_sep_sem.
+    move=> ? ty sem Hsm d g d' g' x tid ??.
+    destruct d as [|d0]; [rewrite /= (false_sem_at Hsm); by iIntros "[]"|].
+    destruct d' as [|d0']; [lia|]. rewrite /= !(sep_sem_at Hsm).
     iIntros "[$ gho]".
-    iDestruct (ty_gho_depth_mono with "gho") as "[$ Hwand]"; [lia|lia|].
+    iDestruct (ty_gho_depth_mono_at ty sem Hsm with "gho") as "[$ Hwand]";
+      [lia|lia|].
     iIntros "[$ gho]". by iApply "Hwand".
   Qed.
   Next Obligation.
-    move=> ? ty d g d' g' x tid ??. rewrite !by_succx_sem.
-    destruct d as [|d0]; [by iIntros "[]"|].
-    destruct d' as [|d0']; [lia|]. rewrite /= !bor_sep_sem.
-    iIntros "[$ gho]". iApply (ty_gho_pers_depth_mono with "gho"); lia.
+    move=> ? ty sem Hsm d g d' g' x tid ??.
+    destruct d as [|d0]; [rewrite /= (false_sem_at Hsm); by iIntros "[]"|].
+    destruct d' as [|d0']; [lia|]. rewrite /= !(sep_sem_at Hsm).
+    iIntros "[$ gho]".
+    iApply (ty_gho_pers_depth_mono_at ty sem Hsm with "gho"); lia.
   Qed.
   Next Obligation.
     move=> ? ty κ x d g tid ξ R Hin. rewrite !by_succx_sem.
@@ -111,6 +140,12 @@ Section points_to.
     iApply (ty_guard_proph _ ty κ x.2 d' g tid ξ R Hin
       with "LFT Incl Pers Gk").
     iApply (guard_rhs_sep_r with "Ggho").
+  Qed.
+  Next Obligation.
+    move=> ? ty sem Hsm x d g tid.
+    apply (by_succx_persistent_at Hsm)=> d'.
+    have ? := pure_pers_at Hsm. have ? := sep_pers_at Hsm.
+    have ? := ty_gho_pers_pers_at ty sem Hsm. exact _.
   Qed.
   Next Obligation.
     move=> ? ty x d g tid. rewrite !by_succx_sem.
@@ -158,11 +193,10 @@ Section points_to.
     Sync ty → Sync (cell_points_to_ty ty).
   Proof.
     move=> HSync tid tid' x d g. split; [done|].
-    destruct d as [|d'].
-    { split; rewrite /ty_gho /ty_gho_pers /=; done. }
-    have [Hp [Hg Hgp]] := HSync tid tid' x.2 d' g. split.
-    - rewrite !cell_points_to_gho /=. by rewrite Hp Hg.
-    - rewrite !cell_points_to_gho_pers /=. by rewrite Hgp.
+    destruct d as [|d']; [by split=> sem Hsem|].
+    have [Hp [Hg Hgp]] := HSync tid tid' x.2 d' g. split=> sem Hsem.
+    - rewrite /= !(sep_sem_at Hsem) Hp (Hg _ Hsem) //.
+    - rewrite /= !(sep_sem_at Hsem) (Hgp _ Hsem) //.
   Qed.
 End points_to.
 
@@ -313,24 +347,23 @@ Section typing.
     iApply twp_wand; [by iApply twp_eval_path|]. iIntros (?->).
     wp_rec. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
-    iDestruct (guard_rhs_iff (cell_points_to_gho ty (γs, x) (S d2) (S (S d2))
-      tid) with "Hghoshr") as "#Hghoshr1".
-    iDestruct (guard_rhs_sep_l with "Hghoshr1") as "#Hcells".
-    iDestruct (guard_rhs_sep_r with "Hghoshr1") as "#Hgho".
+    iDestruct (dguard_rhs_sep_l with "Hghoshr") as "#Hcells".
+    iDestruct (dguard_rhs_sep_r with "Hghoshr") as "#Hgho".
     iModIntro. iFrame "W L I". iExists -[(cloc_flat_insert l γs, x)].
     iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> ? [_ Ha]. apply Ha. }
     iSplit; [|done]. iExists #l.1, (S (S (S d2))). iSplit; [done|].
     rewrite /ty_own shr_bor_gho /=. iSplit; [|done]. iSplit.
-    { iDestruct (guard_rhs_iff
-        (pcell_ty_gho_phys (ty_size ty) γs tid Hlen l) with "Hpt")
-        as "#Hpt2".
-      iApply (guard_cloc_combine_fancy' with "Hpt2 Hcells"). }
+    { have Hph : ∀ sem', alt_sem sem' →
+        sem' (cells_fml l.1 l.2 (ty_phys (pcell_ty (ty_size ty)) γs tid)) ⊣⊢
+        sem' (cells_fml l.1 l.2 (FCell <$> γs)).
+      { move=> sem' Hs. rewrite !(cells_sem_at Hs).
+        apply (pcell_ty_gho_phys (ty_size ty) γs tid Hlen l). }
+      iDestruct (dguard_rhs_iff Hph with "Hpt") as "#Hpt2".
+      iApply (dguard_cloc_combine_fancy' with "Hpt2 Hcells"). }
     iSplit.
-    { iApply (guard_trans with "Hgho []"). iApply guard_intro.
-      iIntros "!> gho".
-      iApply (ty_gho_depth_mono ty d2 (S (S d2)) (S (S d2)) (S (S (S d2)))
-        x tid with "gho"); lia. }
+    { iApply (dguard_depth_mono ty d2 (S (S d2)) (S (S d2)) (S (S (S d2)))
+        x tid with "Hgho"); lia. }
     iApply (ty_gho_pers_depth_mono ty d2 (S (S d2)) (S (S d2))
       (S (S (S d2))) x tid with "Hpers"); lia.
   Qed.
@@ -393,7 +426,8 @@ Section typing.
     { iApply (guard_trans with "Gfrac Alv"). }
     (* read the length of the cell list off the shared points-to, giving the
       guard back right away *)
-    iDestruct (guard_trans with "Gκ Hpt") as "#Gpt".
+    iDestruct (dguard_alive_sem' (cells_fml_sem _ _ _) with "Hpt") as "#Hpt0".
+    iDestruct (guard_trans with "Gκ Hpt0") as "#Gpt".
     iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
     iDestruct (guard_acc with "Gpt f Wg") as "[pt back]".
     iDestruct (heap_fancy_mapsto_cells_length with "pt") as %Hlen'.
@@ -401,7 +435,8 @@ Section typing.
     iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     rewrite /= length_pad in Hlen'.
     iDestruct "Pers" as "[Dead|#Pers]".
-    { iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+    { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg' Wr']".
       iDestruct (guard_acc with "G3 f Wg'") as "[Alive _]".
@@ -413,7 +448,7 @@ Section typing.
     destruct cl' as [cl'1 cs']. destruct cs' as [|cs'0 cs']; last first.
     { (* the permission's own cell list is empty, so this cannot happen *)
       iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
-      iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "Bor".
+      iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor".
       iAssert (bor_sem (gsrc_fml (GFrac γ 1)) &&{Wguard}&&> @[κ])%I as "#Gκx".
       { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ 1))). iApply "Gκ". }
       iDestruct (llftl_bor_acc_guarded ⊤ (gsrc_fml (GFrac γ 1)) κ
@@ -460,8 +495,12 @@ Section typing.
     rewrite /ty_own uniq_bor_gho. iSplit; [|done].
     iSplitR; [iApply "Incl"|]. iSplitR; [iPureIntro; lia|].
     iFrame "UniqBody". iSplitR.
-    { iApply (guard_rhs_iff
-        (pcell_phys_to_flat (ty_size ty) γs cl tid Hlen Hlen') with "Hpt"). }
+    { have Hfl : ∀ sem', alt_sem sem' →
+        sem' (cells_fml cl.1 cl.2 (ty_phys (pcell_ty (ty_size ty)) γs tid))
+          ⊣⊢ sem' (cmapstoany_fml (cloc_flat_insert cl γs)).
+      { move=> sem' Hs. rewrite (cells_sem_at Hs) (cmapstoany_sem_at Hs).
+        apply (pcell_phys_to_flat (ty_size ty) γs cl tid Hlen Hlen'). }
+      iApply (dguard_rhs_iff Hfl with "Hpt"). }
     iRight. iApply (ty_gho_pers_depth_mono with "Pers'"); lia.
   Qed.
 
@@ -505,14 +544,17 @@ Section typing.
     { iApply (guard_trans with "Gfrac Alv"). }
     (* the permission's ghost assertion is [False] at depth zero *)
     destruct d1 as [|d2].
-    { iDestruct (guard_trans with "Gκ H↦") as "#G0".
+    { iDestruct (dguard_alive_sem with "H↦") as "#H↦0".
+      iDestruct (guard_trans with "Gκ H↦0") as "#G0".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G0 f Wg") as "[gho _]".
       by iDestruct (false_fml_sem_1 with "gho") as "[]". }
     destruct γs as [|γ [|γ2 γs2]]; simpl in Hlen; [done| |done].
     (* read the length of the permission cell's cell list off the shared
       points-to, giving the guard back right away *)
-    iDestruct (guard_trans with "Gκ Hcells") as "#Gpt".
+    iDestruct (dguard_alive_sem' (cells_fml_sem _ _ _) with "Hcells")
+      as "#Hcells0".
+    iDestruct (guard_trans with "Gκ Hcells0") as "#Gpt".
     iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
     iDestruct (guard_acc with "Gpt f Wg") as "[pt back]".
     iDestruct (heap_fancy_mapsto_cells_length with "pt") as %Hlen'.
@@ -522,16 +564,20 @@ Section typing.
     destruct cl as [cll cls]=>/=. simpl in Hlen', Heval.
     destruct cls as [|cs1 [|??]]; simpl in Hlen'; [done| |done].
     (* assemble the guard the atomic read runs under *)
-    iDestruct (guard_rhs_iff
-      (pcell_ty_gho_phys 1 [γ] tid Hlen (cll, [cs1])) with "Hcells")
-      as "#Hcells2".
-    iDestruct (guard_rhs_iff
-      (cell_points_to_gho int ([γ], n) (S d2) (S (S d2)) tid) with "H↦") as "#H1".
-    iDestruct (guard_rhs_sep_l with "H1") as "#H2".
-    iDestruct (guard_cloc_combine_fancy' _ _ (cll, [cs1]) [γ] [FVal #n]
+    have Hph1 : ∀ sem', alt_sem sem' →
+      sem' (cells_fml (cll, [cs1]).1 (cll, [cs1]).2
+              (ty_phys (pcell_ty 1) [γ] tid)) ⊣⊢
+      sem' (cells_fml (cll, [cs1]).1 (cll, [cs1]).2 (FCell <$> [γ])).
+    { move=> sem' Hs. rewrite !(cells_sem_at Hs).
+      apply (pcell_ty_gho_phys 1 [γ] tid Hlen (cll, [cs1])). }
+    iDestruct (dguard_rhs_iff Hph1 with "Hcells") as "#Hcells2".
+    iDestruct (dguard_rhs_sep_l with "H↦") as "#H2".
+    iDestruct (dguard_cloc_combine_fancy' (cll, [cs1]) [γ] [FVal #n]
       with "Hcells2 H2") as "#Hread".
+    iDestruct (dguard_alive_sem' (cells_fml_sem _ _ _) with "Hread")
+      as "#Hread0".
     iDestruct (guard_rhs_iff (heap_mapsto_singleton cll (cs1 ++ [γ]) (FVal #n))
-      with "Hread") as "#Hread2".
+      with "Hread0") as "#Hread2".
     iDestruct (guard_trans with "Gκ Hread2") as "#Gread".
     iModIntro. iFrame "W".
     wp_bind pcell_ref. iApply twp_wand; [by iApply twp_eval_path|].
@@ -606,8 +652,10 @@ Section typing.
     iAssert (bor_sem (gsrc_fml (GFrac γl (1/2))) &&{Wguard}&&> @[κ])%I
       as "#Gκ'".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γl (1/2)))). iApply "Gκ". }
+    iDestruct (dincl_sem with "Incl") as "#Incls".
     iDestruct "Pers" as "[Dead|#Pers]".
-    { iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+    { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 fb Wg") as "[Alive _]".
@@ -616,7 +664,9 @@ Section typing.
     destruct di as [|di]; [by iDestruct "Pers" as "[]"|].
     destruct γs as [|γ [|??]]; simpl in Hlen; [done| |done].
     (* read off the length of the permission cell's cell list *)
-    iDestruct (guard_trans with "Gκ Hcells") as "#Gpt".
+    iDestruct (dguard_alive_sem' (cells_fml_sem _ _ _) with "Hcells")
+      as "#Hcells0".
+    iDestruct (guard_trans with "Gκ Hcells0") as "#Gpt".
     iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
     iDestruct (guard_acc with "Gpt fb Wg") as "[pt back]".
     iDestruct (heap_fancy_mapsto_cells_length with "pt") as %Hlen'.
@@ -627,8 +677,9 @@ Section typing.
     destruct cls as [|cs1 [|??]]; simpl in Hlen'; [done| |done].
     (* open the unique borrow over the permission *)
     iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
+    iDestruct (idxbor_fml_sem_1 with "ξBor") as "#ξBor1".
     iDestruct (llftl_bor_idx_acc_guarded ⊤ (gsrc_fml (GFrac γl (1/2))) κ ξidx
-      with "LFT ξBor ξTok Gκ' [fa]") as "A".
+      with "LFT ξBor1 ξTok Gκ' [fa]") as "A".
     { by iApply (gsrc_fml_sem_2 (s := GFrac γl (1/2))). }
     iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
     iMod ("A'" with "W") as "[W [Inner Back]]".
@@ -641,7 +692,7 @@ Section typing.
     iEval (rewrite (pcell1_cell_mapsto γ cll cs1 #x)) in "Hcellpt".
     (* the guard the atomic write runs under *)
     iDestruct (guard_rhs_iff (pcell1_phys_to_cell γ cll cs1 tid)
-      with "Hcells") as "#Hcells2".
+      with "Hcells0") as "#Hcells2".
     iDestruct (guard_trans with "Gκ' Hcells2") as "#Gwrite".
     iModIntro. iFrame "W".
     wp_bind pcell_ref. iApply twp_wand; [by iApply twp_eval_path|].
@@ -679,7 +730,7 @@ Section typing.
         (@vπ (trackedₛ (pcellₛ (ty_size int) * Zₛ)) ([γ], n')))).
     iMod (resolve_uniq_body (cell_points_to_ty int) ([γ], n') ξi (S di) gi
       ξidx κ tid cl' E L γl (1/2) ⊤
-      with "LFT PROPH UNIQ Incl E [$key $fa] [$ξVo $ξTok $ξBor] W")
+      with "LFT PROPH UNIQ Incls E [$key $fa] [$ξVo $ξTok $ξBor] W")
       as "[W (#Hrslv & fa & _)]"; [done|solve_ndisj|].
     iDestruct (Ltok_split_2 with "fa [$key $fb]") as "tok".
     iMod (Ltok_withdraw with "tok W") as "[W L]".
@@ -738,8 +789,10 @@ Section typing.
     iAssert (bor_sem (gsrc_fml (GFrac γl (1/2))) &&{Wguard}&&> @[κ])%I
       as "#Gκ'".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γl (1/2)))). iApply "Gκ". }
+    iDestruct (dincl_sem with "Incl") as "#Incls".
     iDestruct "Pers" as "[Dead|#Pers]".
-    { iDestruct "Dead" as (κ'') "[#Incl' #Dead']".
+    { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 fb Wg") as "[Alive _]".
@@ -747,7 +800,9 @@ Section typing.
     rewrite (cell_points_to_gho_pers int (γs, x) di gi tid).
     destruct di as [|di]; [by iDestruct "Pers" as "[]"|].
     destruct γs as [|γ [|??]]; simpl in Hlen; [done| |done].
-    iDestruct (guard_trans with "Gκ Hcells") as "#Gpt".
+    iDestruct (dguard_alive_sem' (cells_fml_sem _ _ _) with "Hcells")
+      as "#Hcells0".
+    iDestruct (guard_trans with "Gκ Hcells0") as "#Gpt".
     iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
     iDestruct (guard_acc with "Gpt fb Wg") as "[pt back]".
     iDestruct (heap_fancy_mapsto_cells_length with "pt") as %Hlen'.
@@ -757,8 +812,9 @@ Section typing.
     destruct cl as [cll cls]. simpl in Hlen', Heval.
     destruct cls as [|cs1 [|??]]; simpl in Hlen'; [done| |done].
     iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
+    iDestruct (idxbor_fml_sem_1 with "ξBor") as "#ξBor1".
     iDestruct (llftl_bor_idx_acc_guarded ⊤ (gsrc_fml (GFrac γl (1/2))) κ ξidx
-      with "LFT ξBor ξTok Gκ' [fa]") as "A".
+      with "LFT ξBor1 ξTok Gκ' [fa]") as "A".
     { by iApply (gsrc_fml_sem_2 (s := GFrac γl (1/2))). }
     iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
     iMod ("A'" with "W") as "[W [Inner Back]]".
@@ -770,7 +826,7 @@ Section typing.
     iDestruct "Gho" as "[Hcellpt _]".
     iEval (rewrite (pcell1_cell_mapsto γ cll cs1 #x)) in "Hcellpt".
     iDestruct (guard_rhs_iff (pcell1_phys_to_cell γ cll cs1 tid)
-      with "Hcells") as "#Hcells2".
+      with "Hcells0") as "#Hcells2".
     iDestruct (guard_trans with "Gκ' Hcells2") as "#Gwrite".
     iModIntro. iFrame "W".
     wp_bind pcell_ref. iApply twp_wand; [by iApply twp_eval_path|].
@@ -812,7 +868,7 @@ Section typing.
           (@vπ (trackedₛ (pcellₛ (ty_size int) * Zₛ)) ([γ], n2)))).
       iMod (resolve_uniq_body (cell_points_to_ty int) ([γ], n2) ξi (S di) gi
         ξidx κ tid cl' E L γl (1/2) ⊤
-        with "LFT PROPH UNIQ Incl E [$key $fa] [$ξVo $ξTok $ξBor] W")
+        with "LFT PROPH UNIQ Incls E [$key $fa] [$ξVo $ξTok $ξBor] W")
         as "[W (#Hrslv & fa & _)]"; [done|solve_ndisj|].
       iDestruct (Ltok_split_2 with "fa [$key $fb]") as "tok".
       iMod (Ltok_withdraw with "tok W") as "[W L]".
@@ -847,7 +903,7 @@ Section typing.
       iDestruct (gsrc_fml_sem_1 (s := GFrac γl (1/2)) with "fa") as "fa".
       iMod (resolve_uniq_body (cell_points_to_ty int) ([γ], x) ξi (S di) gi
         ξidx κ tid cl' E L γl (1/2) ⊤
-        with "LFT PROPH UNIQ Incl E [$key $fa] [$ξVo $ξTok $ξBor] W")
+        with "LFT PROPH UNIQ Incls E [$key $fa] [$ξVo $ξTok $ξBor] W")
         as "[W (#Hrslv & fa & _)]"; [done|solve_ndisj|].
       iDestruct (Ltok_split_2 with "fa [$key $fb]") as "tok".
       iMod (Ltok_withdraw with "tok W") as "[W L]".

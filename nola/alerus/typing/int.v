@@ -19,6 +19,7 @@ Section int.
        pt_ghox (z: ~~Zₛ) _ := empty_fml;
        pt_phys (z: ~~Zₛ) _ := [ FVal #z ];
     |}.
+  Next Obligation. move=> sem H *. rewrite (empty_sem_at H). exact _. Qed.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
@@ -62,8 +63,8 @@ Section int.
   Lemma bool_ty_to_int E L : subtype E L bool_ty int Z_of_boolₛ.
   Proof.
     apply subtype_plain_type. iIntros "*_!>_/=". iSplit; [done|].
-    iSplit; [iApply lft_incl_refl|]. iSplit; [|done].
-    iIntros (??) "$". by iIntros "$".
+    iSplit; [iApply dincl_refl|]. iSplit; [|done].
+    iIntros (sem Hsem ??) "$". by iIntros "$".
   Qed.
 
   Lemma type_int_instr (z: Z) : typed_val #z int z.

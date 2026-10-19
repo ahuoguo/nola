@@ -36,10 +36,10 @@ Section local_invariants.
     cna_inv_fml : gname → thread_id → namespace → FML $oi Σ → FML $oi Σ;
     cna_inv_fml_sem γ p N Px :
       bor_sem (cna_inv_fml γ p N Px) ⊣⊢ cna_inv γ p N Px;
-    cna_closer_fml : lft → thread_id → namespace → FML $oi Σ → FML $oi Σ;
-    cna_closer_fml_sem κ p N Px :
-      bor_sem (cna_closer_fml κ p N Px) ⊣⊢
-        cna_closer alerus_wsat κ p N bor_sem Px;
+    cna_otok_fml :
+      gname → thread_id → namespace → lft → FML $oi Σ → FML $oi Σ;
+    cna_otok_fml_sem γ p N κ Px :
+      bor_sem (cna_otok_fml γ p N κ Px) ⊣⊢ cna_otok γ p N κ Px;
   }.
   Context `{!LocalInvFml}.
 
@@ -87,12 +87,15 @@ Section local_invariants.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation.
-    move=> ?? ty pred d g d' g' [[N [[γ γt] d1]] c] tid ??.
-    rewrite !bor_sep_sem !pure_fml_sem. iIntros "($ & %Hd & $)".
+    move=> ?? ty pred sem Hsm d g d' g' [[N [[γ γt] d1]] c] tid ??.
+    rewrite !(sep_sem_at Hsm) !(pure_sem_at Hsm). iIntros "($ & %Hd & $)".
     iSplit; [iPureIntro; lia|]. by iIntros "($ & _ & $)".
   Qed.
-  Next Obligation. move=> *. by iIntros "$". Qed.
+  Next Obligation. move=> ?? ty pred sem Hsm *. by iIntros "$". Qed.
   Next Obligation. move=> ?? ty pred κ [[??]?] ???? Hin. set_solver. Qed.
+  Next Obligation.
+    move=> ?? ty pred sem Hsm *. rewrite (empty_sem_at Hsm). exact _.
+  Qed.
   Next Obligation. move=> *. iIntros "_". by iApply empty_fml_sem_2. Qed.
 
   Lemma local_inv_ty_gho {𝔄 ℭ} (ty: type 𝔄) pred N γ γt d1 (c: ~~ℭ) d g tid :
@@ -115,22 +118,25 @@ Section local_invariants.
     ty_E := [];
     ty_gho_persx x d g tid := empty_fml;
     ty_ghox x d g tid := match x with (N, (γ, γt, d1), c) =>
-      cna_closer_fml κ tid N (local_inv_body ty pred c tid) end;
+      cna_otok_fml γ tid N κ (local_inv_body ty pred c tid) end;
     ty_phys x tid := [];
   |}.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
-  Next Obligation. move=> *. by iIntros "$". Qed.
+  Next Obligation. move=> ??? ty pred sem Hsm *. iIntros "$". by iIntros "$". Qed.
+  Next Obligation. move=> ??? ty pred sem Hsm *. by iIntros "$". Qed.
   Next Obligation. move=> ?? κ ty pred ? [[??]?] ???? Hin. set_solver. Qed.
+  Next Obligation.
+    move=> ??? ty pred sem Hsm *. rewrite (empty_sem_at Hsm). exact _.
+  Qed.
   Next Obligation. move=> *. iIntros "_". by iApply empty_fml_sem_2. Qed.
 
   Lemma local_closer_ty_gho {𝔄 ℭ} κ (ty: type 𝔄) pred N γ γt d1 (c: ~~ℭ)
       d g tid :
     ty_gho (local_closer_ty κ ty pred) (N, (γ, γt, d1), c) d g tid ⊣⊢
-      cna_closer alerus_wsat κ tid N bor_sem (local_inv_body ty pred c tid).
-  Proof. apply cna_closer_fml_sem. Qed.
+      cna_otok γ tid N κ (local_inv_body ty pred c tid).
+  Proof. apply cna_otok_fml_sem. Qed.
 
   Lemma local_inv_ty_resolve E L {𝔄 ℭ} (ty: type 𝔄)
       (pred: abstracted_syn_type 𝔄 → ~~ℭ → Prop) :
@@ -269,14 +275,13 @@ Section local_invariants.
     rewrite shr_bor_gho /=.
     iDestruct "shrgho" as "#(_ & KguardsGho & _)".
     iDestruct (Halive with "L E") as "#LguardsK".
-    iDestruct (guard_rhs_iff
-      (local_inv_ty_gho ty pred ns γ γt d0 c d (S (S d)) tid)
-      with "KguardsGho") as "#KguardsGho2".
-    iDestruct (guard_rhs_sep_l with "KguardsGho2") as "#KguardsActive".
-    iDestruct (guard_rhs_sep_r with "KguardsGho2") as "#KguardsRest".
-    iDestruct (guard_rhs_sep_r with "KguardsRest") as "#KguardsInv".
+    iDestruct (dguard_rhs_sep_l with "KguardsGho") as "#KguardsActive".
+    iDestruct (dguard_rhs_sep_r with "KguardsGho") as "#KguardsRest".
+    iDestruct (dguard_rhs_sep_r with "KguardsRest") as "#KguardsInv".
     (* read the invariant token out of the shared reference *)
-    iDestruct (guard_trans with "LguardsK KguardsInv") as "#LguardsInv".
+    iDestruct (dguard_alive_sem' (cna_inv_fml_sem _ _ _ _) with "KguardsInv")
+      as "#KguardsInv0".
+    iDestruct (guard_trans with "LguardsK KguardsInv0") as "#LguardsInv".
     iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
     iDestruct (guard_acc with "LguardsInv L Wg") as "[#inv back]".
     iDestruct ("back" with "inv") as "[Wg L]".
@@ -285,8 +290,10 @@ Section local_invariants.
     iDestruct "I" as (na_mask at_mask)
       "[%Hm [[Ilifetimes #ϝIncl] [Iown Iat]]]".
     destruct Hm as [Hm1 Hm2].
+    iDestruct (dguard_alive_sem' (cna_active_fml_sem _) with "KguardsActive")
+      as "#KguardsActive0".
     iMod (cna_inv_acc_with_lifetime_guard with
-      "inv Iown Ilifetimes LguardsK KguardsActive L W")
+      "inv Iown Ilifetimes LguardsK KguardsActive0 L W")
       as "(W & Iown & Ilifetimes & L & P & Closer)"; [set_solver|].
     rewrite local_inv_body_sem.
     iDestruct "P" as (x'' d' g') "[gho %Hpred]".

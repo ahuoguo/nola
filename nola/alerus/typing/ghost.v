@@ -25,10 +25,11 @@ Section ghost.
       st_ghox x d g tid := empty_fml;
       st_phys x tid := [];
     |}%I : simple_type (ghostₛ 𝔄)).
+  Next Obligation. move=> ?? sem H *. rewrite (empty_sem_at H). exact _. Qed.
   Next Obligation. move=> *. trivial. Qed.
   Next Obligation. move=> *. trivial. Qed.
   Next Obligation. move=> *. trivial. Qed.
-  Next Obligation. intros. iIntros. done. Qed.
+  Next Obligation. move=> ?? sem H *. by iIntros "$". Qed.
   Next Obligation.
     move=> 𝔄 ty κ x d g tid ξ R Hin. exfalso. simpl in Hin. set_solver.
   Qed.

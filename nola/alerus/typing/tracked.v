@@ -26,11 +26,20 @@ Section tracked.
   Next Obligation. intros; done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. intros. apply (ty_gho_depth_mono ty); trivial. Qed.
-  Next Obligation. intros. apply (ty_gho_pers_depth_mono ty); trivial. Qed.
+  Next Obligation.
+    intros 𝔄 ty sem H d g d' g' x tid Hd Hg.
+    by apply (ty_gho_depth_mono_at ty sem H).
+  Qed.
+  Next Obligation.
+    intros 𝔄 ty sem H d g d' g' x tid Hd Hg.
+    by apply (ty_gho_pers_depth_mono_at ty sem H).
+  Qed.
   Next Obligation.
     move=> ? ty κ x d g tid ξ R Hin. iIntros "LFT Incl Pers Rk Rg".
     iApply (ty_guard_proph _ ty κ x d g tid ξ R Hin with "LFT Incl Pers Rk Rg").
+  Qed.
+  Next Obligation.
+    intros 𝔄 ty sem H x d g tid. apply (ty_gho_pers_pers_at ty sem H).
   Qed.
   Next Obligation. intros. apply (ty_gho_pers_impl); trivial. Qed.
 

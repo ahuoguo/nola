@@ -38,9 +38,19 @@ Section mod_ty.
   Next Obligation. intros. rewrite <- ty_size_eq2. inversion Isoₛ0. done. Qed.
   Next Obligation. intros. simpl. rewrite <- ty_phys_eq2. inversion Isoₛ0.
     rewrite (syn_iso_phys_eq ((~~!ₛ) fⁱ x)). by rewrite semi_iso'. Qed.
-  Next Obligation. intros. apply ty_gho_depth_mono; trivial. Qed.
-  Next Obligation. intros. apply ty_gho_pers_depth_mono; trivial. Qed.
+  Next Obligation.
+    intros A B f fi Iso ty sem H d g d' g' x tid Hd Hg.
+    by apply (ty_gho_depth_mono_at ty sem H).
+  Qed.
+  Next Obligation.
+    intros A B f fi Iso ty sem H d g d' g' x tid Hd Hg.
+    by apply (ty_gho_pers_depth_mono_at ty sem H).
+  Qed.
   Next Obligation. intros. apply ty_guard_proph. by rewrite <- syn_type_morphism_ξl. Qed.
+  Next Obligation.
+    intros A B f fi Iso ty sem H x d g tid.
+    apply (ty_gho_pers_pers_at ty sem H).
+  Qed.
   Next Obligation. intros. apply ty_gho_pers_impl. Qed.
 
   Lemma mod_ty_gho {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) `{!Isoₛ f fⁱ} ty x d g tid :
@@ -135,7 +145,7 @@ Section typing.
 
   Lemma mod_ty_in {𝔄 𝔅} E L `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty : subtype E L ty (<{f;fⁱ}> ty) f.
   Proof.
-    iIntros "*_!>_". iSplit; [done|]. iSplit; [by iApply lft_incl_refl|].
+    iIntros "*_!>_". iSplit; [done|]. iSplit; [by iApply dincl_refl|].
     rewrite /ty_gho /ty_gho_pers. unfold mod_ty; simpl.
     iSplit. { iModIntro. iIntros. rewrite semi_iso'. iFrame. iIntros. done. }
     iSplit. { iModIntro. iIntros. rewrite semi_iso'. done. }
@@ -145,7 +155,7 @@ Section typing.
   Lemma mod_ty_out {𝔄 𝔅} E L f fⁱ `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty :
     subtype E L (<{f;fⁱ}> ty) ty fⁱ.
   Proof.
-    iIntros "*_!>_". iSplit; [done|]. iSplit; [by iApply lft_incl_refl|].
+    iIntros "*_!>_". iSplit; [done|]. iSplit; [by iApply dincl_refl|].
     rewrite /ty_gho /ty_gho_pers. unfold mod_ty; simpl.
     iSplit. { iModIntro. iIntros. iFrame. iIntros. done. }
     iSplit. { iModIntro. iIntros. done. }

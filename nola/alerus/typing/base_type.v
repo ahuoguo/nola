@@ -27,14 +27,19 @@ Section base.
   Next Obligation. intros. apply syn_phys_size_eq. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> *. rewrite false_fml_sem. by iIntros "[]". Qed.
-  Next Obligation. move=> *. rewrite false_fml_sem. by iIntros "[]". Qed.
+  Next Obligation.
+    move=> ? sem H *. rewrite (false_sem_at H). by iIntros "[]".
+  Qed.
+  Next Obligation.
+    move=> ? sem H *. rewrite (false_sem_at H). by iIntros "[]".
+  Qed.
   (** The original composes guard *indices* here with
     [guards_trans_additive]; later-free the content is [False], so
     [guard_false] gives the result outright. *)
   Next Obligation.
     move=> *. rewrite false_fml_sem. iIntros "_ _ []".
   Qed.
+  Next Obligation. move=> ? sem H *. rewrite (false_sem_at H). exact _. Qed.
   Next Obligation. move=> *. rewrite false_fml_sem. by iIntros "[]". Qed.
   
   Lemma base_gho {𝔄} (x: ~~𝔄) d g tid : ty_gho base x d g tid ⊣⊢ False.
@@ -73,11 +78,11 @@ Section base.
   Proof.
     move=> Eq Eq2 Eq3. iIntros "L". iModIntro. iIntros "E". iSplit; [|iSplit; [|iSplit; [|iSplit]]].
       - iPureIntro. rewrite <- ty_size_eq2. by rewrite <- ty_size_eq2.
-      - iApply lft_incl_refl.
-      - iModIntro. iIntros (????) "A".
-        by iDestruct (false_fml_sem_1 with "A") as "[]".
-      - iModIntro. iIntros (????) "A".
-        by iDestruct (false_fml_sem_1 with "A") as "[]".
+      - iApply dincl_refl.
+      - iIntros "!>" (sem Hsem ????) "A".
+        rewrite (false_sem_at Hsem). by iDestruct "A" as "[]".
+      - iIntros "!>" (sem Hsem ????) "A".
+        rewrite (false_sem_at Hsem). by iDestruct "A" as "[]".
       - iPureIntro. simpl. intros. rewrite Eq3. trivial.
   Qed.
 
