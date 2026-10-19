@@ -125,8 +125,16 @@ provides `lrust_adequacy` and, beyond what the original can state,
      shape the port deliberately follows.
 
    Either way, `fn_fml` needs derivability regardless: a function type's
-   ghost assertion is its own typing judgment, and `rust_halt` has no
-   function type, so there is no worked precedent for it in Nola.
+   ghost assertion is its own typing judgment.  `rust_halt` has no function
+   *type former* - its formers are `ty_box`, `ty_mutref`, `ty_shrref`,
+   `ty_prod`, `ty_sum`, `ty_mod`, `ty_rec`, `ty_uninit`, the numeric ones,
+   and `ty_list`/`ty_mutlist` in `verify/` - so a function value never gets
+   a type at all.  Calls are beta, not lookup (`core.v:96`'s `type_call` is
+   `AsRec` + `DoSubstL`), and higher-order code is parameterised by the
+   callee's judgment at the meta level (`verify/list_more.v`'s
+   `type_iter_list_mut` takes `(∀ q, type κ (q ◁ …) (f [q]) …)` as a Coq
+   hypothesis).  So there is no worked example in Nola of a typing judgment
+   stored inside a type.
 
 ## The route being taken
 
