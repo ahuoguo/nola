@@ -120,9 +120,19 @@ provides `lrust_adequacy` and, beyond what the original can state,
      `fn_fml_sem_2`.
    * **Replace the lifetime logic with Nola's** (`nola/iris/borrow.v`,
      `nola/iris/lft.v`), so that inclusion and shared borrows are tokens and
-     the guard disappears from the formulas.  That is a different
-     development - it is what `rust_halt` is - and it gives up the Leaf
-     shape the port deliberately follows.
+     the guard disappears from the formulas.  `rust_halt` is that
+     development: it uses no guards at all (`&&{` occurs nowhere in
+     `nola/examples/rust_halt/`), and Nola's lifetime inclusion is either
+     pure (`lft_incl`) or a persistent token (`⊑□`,
+     `nola/iris/lft.v:343-437`).
+
+     **This is explicitly not the route.**  The point of this development is
+     to have Leaf's guarding logic *in* Nola - guards are what VerusBelt is
+     built on, and they are what `pcell`, `atomic_inv` and the storage
+     protocols need.  `nola/iris/guard.v` already provides the guard itself;
+     what is being built here is the rest of Leaf's lifetime logic and
+     VerusBelt's type system over it, later-free, using Nola's ideas for the
+     parts that would otherwise need a `▷`.
 
    Either way, `fn_fml` needs derivability regardless: a function type's
    ghost assertion is its own typing judgment.  `rust_halt` has no function
