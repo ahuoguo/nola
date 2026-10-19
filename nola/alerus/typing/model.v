@@ -536,6 +536,20 @@ Section model.
   Next Obligation. move=> *. exact cif_vo_sem. Qed.
   Next Obligation. move=> ?. exact cif_dead_sem. Qed.
   Next Obligation. move=> ?. exact cif_cmapstoany_sem. Qed.
+
+  (** Guard sources *)
+  #[export] Program Instance gsrcSem_cif : GsrcSem (cifOF CON) Σ :=
+    {| gsrc_fml := cif_gsrc |}.
+  Next Obligation. move=> ?. exact cif_gsrc_sem. Qed.
+
+  (** The heap's cells *)
+  Lemma cif_heap_sem {lc cells cv} :
+    bor_sem (cif_heap lc cells cv : cifOF CON $oi Σ) ⊣⊢
+      points_to_seq (FML:=cifOF CON) heap_name lc cells cv.
+  Proof. by rewrite /bor_sem /= /cif_heap sem_cif_in. Qed.
+  #[export] Program Instance heapSem_cif : HeapSem (cifOF CON) Σ :=
+    {| heap_fml := cif_heap |}.
+  Next Obligation. move=> *. exact cif_heap_sem. Qed.
 End model.
 
 (** ** What is left, and the one thing in the way
