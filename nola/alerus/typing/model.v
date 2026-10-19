@@ -17,12 +17,15 @@
     [idxbor_fml]; see [AltSem] in [typing/ctx.v] and the thesis, § 6.4. *)
 
 From iris.algebra Require Import excl.
+From nola.util Require Import tagged.
+From nola.bi Require Import deriv.
 From nola.iris Require Export cif.
 From nola.alerus.typing Require Export ctx.
 From nola.alerus Require Import na_inv_fork.
 From nola.alerus.util Require Import cancellable_na_invariants
   atomic_lock_counter.
-Import iPropAppNotation ModwNotation CsemNotation.
+Import iPropAppNotation ModwNotation CsemNotation GuardNotation
+  DsemNotation.
 
 Implicit Type (Σ : gFunctors) (CON : cifcon).
 
@@ -294,3 +297,69 @@ Section sem_at.
   Definition alerus_WGuard_at δ : iProp Σ :=
     @alerus_WGuard (cifOF CON) Σ _ (AlerusSem_at δ).
 End sem_at.
+
+(** ** The two judgments
+
+  A guard [Px &&{W}&&> Qx] and an indexed borrow [&{κ,idx} Px] both quantify
+  the world satisfaction, so neither can be given by recursion on the
+  formula; both are judgments, interpreted at a derivability candidate.
+  This is [inv_jacsr] in [nola/iris/inv_deriv.v], and the thesis's § 6.4,
+  where Nola's own borrow connectives are built the same way. *)
+
+(** [guardJT]: a guard, as a judgment *)
+Variant guardJT_id := .
+Definition guardJT (FM : ofe) : ofe := tagged guardJT_id (FM * FM).
+Notation guardJ FM := (inJ (guardJT FM)).
+
+(** [idxborJT]: an indexed borrow, as a judgment *)
+Variant idxborJT_id := .
+Definition idxborJT (FM : ofe) : ofe :=
+  tagged idxborJT_id (leibnizO lft * leibnizO Idx * FM).
+Notation idxborJ FM := (inJ (idxborJT FM)).
+
+Section judg.
+  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+    `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+  Implicit Type δ : JUDG -n> iProp Σ.
+
+  (** Semantics of the guard judgment: the guard at the candidate's own
+    guarding world satisfaction *)
+  Definition guardJT_sem δ (J : guardJT (cifO CON Σ)) : iProp Σ :=
+    ⟦ J.(untag).1 ⟧ᶜ(δ) &&{alerus_WGuard_at δ}&&> ⟦ J.(untag).2 ⟧ᶜ(δ).
+  #[export] Instance guardJT_sem_ne {δ} : NonExpansive (guardJT_sem δ).
+  Proof. move=> ?[[??]][[??]][/=??]. solve_proper. Qed.
+  #[export] Instance guardJT_dsem
+    : Dsem JUDG (guardJT (cifO CON Σ)) (iProp Σ) := DSEM guardJT_sem _.
+
+End judg.
+
+(** Semantics of the indexed-borrow judgment.  [idx_bor] needs the whole of
+  [AlerusSem] - a borrow is indexed by a lifetime, and the lifetime logic's
+  parameters come with it - so the candidate's interpretation is installed
+  as the ambient one for the length of this section. *)
+Section idxbor_judg.
+  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+    `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+  Context (δ : JUDG -n> iProp Σ).
+  Local Instance AlerusSem_δ : AlerusSem (cifOF CON) Σ := AlerusSem_at δ.
+
+  Definition idxborJT_sem_at (J : idxborJT (cifO CON Σ)) : iProp Σ :=
+    idx_bor (FML:=cifOF CON) J.(untag).1.1 J.(untag).1.2 J.(untag).2.
+  #[export] Instance idxborJT_sem_at_ne : NonExpansive idxborJT_sem_at.
+  Proof. move=> ?[[[??]?]][[[??]?]][[/=/leibniz_equiv_iff<-?]?]. solve_proper. Qed.
+End idxbor_judg.
+
+Section judg2.
+  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+    `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+  #[export] Instance idxborJT_dsem
+    : Dsem JUDG (idxborJT (cifO CON Σ)) (iProp Σ) :=
+    DSEM idxborJT_sem_at _.
+End judg2.
+
+(** Semantics of the two judgment types registered *)
+Notation guardJS CON JUDG Σ := (inJS (guardJT (cifO CON Σ)) JUDG (iProp Σ)).
+Notation idxborJS CON JUDG Σ := (inJS (idxborJT (cifO CON Σ)) JUDG (iProp Σ)).
