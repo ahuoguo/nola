@@ -595,9 +595,6 @@ End gsrc.
   down its semantics.  A concrete [FML] (a [cif] instance) has to satisfy it;
   see the note on [typing/soundness.v]. *)
 Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ, !AlerusSem FML Σ} := {
-  (** Formulas form a COFE: [typing/fixpoint.v] takes the limit of a chain of
-    type interpretations, which is now a chain of formulas. *)
-  #[global] fml_cofe :: Cofe (FML $oi Σ);
   (** [False], for the empty type used in fixpoints *)
   false_fml : FML $oi Σ;
   false_fml_sem : bor_sem false_fml ⊣⊢ False;

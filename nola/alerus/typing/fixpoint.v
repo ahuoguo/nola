@@ -28,8 +28,16 @@ Implicit Type 𝔄 𝔅: syn_type.
 
 Module fix_defs.
 
+(** Type-level fixpoints are the one place that needs the formula language to
+  be a COFE: the recursive type is built as the limit [compl] of a chain of
+  ghost assertions.  Nola's [cif] is *not* a COFE - [nola/util/cit.v]'s
+  [cit] is complete as a [prost], and recursion over it goes through [profix]
+  with [Productive], as [nola/examples/rust_halt/rec.v] does - so this
+  assumption is local to this file rather than a field of [TypeFml], and
+  moving the construction to [profix] is what will discharge it. *)
 Section S.
-  Context `{!typeG FML Σ} {𝔄} (T: type 𝔄 → type 𝔄) {HT: TypeContractive T}.
+  Context `{!typeG FML Σ, !Cofe (FML $oi Σ)} {𝔄} (T: type 𝔄 → type 𝔄)
+    {HT: TypeContractive T}.
 
   Definition Tn n := Nat.iter (S n) T base.
 
@@ -227,7 +235,7 @@ Import fix_defs.
 Global Notation fix_ty := fix_ty.
 
 Section fix_ty.
-  Context `{!typeG FML Σ}.
+  Context `{!typeG FML Σ, !Cofe (FML $oi Σ)}.
 
   Lemma fix_unfold_fold {𝔄} (T: type 𝔄 → type 𝔄) {HT: TypeContractive T} E L :
     eqtype E L (fix_ty T) (T (fix_ty T)) idₛ idₛ.
@@ -354,7 +362,8 @@ Section fix_ty.
 End fix_ty.
 
 Section fix_ty.
-  Context `{!typeG FML Σ} {𝔄} (T: type 𝔄 → type 𝔄) {HT: TypeContractive T}.
+  Context `{!typeG FML Σ, !Cofe (FML $oi Σ)} {𝔄} (T: type 𝔄 → type 𝔄)
+    {HT: TypeContractive T}.
 
   Global Instance fix_copy :
     (∀`(!Copy ty), Copy (T ty)) → Copy (fix_ty T).
@@ -435,7 +444,7 @@ Section fix_ty.
 End fix_ty.
 
 Section fix_subtyping.
-  Context `{!typeG FML Σ}.
+  Context `{!typeG FML Σ, !Cofe (FML $oi Σ)}.
 
   Local Lemma wand_forall P (Φ: nat → iProp Σ) : (∀n, P -∗ Φ n) ⊢ (P -∗ ∀n, Φ n).
   Proof. iIntros "To P %". iApply ("To" with "P"). Qed.
