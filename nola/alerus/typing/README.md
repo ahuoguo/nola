@@ -216,7 +216,58 @@ build green.
      exactly one place, `type_fn`, and is to be replaced by a stratified
      definition rather than discharged.
 
-6. **The model.**  A `cif` with the remaining ~25 leaf constructors, a
+6. **The model.**  *In progress*, in [`model.v`](model.v).  What is there:
+
+   * the `cif` constructor signature - about twenty *leaves*, whose
+     semantics is a token (lifetime, dead lifetime, the two points-to
+     forms, allocatedness, deallocation permission, value observer,
+     prophecy controller, guard source, borrow state, heap cell, cell
+     vector, the two "active" tokens, prophecy observation, lock handle,
+     dead atom, cancellation token), and four constructors holding a
+     *syntactic* sub-formula (the atomic and cancellable non-atomic
+     invariants, open and closed), after `cif_inv` in
+     `nola/iris/inv_deriv.v`.  The shared-borrow formula needed no
+     constructor of its own: it is built from `cif_or`, `cif_sep`,
+     `cif_ex` and two leaves.
+   * `BorSem_at δ`, `BorStateFml_at δ`, `ShrBorSem_at δ`, `EmptySem_at δ`,
+     hence `AlerusSem_at δ`, hence **`alerus_WGuard_at δ`** - the guarding
+     world satisfaction at a candidate.  This is what the
+     `alerusGS`/`AlerusSem` split was for, and it is Nola's
+     `inv_wsat ⟦⟧(δ)` one level up.
+   * the two judgments `guardJT` and `idxborJT` with their `Dsem`
+     instances, and the constructors `cif_guard` / `cif_idxbor` whose
+     meaning is `□ δ (…)`, after `inv'`.
+   * the constraint classes `typingC` / `typingJ` / `typingCS` /
+     `typingJS`, after `rust_haltC` and friends.
+   * `bor_sem := ⟦⟧ᶜ(der)` as the ambient interpretation, and the
+     `TypeFml`, `GsrcSem` and `HeapSem` instances at it.
+
+   What is left: the `AltSem` instance (`alt_sem sem := ∃ δ, Deriv ih δ ∧
+   sem = ⟦⟧ᶜ(δ)`, `alt_into := dinto`, with `guard_fml_sem_2` by
+   `Deriv_factor'` and `guard_fml_sem_into` by `dinto`), then `typeG`,
+   then `PcellFml` / `AtomicInvFml` / `LocalInvFml` / `RaFml`, then the
+   world-satisfaction allocation and `soundness.v`.
+
+   Two things found along the way, both now fixed or recorded:
+
+   * `Default Proof Using "Type"` was making sealed definitions generalise
+     over their whole section context, so a points-to *token* carried a
+     `NaSem` - hence a `bor_sem` - that it never used.  Invisible while the
+     interpretation was bundled into `alerusGS`; fatal once a
+     constructor's semantics has to be written before the interpretation
+     exists.  Fixed in `non_atomic_cell_map.v` and `lang/heap.v`.
+   * `TypeFml` demanded `Cofe (FML $oi Σ)`, which **a `cif` does not
+     satisfy**: Nola's `cit` is complete as a `prost`, not as an OFE
+     (`nola/util/cit.v`'s `cit_prolimit`), and recursion over it goes
+     through `profix` with `Productive`, as `rust_halt/rec.v`'s `ty_rec`
+     does.  Only `typing/fixpoint.v` needs it - it builds a recursive type
+     as the COFE limit `compl` of a chain of ghost assertions, the
+     step-indexed idiom - so the assumption now lives there.  Converting
+     that file to `profix` is a separate piece of work and the last
+     structural obstacle to recursive types at the concrete
+     interpretation.
+
+   The original sketch of this step read:  A `cif` with the remaining ~25 leaf constructors, a
    `JUDG`, `bor_sem := ⟦⟧ᶜ(der)`, the `AltSem` instance with
    `alt_sem := Deriv ih` and `alt_into := dinto`, and the
    world-satisfaction allocation (plus the `llft_wsat_alloc` reordering
