@@ -135,3 +135,121 @@ End alerusC.
 
 (** [alerusC] semantics registered *)
 Notation alerusCS := (inCS alerusCT).
+
+(** ** Constructors holding a *syntactic* sub-formula
+
+  An invariant token stores a formula and hands it back unchanged; its
+  meaning does not interpret it.  So the sub-formula lives in [cifc_cdom] -
+  the coinductive domain - exactly as [cif_inv] in [nola/iris/inv_deriv.v].
+  That is also what makes these constructors productive, so a type former
+  may nest them. *)
+Variant naInvCT_id := .
+Variant naInvCT_sel : Type :=
+| (** An atomic invariant *) nis_na_inv (N : namespace)
+| (** ... opened *) nis_na_otok (N : namespace)
+| (** A cancellable non-atomic invariant *)
+    nis_cna_inv (γ : gname) (p : cna_pool_name) (N : namespace)
+| (** ... opened *)
+    nis_cna_otok (γ : gname) (p : cna_pool_name) (N : namespace) (κ : lft).
+
+Definition naInvCT : cifcon :=
+  Cifcon naInvCT_id naInvCT_sel (λ _, Empty_set) (λ _, unit) (λ _, unitO) _.
+
+Notation naInvC := (inC naInvCT).
+
+Section naInvC.
+  Context `{!naInvC CON} {Σ}.
+  Definition cif_na_inv N (Px : cif CON Σ) : cif CON Σ :=
+    cif_in naInvCT (nis_na_inv N) nullary (unary Px) ().
+  Definition cif_na_otok N (Px : cif CON Σ) : cif CON Σ :=
+    cif_in naInvCT (nis_na_otok N) nullary (unary Px) ().
+  Definition cif_cna_inv γ p N (Px : cif CON Σ) : cif CON Σ :=
+    cif_in naInvCT (nis_cna_inv γ p N) nullary (unary Px) ().
+  Definition cif_cna_otok γ p N κ (Px : cif CON Σ) : cif CON Σ :=
+    cif_in naInvCT (nis_cna_otok γ p N κ) nullary (unary Px) ().
+
+  (** All four are productive, so they may be nested *)
+  #[export] Instance cif_na_inv_productive {N} : Productive (cif_na_inv N).
+  Proof.
+    move=> ????. apply cif_in_preserv_productive=>//. by apply fun_proeqv_later.
+  Qed.
+  #[export] Instance cif_cna_inv_productive {γ p N} :
+    Productive (cif_cna_inv γ p N).
+  Proof.
+    move=> ????. apply cif_in_preserv_productive=>//. by apply fun_proeqv_later.
+  Qed.
+
+  Context `{!alerusGS (cifOF CON) Σ}.
+  Local Notation FMLC := (cifOF CON).
+  Definition naInvCT_sem (s : naInvCT_sel) (Ψx : unit -d> cif CON Σ)
+    : iProp Σ :=
+    match s with
+    | nis_na_inv N => na_inv_tok (FML:=FMLC) atomic_threadpool N (Ψx ())
+    | nis_na_otok N => na_otok (FML:=FMLC) atomic_threadpool N (Ψx ())
+    | nis_cna_inv γ p N => cna_inv (FML:=FMLC) γ p N (Ψx ())
+    | nis_cna_otok γ p N κ => cna_otok (FML:=FMLC) γ p N κ (Ψx ())
+    end.
+  #[export] Instance naInvCT_sem_ne {s n} :
+    Proper ((≡{n}≡) ==> (≡{n}≡)) (naInvCT_sem s).
+  Proof. move=> ?? eq. case s=>/=*; f_equiv; apply eq. Qed.
+  #[export] Program Instance naInvCT_ecsem {JUDG}
+    : Ecsem naInvCT CON JUDG Σ :=
+    ECSEM (λ _ _ s _ Ψx _, naInvCT_sem s Ψx) _.
+  Next Obligation. solve_proper. Qed.
+End naInvC.
+
+Notation naInvCS := (inCS naInvCT).
+
+(** ** The shared-borrow constructor
+
+  Unlike the invariant tokens above, this one *interprets* its sub-formula,
+  so the sub-formula lives in [cifc_idom] and the constructor is a plain
+  structural one. *)
+Variant shrCT_id := .
+Variant shrCT_sel : Type := ss_shr (κ : gset ra.lt_atom) (γc : gname).
+
+Definition shrCT : cifcon :=
+  Cifcon shrCT_id shrCT_sel (λ _, unit) (λ _, Empty_set) (λ _, unitO) _.
+
+Notation shrC := (inC shrCT).
+
+Section shrC.
+  Context `{!shrC CON} {Σ}.
+  Definition cif_shr κ γc (Px : cif CON Σ) : cif CON Σ :=
+    cif_in shrCT (ss_shr κ γc) (unary Px) nullary ().
+
+  Context `{!alerusGS (cifOF CON) Σ}.
+  #[export] Program Instance shrCT_ecsem {JUDG} : Ecsem shrCT CON JUDG Σ :=
+    ECSEM (λ _ _ s Φx _ _, match s with ss_shr κ γc =>
+      Φx () ∨ ((∃ k, ⌜k ∈ κ⌝ ∗ ra.Dead llft_name k) ∗ ra.CCancel γc) end)%I _.
+  Next Obligation. move=> ??????[??]???????. solve_proper. Qed.
+End shrC.
+
+Notation shrCS := (inCS shrCT).
+
+(** ** The interpretation at a derivability candidate
+
+  [bor_sem] is [⟦⟧ᶜ(δ)].  Everything the lifetime logic and the typing layer
+  need of an interpretation - [BorSem], [BorStateFml], [ShrBorSem],
+  [EmptySem], i.e. [AlerusSem] - can therefore be assembled from a [δ],
+  which is exactly what the two judgments below need in order to speak about
+  the guarding world satisfaction at a candidate.  This is Nola's
+  [inv_wsat ⟦⟧(δ)] ([nola/iris/inv_deriv.v]) one level up. *)
+Section sem_at.
+  Context `{!alerusC CON, !naInvC CON, !shrC CON} {JUDG Σ}
+    `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ)}.
+  Implicit Type δ : JUDG -n> iProp Σ.
+
+  (** The semantics of the separating conjunction *)
+  Lemma cif_sem_sep {δ} {Px Qx : cif CON Σ} :
+    ⟦ Px ∗ Qx ⟧ᶜ(δ) ⊣⊢ ⟦ Px ⟧ᶜ(δ) ∗ ⟦ Qx ⟧ᶜ(δ).
+  Proof. done. Qed.
+
+  (** [BorSem] at a candidate *)
+  #[export] Instance cif_sem_ne' {δ} :
+    NonExpansive (λ Px : cifOF CON $oi Σ, ⟦ Px ⟧ᶜ(δ)) := cif_sem_ne.
+  Definition BorSem_at δ : BorSem (cifOF CON) Σ :=
+    {| bor_sem := (λ Px : cifOF CON $oi Σ, ⟦ Px ⟧ᶜ(δ)); bor_sem_ne := _;
+       bor_sem_inhabited := populate (cif_pure True);
+       bor_sep := cif_sep; bor_sep_sem := λ _ _, cif_sem_sep |}.
+End sem_at.
