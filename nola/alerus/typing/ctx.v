@@ -594,12 +594,9 @@ Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ} := {
   (** A guard over the guarding world satisfaction, for [&shr{κ}] *)
   guard_fml : FML $oi Σ → FML $oi Σ → FML $oi Σ;
   guard_fml_ne :: NonExpansive2 guard_fml;
-  (** **This equation has no model**; see [AltSem] below, which replaces it
-    with an elimination and an introduction.  It is kept for the moment so
-    that the files that have not been migrated to [dguard] still build, and
-    it is what every remaining use of [guard_fml_sem] is standing on. *)
-  guard_fml_sem Px Qx :
-    bor_sem (guard_fml Px Qx) ⊣⊢ (bor_sem Px &&{alerus_WGuard}&&> bor_sem Qx);
+  (** [guard_fml] has *no* [⊣⊢] semantics: see the note on [AltSem] below.
+    Its elimination is [guard_fml_sem_into], its introduction
+    [guard_fml_sem_2], and both live in [AltSem]. *)
   (** A lifetime token, for [&shr{κ}] *)
   alive_fml : lft → FML $oi Σ;
   alive_fml_sem κ : bor_sem (alive_fml κ) ⊣⊢ @[κ];
@@ -670,9 +667,6 @@ Section type_fml.
   #[export] Instance pure_fml_persistent {φ} :
     Persistent (bor_sem (pure_fml φ)).
   Proof. rewrite pure_fml_sem. exact _. Qed.
-  #[export] Instance guard_fml_persistent {Px Qx} :
-    Persistent (bor_sem (guard_fml Px Qx)).
-  Proof. rewrite guard_fml_sem. exact _. Qed.
   #[export] Instance idxbor_fml_persistent {κ idx Px} :
     Persistent (bor_sem (idxbor_fml κ idx Px)).
   Proof. rewrite idxbor_fml_sem. exact _. Qed.
@@ -924,6 +918,11 @@ Section alt_sem.
   Lemma dguard_sem {Px Qx} :
     dguard Px Qx ⊢ bor_sem Px &&{alerus_WGuard}&&> bor_sem Qx.
   Proof. exact guard_fml_sem_1. Qed.
+
+  (** Persistence of a stored guard at the ambient interpretation.  The
+    [TypeFml] section cannot state this: [guard_fml] has no [⊣⊢] there. *)
+  #[export] Instance guard_fml_persistent {Px Qx} :
+    Persistent (bor_sem (guard_fml Px Qx)) := guard_fml_pers_at alt_here _ _.
 
   (** Introduction *)
   Lemma dguard_of_all_at {sem} (H : alt_sem sem) {Px Qx} :
@@ -1280,7 +1279,7 @@ Notation "κ ⊑x κ'" := (guard_fml (alive_fml κ) (alive_fml κ'))
   them and gives back exactly the proposition the original development works
   with. *)
 Create HintDb fml_sem.
-Global Hint Rewrite @false_fml_sem @pure_fml_sem @guard_fml_sem @alive_fml_sem
+Global Hint Rewrite @false_fml_sem @pure_fml_sem @alive_fml_sem
   @cells_fml_sem @ccells_fml_sem @freeable_fml_sem @pc_fml_sem
   @mapsto_fml_sem @bor_sep_sem @empty_fml_sem @or_fml_sem @vo_fml_sem
   @idxbor_fml_sem @dead_fml_sem @cmapstoany_fml_sem : fml_sem.

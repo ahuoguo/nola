@@ -71,8 +71,9 @@ Section shr_bor.
     iApply (ty_guard_proph _ ty κ0 (snd x) d0 g tid ξ R with
       "LFT [] Pers Rk"); [done|..].
     { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_r. }
+    iDestruct (dguard_alive_sem with "Gho") as "#Gho0".
     iApply (guard_trans with "Rk"). iApply (guard_trans with "Incl").
-    iApply (guard_trans with "[] Gho"). iApply llftl_intersect_incl_l.
+    iApply (guard_trans with "[] Gho0"). iApply llftl_intersect_incl_l.
   Qed.
   Next Obligation. done. Qed.
 

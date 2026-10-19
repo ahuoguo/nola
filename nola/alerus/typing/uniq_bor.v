@@ -98,7 +98,7 @@ Section uniq_bor.
   Next Obligation.
     move=> 𝔄 κ ty κ0 [[[[[l x0] ξi] d'] g'] idx] d g tid ξ R Hin. rewrite /=.
     rewrite !bor_sep_sem !pure_fml_sem !or_fml_sem !basically_dead_fml_sem
-      !idxbor_fml_sem !guard_fml_sem !alive_fml_sem !cmapstoany_fml_sem
+      !idxbor_fml_sem ?alive_fml_sem ?cmapstoany_fml_sem
       !vo_fml_sem !idx_bor_tok_fml_sem.
     iIntros "#LFT #Incl1 (%Hle & #Pers & #Bor) #Rk #Rg".
     iAssert (κ0 ⊑ κ)%I as "#Inκ".
@@ -155,7 +155,7 @@ Section uniq_bor.
   Next Obligation.
     move=> 𝔄 κ ty [[[[[l x0] ξi] d'] g'] idx] d g tid. rewrite /=.
     rewrite !bor_sep_sem !pure_fml_sem !or_fml_sem !basically_dead_fml_sem
-      !idxbor_fml_sem !guard_fml_sem !alive_fml_sem !cmapstoany_fml_sem
+      !idxbor_fml_sem ?alive_fml_sem ?cmapstoany_fml_sem
       !vo_fml_sem !idx_bor_tok_fml_sem.
     iIntros "(_ & %B & (_ & _ & #C3) & _ & #E)".
     iFrame "E C3". iPureIntro. lia.
