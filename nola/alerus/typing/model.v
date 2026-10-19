@@ -502,3 +502,25 @@ Section model.
     bor_sem (cif_ex Φ) ⊣⊢ ∃ a, bor_sem (Φ a).
   Proof. done. Qed.
 End model.
+
+(** ** What is left, and the one thing in the way
+
+  With the constructors and the two judgments in place, the remaining
+  instances - [TypeFml], [GsrcSem], [HeapSem], [PcellFml], [AtomicInvFml],
+  [LocalInvFml], [AltSem] and hence [typeG] - are mostly mechanical: every
+  non-judgment equation is [sem_cif_in] on the leaf lemmas above, and the
+  [AltSem] fields are [Deriv_factor'] / [der_sound] / [Deriv_map] on the two
+  judgments, following [nola/iris/inv_deriv.v].
+
+  One thing blocks [TypeFml]: its field [fml_cofe :: Cofe (FML $oi Σ)].  A
+  [cif] is *not* a COFE.  Nola's [cit] is complete as a [prost] - a
+  productivity structure - not as an OFE ([nola/util/cit.v]'s
+  [cit_prolimit], "[cit] is complete"), and recursive definitions over it go
+  through [profix] with [Productive], not through Banach's fixed point:
+  [nola/examples/rust_halt/rec.v] defines [ty_rec F := profix F].
+
+  [typing/fixpoint.v] builds a recursive type as the COFE limit [compl] of a
+  chain of ghost assertions, which is the step-indexed idiom.  Moving it to
+  [profix]/[Productive] - and dropping [fml_cofe] from [TypeFml] - is the
+  next piece of work, and it is the last structural obstacle between here
+  and [bor_sem := ⟦⟧ᶜ(der)]. *)
