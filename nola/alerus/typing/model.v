@@ -55,7 +55,10 @@ Variant alerusCT_sel : Type :=
 | (** A cancellable non-atomic invariant's version of it *)
     as_cna_active (γ : gname)
 | (** A prophecy observation *) as_obs (φ : proph_asn → Prop)
-| (** The atomic lock counter's handle *) as_handle (c : coPset).
+| (** The atomic lock counter's handle *) as_handle (c : coPset)
+| (** A dead lifetime atom, for the shared-borrow formula *)
+    as_dead_atom (k : ra.lt_atom)
+| (** The cancellation token of a shared borrow *) as_ccancel (γ : gname).
 
 Definition alerusCT : cifcon :=
   Cifcon alerusCT_id alerusCT_sel (λ _, Empty_set) (λ _, Empty_set)
@@ -98,6 +101,16 @@ Section alerusC.
     cif_in alerusCT (as_obs φ) nullary nullary ().
   Definition cif_handle c : cif CON Σ :=
     cif_in alerusCT (as_handle c) nullary nullary ().
+  Definition cif_dead_atom k : cif CON Σ :=
+    cif_in alerusCT (as_dead_atom k) nullary nullary ().
+  Definition cif_ccancel γ : cif CON Σ :=
+    cif_in alerusCT (as_ccancel γ) nullary nullary ().
+
+  (** The shared-borrow formula is not a constructor of its own: it is
+    built out of the structural connectives and the two leaves above. *)
+  Definition cif_shr (κ : gset ra.lt_atom) (γc : gname) (Px : cif CON Σ)
+    : cif CON Σ :=
+    (Px ∨ ((∃ k, ⌜k ∈ κ⌝ ∗ cif_dead_atom k) ∗ cif_ccancel γc))%cif.
 
   Context `{!alerusGS (cifOF CON) Σ}.
   (** The heap assertions do not mention the interpretation - they are
@@ -126,6 +139,8 @@ Section alerusC.
     | as_cna_active γ => cna_active (FML:=FMLC) γ
     | as_obs φ => ⟨π, φ π⟩
     | as_handle c => atomic_lock_handle atomic_lock_ctr_name c
+    | as_dead_atom k => ra.Dead llft_name k
+    | as_ccancel γ => ra.CCancel γ
     end%I.
   #[export] Program Instance alerusCT_ecsem {JUDG}
     : Ecsem alerusCT CON JUDG Σ :=
@@ -200,32 +215,7 @@ End naInvC.
 
 Notation naInvCS := (inCS naInvCT).
 
-(** ** The shared-borrow constructor
 
-  Unlike the invariant tokens above, this one *interprets* its sub-formula,
-  so the sub-formula lives in [cifc_idom] and the constructor is a plain
-  structural one. *)
-Variant shrCT_id := .
-Variant shrCT_sel : Type := ss_shr (κ : gset ra.lt_atom) (γc : gname).
-
-Definition shrCT : cifcon :=
-  Cifcon shrCT_id shrCT_sel (λ _, unit) (λ _, Empty_set) (λ _, unitO) _.
-
-Notation shrC := (inC shrCT).
-
-Section shrC.
-  Context `{!shrC CON} {Σ}.
-  Definition cif_shr κ γc (Px : cif CON Σ) : cif CON Σ :=
-    cif_in shrCT (ss_shr κ γc) (unary Px) nullary ().
-
-  Context `{!alerusGS (cifOF CON) Σ}.
-  #[export] Program Instance shrCT_ecsem {JUDG} : Ecsem shrCT CON JUDG Σ :=
-    ECSEM (λ _ _ s Φx _ _, match s with ss_shr κ γc =>
-      Φx () ∨ ((∃ k, ⌜k ∈ κ⌝ ∗ ra.Dead llft_name k) ∗ ra.CCancel γc) end)%I _.
-  Next Obligation. move=> ??????[??]???????. solve_proper. Qed.
-End shrC.
-
-Notation shrCS := (inCS shrCT).
 
 (** ** The interpretation at a derivability candidate
 
@@ -236,8 +226,9 @@ Notation shrCS := (inCS shrCT).
   the guarding world satisfaction at a candidate.  This is Nola's
   [inv_wsat ⟦⟧(δ)] ([nola/iris/inv_deriv.v]) one level up. *)
 Section sem_at.
-  Context `{!alerusC CON, !naInvC CON, !shrC CON} {JUDG Σ}
-    `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ)}.
+  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+    `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
   Implicit Type δ : JUDG -n> iProp Σ.
 
   (** The semantics of the separating conjunction *)
@@ -252,4 +243,54 @@ Section sem_at.
     {| bor_sem := (λ Px : cifOF CON $oi Σ, ⟦ Px ⟧ᶜ(δ)); bor_sem_ne := _;
        bor_sem_inhabited := populate (cif_pure True);
        bor_sep := cif_sep; bor_sep_sem := λ _ _, cif_sem_sep |}.
+
+  (** The semantics of the custom constructors, computed *)
+  Lemma cif_bor_state_sem {δ sn bs} :
+    ⟦ cif_bor_state sn bs ⟧ᶜ(δ) ⊣⊢ ra.OwnBorState llft_name sn bs.
+  Proof. by rewrite /cif_bor_state sem_cif_in. Qed.
+  Lemma cif_dead_atom_sem {δ k} :
+    ⟦ cif_dead_atom k ⟧ᶜ(δ) ⊣⊢ ra.Dead llft_name k.
+  Proof. by rewrite /cif_dead_atom sem_cif_in. Qed.
+  Lemma cif_ccancel_sem {δ γ} : ⟦ cif_ccancel γ ⟧ᶜ(δ) ⊣⊢ ra.CCancel γ.
+  Proof. by rewrite /cif_ccancel sem_cif_in. Qed.
+  Lemma cif_shr_sem {δ} {κ : gset ra.lt_atom} {γc} {Px : cif CON Σ} :
+    ⟦ cif_shr κ γc Px ⟧ᶜ(δ) ⊣⊢
+      ⟦ Px ⟧ᶜ(δ) ∨ ((∃ k, ⌜k ∈ κ⌝ ∗ ra.Dead llft_name k) ∗ ra.CCancel γc).
+  Proof.
+    rewrite /cif_shr /=. setoid_rewrite cif_dead_atom_sem.
+    by rewrite cif_ccancel_sem.
+  Qed.
+
+  (** The borrow-state constructor means borrow-state ownership *)
+  Program Definition BorStateFml_at δ
+    : @BorStateFml Σ _ (cifOF CON) (BorSem_at δ) llft_name :=
+    {| bor_state_fml := (λ sn bs, cif_bor_state sn bs : cifOF CON $oi Σ) |}.
+  Next Obligation. move=> *. exact cif_bor_state_sem. Qed.
+
+  (** The shared-borrow constructor *)
+  Program Definition ShrBorSem_at δ
+    : @ShrBorSem (cifOF CON) Σ _ (BorSem_at δ) :=
+    {| shr_fml := (λ κ γc Px, cif_shr κ γc Px : cifOF CON $oi Σ) |}.
+  Next Obligation. move=> *. exact cif_shr_sem. Qed.
+
+  (** [True] as a formula *)
+  Lemma cif_pure_True_sem {δ} :
+    ⟦ cif_pure True : cif CON Σ ⟧ᶜ(δ) ⊣⊢ (True : iProp Σ).
+  Proof. done. Qed.
+  Program Definition EmptySem_at δ : @EmptySem (cifOF CON) Σ (BorSem_at δ) :=
+    {| empty_fml := (cif_pure True : cifOF CON $oi Σ) |}.
+  Next Obligation. move=> ?. exact cif_pure_True_sem. Qed.
+
+  (** Hence everything the development needs of an interpretation *)
+  Definition AlerusSem_at δ : AlerusSem (cifOF CON) Σ :=
+    {| alerus_borSem := BorSem_at δ;
+       alerus_borStateFml := BorStateFml_at δ;
+       alerus_shrBorSem := ShrBorSem_at δ;
+       alerus_emptySem := EmptySem_at δ |}.
+
+  (** And in particular the guarding world satisfaction at a candidate,
+    which is what the two judgments below quantify over.  This is the whole
+    point of separating [AlerusSem] from [alerusGS]. *)
+  Definition alerus_WGuard_at δ : iProp Σ :=
+    @alerus_WGuard (cifOF CON) Σ _ (AlerusSem_at δ).
 End sem_at.
