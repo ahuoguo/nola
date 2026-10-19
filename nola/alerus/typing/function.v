@@ -152,8 +152,10 @@ Class FnFml `{!typeG FML Σ} := {
     [tctx_interp], [cctx_interp], the weakest precondition's world
     satisfaction - is stated at the ambient one.  Making it candidate-indexed
     means carrying the interpretation through the whole program logic, which
-    is the [∀ δ] indexing [rust_halt] does for its [Ty] class and which
-    [rust_halt] never has to do for a function type, because it has none.
+    is the [∀ δ] indexing Nola does for everything built on a judgment
+    ([inv' δ] in [nola/iris/inv_deriv.v] and its siblings), and which
+    [rust_halt] never has to do for its typing judgment, because it has no
+    function type former at all.
     See [typing/README.md]. *)
   fn_fml_sem_2 {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
     (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) :
