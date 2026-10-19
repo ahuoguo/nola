@@ -44,6 +44,7 @@ Implicit Type (𝔄 𝔅 ℭ: syn_type) (𝔄l 𝔅l: syn_typel).
 
 Class typeG (FML : oFunctor) Σ : Type := TypeG {
   #[global] type_alerusGS :: alerusGS FML Σ;
+  #[global] type_alerusSem :: AlerusSem FML Σ;
   #[global] type_heapSem :: HeapSem FML Σ;
   #[global] type_gsrcSem :: GsrcSem FML Σ;
   #[global] type_typeFml :: TypeFml FML Σ;

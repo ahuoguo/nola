@@ -29,12 +29,12 @@ Import GuardNotation ModwNotation.
 (** An external lifetime-context entry is a *stored* inclusion: it ends up
   inside [&uniq{κ}]'s ghost assertion, which is a formula.  See [AltSem] in
   [typing/ctx.v]. *)
-Definition elctx_elt_interp `{!alerusGS FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
+Definition elctx_elt_interp `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
   !AltSem FML Σ} (x : elctx_elt) : iProp Σ := dincl x.1 x.2.
 Notation elctx_interp := (big_sepL (λ _, elctx_elt_interp)).
 
 Section lft_contexts.
-  Context `{!alerusGS FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ, !AltSem FML Σ}.
+  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ, !AltSem FML Σ}.
   Implicit Type (κ: lft).
 
   Global Instance elctx_interp_permut :
@@ -373,21 +373,21 @@ Section lft_contexts.
   Qed.
 End lft_contexts.
 
-Arguments lctx_lft_incl {_ _ _ _ _ _} _ _ _ _.
-Arguments lctx_lft_eq {_ _ _ _ _ _} _ _ _ _.
-Arguments lctx_lft_alive {_ _ _ _ _ _} _ _ _.
-Arguments lctx_lft_alive_all {_ _ _ _ _ _} _ _ _.
-Arguments elctx_sat {_ _ _ _ _ _} _ _ _.
-Arguments lctx_lft_incl_incl {_ _ _ _ _ _ _ _} _ _.
+Arguments lctx_lft_incl {_ _ _ _ _ _ _} _ _ _ _.
+Arguments lctx_lft_eq {_ _ _ _ _ _ _} _ _ _ _.
+Arguments lctx_lft_alive {_ _ _ _ _ _ _} _ _ _.
+Arguments lctx_lft_alive_all {_ _ _ _ _ _ _} _ _ _.
+Arguments elctx_sat {_ _ _ _ _ _ _} _ _ _.
+Arguments lctx_lft_incl_incl {_ _ _ _ _ _ _ _ _} _ _.
 
-Lemma elctx_sat_submseteq `{!alerusGS FML Σ, !GsrcSem FML Σ,
+Lemma elctx_sat_submseteq `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ,
   !TypeFml FML Σ, !AltSem FML Σ} E E' L :
   E' ⊆+ E → elctx_sat E L E'.
 Proof. iIntros (HE') "_ !> H". by iApply big_sepL_submseteq. Qed.
 
 (** The original takes a fancy update at [↑NllftG ⊆ F]; here the guard is
   simply opened against the world satisfaction. *)
-Lemma lctx_lft_alive_get_guards `{!alerusGS FML Σ, !GsrcSem FML Σ,
+Lemma lctx_lft_alive_get_guards `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ,
     !TypeFml FML Σ, !AltSem FML Σ, !WsatIncl W Wguard Wr}
     γ q E L κ :
   lctx_lft_alive E L κ →

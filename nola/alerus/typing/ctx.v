@@ -160,15 +160,11 @@ Inductive gsrc : Type :=
 
   [HeapSem] is deliberately *not* a field: it is stated against [NaSem], and
   the [NaSem] instance is built below out of these fields.  Typing files
-  therefore take [Context `{!alerusGS FML Σ, !HeapSem FML Σ}]. *)
+  therefore take [Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !HeapSem FML Σ}]. *)
 Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
   #[global] alerus_invGS :: invGS_gen HasNoLc Σ;
   #[global] alerus_llftGS :: llft_logicGS Σ;
   #[global] alerus_sinvGS :: sinvGS FML Σ;
-  #[global] alerus_borSem :: BorSem FML Σ;
-  #[global] alerus_borStateFml :: BorStateFml llft_name;
-  #[global] alerus_shrBorSem :: ShrBorSem FML Σ;
-  #[global] alerus_emptySem :: EmptySem FML Σ;
   #[global] alerus_heapGS :: heapGS FML Σ;
   #[global] alerus_na_invG :: na_invG Σ;
   #[global] alerus_alcG :: alc_logicG Σ;
@@ -185,8 +181,31 @@ Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
   alerus_eternal_name : gname;
 }.
 
+(** ** The interpretation of formulas
+
+  [alerusGS] above is *ghost state only*: it fixes the resource algebras and
+  the ghost names, and says nothing about what a formula means.  What a
+  formula means is this second class.
+
+  The split matters.  The guarding world satisfaction [alerus_WGuard] is
+  built out of [bor_sem] - [frac_wsat bor_sem], [box_wsat bor_sem],
+  [shr_wsat] - so a *model* has to be able to write it down at an
+  interpretation other than the ambient one, exactly as Nola writes
+  [inv_wsat ⟦⟧(δ)] and [borrow_wsat borrowM ⟦⟧(δ)]
+  ([nola/iris/inv_deriv.v], [nola/examples/rust_halt/base.v:146-148]).  That
+  is impossible while the interpretation is a field of the ghost-state
+  record, because then "the same ghost state at another interpretation" is
+  not expressible.  With the split it is: keep [alerusGS], vary
+  [AlerusSem]. *)
+Class AlerusSem (FML : oFunctor) Σ `{!alerusGS FML Σ} : Type := AlerusSemI {
+  #[global] alerus_borSem :: BorSem FML Σ;
+  #[global] alerus_borStateFml :: BorStateFml llft_name;
+  #[global] alerus_shrBorSem :: ShrBorSem FML Σ;
+  #[global] alerus_emptySem :: EmptySem FML Σ;
+}.
+
 Section alerus.
-  Context `{!alerusGS FML Σ}.
+  Context `{!alerusGS FML Σ, !AlerusSem FML Σ}.
 
   (** Local lifetime context *)
   Definition llctx_elt_interp (x : llctx_elt) : iProp Σ :=
@@ -539,13 +558,13 @@ End alerus.
   Like [HeapSem] this is *not* a field of [alerusGS]: [gsrc_interp] is stated
   against the [NaSem] instance that [alerusGS] builds.  Typing files get it
   through [typeG]. *)
-Class GsrcSem (FML : oFunctor) Σ `{!alerusGS FML Σ} := {
+Class GsrcSem (FML : oFunctor) Σ `{!alerusGS FML Σ, !AlerusSem FML Σ} := {
   gsrc_fml : gsrc → FML $oi Σ;
   gsrc_fml_sem s : bor_sem (gsrc_fml s) ⊣⊢ gsrc_interp s;
 }.
 
 Section gsrc.
-  Context `{!alerusGS FML Σ, !GsrcSem FML Σ}.
+  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ}.
 
   (** Directed forms of [gsrc_fml_sem], for [iApply] and [iDestruct] *)
   Lemma gsrc_fml_sem_1 {s} : bor_sem (gsrc_fml s) ⊢ gsrc_interp s.
@@ -575,7 +594,7 @@ End gsrc.
   custom constructors the type formers need, each with the equation pinning
   down its semantics.  A concrete [FML] (a [cif] instance) has to satisfy it;
   see the note on [typing/soundness.v]. *)
-Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ} := {
+Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ, !AlerusSem FML Σ} := {
   (** Formulas form a COFE: [typing/fixpoint.v] takes the limit of a chain of
     type interpretations, which is now a chain of formulas. *)
   #[global] fml_cofe :: Cofe (FML $oi Σ);
@@ -641,7 +660,7 @@ Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ} := {
 }.
 
 Section type_fml.
-  Context `{!alerusGS FML Σ, !TypeFml FML Σ}.
+  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !TypeFml FML Σ}.
 
   (** A points-to assertion over a plain location, as [own_ptr] uses it *)
   Definition mapsto_fml (l : loc) (fv : list fancy_val) : FML $oi Σ :=
@@ -651,10 +670,10 @@ Section type_fml.
 
   (** [ex_fml] is proper *)
   #[export] Instance ex_fml_ne' {A} n :
-    Proper (pointwise_relation A (dist n) ==> dist n) (@ex_fml _ _ _ _ A).
+    Proper (pointwise_relation A (dist n) ==> dist n) (@ex_fml _ _ _ _ _ A).
   Proof. move=> ?? eq. by apply ex_fml_ne. Qed.
   #[export] Instance ex_fml_proper' {A} :
-    Proper (pointwise_relation A (≡) ==> (≡)) (@ex_fml _ _ _ _ A).
+    Proper (pointwise_relation A (≡) ==> (≡)) (@ex_fml _ _ _ _ _ A).
   Proof.
     move=> ?? eq. apply equiv_dist=> n. apply ex_fml_ne=> a.
     by apply equiv_dist.
@@ -736,7 +755,7 @@ End type_fml.
   they are needed because a guard's endpoints are ordinary formulas whose
   meaning one has to know while proving the guard at a candidate. *)
 Class AltSem (FML : oFunctor) Σ
-  `{!alerusGS FML Σ, !EmptySem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ} := {
+  `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ} := {
   (** [sem] is a candidate interpretation *)
   alt_sem : (FML $oi Σ → iProp Σ) → Prop;
   (** [alt_into sem sem']: a judgment stored at [sem] can be read at [sem'].
@@ -892,7 +911,7 @@ Class AltSem (FML : oFunctor) Σ
 Existing Class alt_sem.
 
 Section alt_sem.
-  Context `{!alerusGS FML Σ, !EmptySem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
+  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
     !AltSem FML Σ}.
   Implicit Type Px Qx Rx Sx : FML $oi Σ.
 

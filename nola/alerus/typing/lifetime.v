@@ -27,13 +27,13 @@ Proof. intros κ; unfold llft_intersect; set_solver. Qed.
 (** Lifetime equivalence, as a pair of *stored* inclusions: it ends up inside
   a type's ghost assertion through [type_incl], which is a formula.  See
   [AltSem] in [typing/ctx.v]. *)
-Definition lft_equiv `{!alerusGS FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
+Definition lft_equiv `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
   !AltSem FML Σ} (κ κ': lft) : iProp Σ := (dincl κ κ' ∗ dincl κ' κ)%I.
 
 Infix "≡ₗ" := lft_equiv (at level 70) : bi_scope.
 
 Section lifetimes.
-  Context `{!alerusGS FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ, !AltSem FML Σ}.
+  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ, !AltSem FML Σ}.
   Implicit Type (κ: lft).
 
   Global Instance lft_intersect_comm : Comm (A:=lft) eq (⊓).

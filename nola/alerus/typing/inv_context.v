@@ -27,7 +27,7 @@ Inductive invctx : Type :=
 Local Definition thread_id := gname.
 
 Section inv_contexts.
-  Context `{!alerusGS FML Σ, !HeapSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
+  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !HeapSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
     !AltSem FML Σ}.
   Implicit Type (κ: lft).
 
