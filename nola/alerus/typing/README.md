@@ -242,11 +242,59 @@ build green.
    * `bor_sem := ⟦⟧ᶜ(der)` as the ambient interpretation, and the
      `TypeFml`, `GsrcSem` and `HeapSem` instances at it.
 
-   What is left: the `AltSem` instance (`alt_sem sem := ∃ δ, Deriv ih δ ∧
-   sem = ⟦⟧ᶜ(δ)`, `alt_into := dinto`, with `guard_fml_sem_2` by
-   `Deriv_factor'` and `guard_fml_sem_into` by `dinto`), then `typeG`,
-   then `PcellFml` / `AtomicInvFml` / `LocalInvFml` / `RaFml`, then the
-   world-satisfaction allocation and `soundness.v`.
+   What is left: the `AltSem` instance, then `typeG`, then `PcellFml` /
+   `AtomicInvFml` / `LocalInvFml` / `RaFml`, then the world-satisfaction
+   allocation and `soundness.v`.
+
+### What building the model showed about `AltSem`
+
+Trying to instantiate `AltSem` turned up two things the interface claimed
+that Nola's `Deriv` cannot give.  The first is fixed; the second says how
+the interface has to be reshaped.
+
+1. **`alt_into_refl` was unsound.**  It said every candidate maps into
+   itself, i.e. `dinto δ δ` - which is *soundness* of `δ`.
+   `nola/bi/deriv.v` proves that for `der` alone (`der_sound`; thesis
+   Theorem 4.3) and for no other member of `Deriv`.  It is now
+   `alt_into_here : alt_into bor_sem bor_sem`, and the development turned
+   out never to need more: `dguard_sem_at` and `dincl_sem_at` were only
+   ever used at `alt_here`, so both are gone.  **A judgment can be
+   eliminated at the ambient interpretation and nowhere else.**
+
+2. **`alt_sem_into` and introduction-at-an-arbitrary-candidate are
+   jointly unrealisable.**  Write `reach δ` for `dinto der δ`.
+   `alt_sem_into` needs `reach` of every candidate in range; introduction
+   at a candidate `δ` is `Deriv_factor'` at `δ`, whose binder gives
+   `Deriv ih δ'`, `ih δ'` and `dinto δ δ'` - and `reach δ` together with
+   `dinto δ δ'` does *not* give `reach δ'`, because that would need
+   `⟦J⟧(δ) ⊢ δ J`.  Putting `reach` into Nola's induction hypothesis `ih`
+   does not help either: then the binder does hand out `reach δ'`, but
+   `alt_here` becomes `Deriv reach der`, and `nola/bi/deriv.v` gives only
+   `der_Deriv : Deriv (λ _, True) der`.  Reachability has to be carried,
+   not recovered.
+
+   The shape that *is* realisable, and the next piece of work:
+
+   * `alt_cand sem` - "`sem` is a derivability candidate", `Deriv ⊤ δ`.
+     All the `_sem_at` equations, `guard_fml_pers_at`,
+     `idxbor_fml_pers_at` and `guard_fml_sem_into` are stated at this.
+   * `alt_sem sem` - "… and reachable from the ambient", `Deriv ⊤ δ ∧
+     reach δ`.  `alt_here` holds (`der_Deriv` and `der_sound`),
+     `alt_sem_into` is a projection, and this is what the type-record
+     laws and `type_incl` quantify over, since they read stored guards
+     that were made at the ambient interpretation.
+   * **Introduction only at the ambient**: `guard_fml_sem_2` becomes
+     `dguard_of_all`, whose binder gives `⌜alt_sem sem'⌝` - this is
+     `Deriv_factor'` at `der`, which does give `dinto der δ'`.
+   * The combinators that currently derive from `dguard_of_all_at` at a
+     non-ambient candidate - `dguard_trans_at`, `dguard_intro_at`,
+     `dguard_{lhs,rhs}_iff_at`, `dguard_{lhs,rhs}_sep_*_at`,
+     `dguard_and_at`, `dincl_glb_at`, `idxbor_fml_iff_at`,
+     `idxbor_fml_shorten_at`, about sixteen in all - become *fields*,
+     realised by `Deriv_map` / `Deriv_map2`, whose binders give
+     `⌜alt_cand sem''⌝` and `⌜alt_into sem sem''⌝`.  Their bodies never
+     read an ambient guard, so that is enough.  Their users do not
+     change.
 
    Two things found along the way, both now fixed or recorded:
 
