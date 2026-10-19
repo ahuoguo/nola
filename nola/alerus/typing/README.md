@@ -198,30 +198,82 @@ build green.
      `incl_uniq_body{,_pers_component}` are dropped: their premises — a raw
      inclusion and an ambient `↔` — cannot be stated any more, and
      `incl_uniq_body_pers_component_at` supersedes them.
-   * `fn_fml`: *half done.*  `fn_fml_sem` is split into `fn_fml_sem_1`
-     (elimination, `der_sound`) and `fn_fml_sem_2` (introduction), and
-     `fn_fml_specialize_at` handles `fn_subtype_specialize` as a
-     `Deriv_map`.  **`fn_fml_sem_2` is the one rule left whose model the
-     port does not have.**  `Deriv_factor'` asks for the body at *every*
-     candidate, and the body is `typed_body`, whose every ingredient —
-     `tctx_interp`, `cctx_interp`, the weakest precondition's world
-     satisfaction `alerus_wsat` — is stated at the ambient interpretation.
-     Making it candidate-indexed means carrying the interpretation through
-     the whole program logic: a `typed_body` for the `typeG` instance whose
-     `bor_sem` is `δ'`, and hence a `twpw` over `alerus_wsat` at `δ'`.  The
-     `type` record is already almost interpretation-independent after step 3
-     (its laws are `∀ sem`), so this is a refactor rather than a
-     re-proof — but it is a large one, and `rust_halt` offers no precedent
-     because it has no function type.  `fn_fml_sem_2` is used in exactly one
-     place, `type_fn`.
+   * `fn_fml`: *the derivability route is the wrong one for it.*  See
+     "Why `fn` is stratified, not derived" below.  `fn_fml_sem` is currently
+     split into `fn_fml_sem_1` (elimination, sound) and `fn_fml_sem_2`
+     (introduction, **assumed**); `fn_fml_specialize_at` handles
+     `fn_subtype_specialize` as a `Deriv_map`.  `fn_fml_sem_2` is used in
+     exactly one place, `type_fn`, and is to be replaced by a stratified
+     definition rather than discharged.
+
 6. **The model.**  A `cif` with the remaining ~25 leaf constructors, a
-   `JUDG` with the three judgments (`guard`, `idxbor`, `fn`),
-   `bor_sem := ⟦⟧ᶜ(der)`, the `AltSem` instance with
+   `JUDG`, `bor_sem := ⟦⟧ᶜ(der)`, the `AltSem` instance with
    `alt_sem := Deriv ih` and `alt_into := dinto`, and the
    world-satisfaction allocation (plus the `llft_wsat_alloc` reordering
    above).  Then `soundness.v`.
 
-   Of the three judgments, `guard` and `idxbor` are now stated exactly as
-   `inv_deriv.v` states `inv_jacsr`, so their `JUDG` entries and their
-   `Deriv_factor'` / `der_sound` proofs follow that file.  `fn` needs step
-   5's remaining half first.
+   `inv_deriv.v` is the template for the `JUDG` entries, and Nola's own
+   borrow connectives are built the same way the port's now are
+   (thesis § 6.4):
+
+   > `⟦bor^α P⟧δ ≜ ∃Q. δ(P⇒Q) ∗ δ(Q⇒P) ∗ bor^α Q`,
+   > `⟦lend^α P⟧δ ≜ ∃Q. δ(Q⇒P) ∗ lend^α Q`,
+   > `⟦obor^α_q P⟧δ ≜ ∃Q. δ(P⇒Q) ∗ obor^α_q Q`
+
+   with the single judgment `⟦P⇒Q⟧δ ≜ ⟦P⟧δ -∗ |⇛ ⟦Q⟧δ`, which is worth
+   copying: one general-purpose judgment constructor rather than one per
+   connective.  Note also that Nola's borrow *tokens* mention no
+   interpretation at all, whereas Leaf's `idx_bor` carries `κ ⊑ κ'`, which
+   is itself a guard - that is the only reason the port needs
+   `guard_fml` as well.
+
+## Why `fn` is stratified, not derived
+
+Nola's own case study hits exactly this problem and does not solve it with
+derivability.  Thesis chapter 5 verifies strong normalisation of a type
+system with higher-order references, and its function type has the same
+shape as ours - a *total* Hoare triple over a world satisfaction that
+depends on the interpretation:
+
+> `⟦T →ⱼ U⟧ⁱ_δ v ≜ ∀u. [⟦T⟧ⁱ_δ u] v(u) [⟦U⟧ⁱ_δ]_{N, ∗_{k<j} Winvₖ ⟦⟧*ₖ}`
+> (thesis (5.4), p. 74)
+
+The recursion is well-founded not because of a judgment but because of a
+**level**: types are stratified `Typᵢ`, the function type `T →ⱼ U ∈ Typᵢ`
+carries an execution level `j ≤ i`, and the world satisfaction it quantifies
+is `∗_{k<j} Winvₖ ⟦⟧*ₖ` - the invariant world satisfactions of levels
+*strictly below* `j`.  Each level has its own ghost state
+(`Inv_{nProp₀}, Inv_{nProp₁}, …`, with a maximum level `L` fixed up front,
+thesis p. 74 fn. 3).  Derivability is used in that development only for the
+*subtyping* rule on references (`≤-ref`), which is semantic alteration -
+precisely the role `guard_fml` and `idxbor_fml` play here.
+
+The same chapter explains why this is a soundness requirement and not an
+engineering convenience.  § 3.4.1's paradox is Landin's knot with
+`ref (option (unit -> bot))`: a later-free invariant whose content mentions
+the fancy update - "the shared invariant connective corresponds to `ref`,
+the fancy update `|⇛` to the closure type `->`" (p. 55) - derives `⊥`.  A
+function type whose interpretation is a Hoare triple over the world
+satisfaction, stored unstratified in a borrow, is that shape.  So
+`fn_fml_sem_2` must not be discharged as it stands; `fn_fml` must carry an
+execution level and be interpreted with the world satisfaction of lower
+levels.
+
+What that costs here: `FML`, `bor_sem` and `alerus_wsat` become
+level-indexed up to a fixed maximum `L`, and a `type` carries the level of
+its ghost assertion.  The rest of the port needs no level reasoning,
+because every *other* formula constructor's interpretation mentions only
+its subformulas or a judgment - in particular `guard_fml` and `idxbor_fml`
+are judgments and so, like `⟦ref^o_k T⟧`, do not depend on the
+interpretation of their contents at all.
+
+## What this means for the earlier plan
+
+An earlier version of this file proposed making `typed_body` candidate-
+indexed so that `fn_fml_sem_2` could be discharged by `Deriv_factor'`.
+That is not Nola's design and it does not terminate: `Deriv_factor'` would
+ask for the function body's typing at every candidate, which is a strictly
+harder obligation than the stratified definition and still leaves the
+paradox of § 3.4.1 unaddressed.  `rust_halt` keeps its typing judgment at
+the ambient interpretation (`type_def` uses `WP[rust_halt_wsat]` with
+`⟦⟧ᶜ = ⟦⟧ᶜ(der)`, `type.v:910-932`) precisely because it never stores one.
