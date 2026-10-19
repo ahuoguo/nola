@@ -363,3 +363,57 @@ End judg2.
 (** Semantics of the two judgment types registered *)
 Notation guardJS CON JUDG Σ := (inJS (guardJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation idxborJS CON JUDG Σ := (inJS (idxborJT (cifO CON Σ)) JUDG (iProp Σ)).
+
+(** ** The judgment constructors
+
+  [guard_fml] and [idxbor_fml] as formulas: each holds its sub-formulas
+  *syntactically* and means "the judgment is derivable at [δ]", under a [□]
+  so that the formula is persistent.  This is [inv'] in
+  [nola/iris/inv_deriv.v]. *)
+Variant guardCT_id := .
+Definition guardCT : cifcon :=
+  Cifcon guardCT_id unit (λ _, Empty_set) (λ _, bool) (λ _, unitO) _.
+Notation guardC := (inC guardCT).
+
+Variant idxborCT_id := .
+Definition idxborCT : cifcon :=
+  Cifcon idxborCT_id (lft * Idx)%type (λ _, Empty_set) (λ _, unit)
+    (λ _, unitO) _.
+Notation idxborC := (inC idxborCT).
+
+Section judgC.
+  Context `{!guardC CON, !idxborC CON} {Σ}.
+  Definition cif_guard (Px Qx : cif CON Σ) : cif CON Σ :=
+    cif_in guardCT () nullary (binary Px Qx) ().
+  Definition cif_idxbor κ idx (Px : cif CON Σ) : cif CON Σ :=
+    cif_in idxborCT (κ, idx) nullary (unary Px) ().
+
+  (** Both are productive, so a type former may nest them *)
+  #[export] Instance cif_idxbor_productive {κ idx} :
+    Productive (cif_idxbor κ idx).
+  Proof.
+    move=> ????. apply cif_in_preserv_productive=>//. by apply fun_proeqv_later.
+  Qed.
+
+  Context {JUDG} `{guard_j0 : !guardJ (cifO CON Σ) JUDG,
+    idxbor_j0 : !idxborJ (cifO CON Σ) JUDG}.
+  (** The judgments as elements of [JUDG] *)
+  Definition guard_j (Px Qx : cif CON Σ) : JUDG :=
+    guard_j0 (Tagged (Px, Qx)).
+  Definition idxbor_j κ idx (Px : cif CON Σ) : JUDG :=
+    idxbor_j0 (Tagged (κ, idx, Px)).
+  #[export] Instance guard_j_ne : NonExpansive2 guard_j.
+  Proof. unfold guard_j=> ???????. f_equiv. by split. Qed.
+  #[export] Instance idxbor_j_ne {κ idx} : NonExpansive (idxbor_j κ idx).
+  Proof. unfold idxbor_j=> ????. f_equiv. by split; [split|]. Qed.
+
+  #[export] Program Instance guardCT_ecsem : Ecsem guardCT CON JUDG Σ :=
+    ECSEM (λ _ δ _ _ Ψx _, □ δ (guard_j (Ψx true) (Ψx false)))%I _.
+  Next Obligation. solve_proper. Qed.
+  #[export] Program Instance idxborCT_ecsem : Ecsem idxborCT CON JUDG Σ :=
+    ECSEM (λ _ δ s _ Ψx _, □ δ (idxbor_j s.1 s.2 (Ψx ())))%I _.
+  Next Obligation. solve_proper. Qed.
+End judgC.
+
+Notation guardCS := (inCS guardCT).
+Notation idxborCS := (inCS idxborCT).
