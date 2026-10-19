@@ -763,7 +763,16 @@ Class AltSem (FML : oFunctor) Σ
   (** The ambient interpretation is a candidate and is its own guarding world
     satisfaction; every candidate maps into itself *)
   alt_here : alt_sem bor_sem;
-  alt_into_refl {sem} : alt_sem sem → alt_into sem sem;
+  (** The ambient interpretation maps into itself.
+
+    **Only** the ambient one.  In the model [alt_into δ δ'] is Nola's
+    [dinto δ δ' = ∀ J, δ J ⊢ ⟦J⟧(δ')], and that at [δ' = δ] is *soundness*
+    of [δ], which [nola/bi/deriv.v] proves for [der] ([der_sound],
+    Theorem 4.3 of the thesis) and for no other candidate.  So a judgment
+    can be eliminated at the ambient interpretation and nowhere else; a
+    candidate only ever *receives* judgments stored at the ambient one,
+    through [alt_sem_into]. *)
+  alt_into_here : alt_into bor_sem bor_sem;
   (** Every candidate can read a judgment stored at the ambient
     interpretation.  In the model the candidates are the derivability
     candidates [δ'] with [dinto der δ'], which [Deriv_factor']'s induction
@@ -918,7 +927,7 @@ Section alt_sem.
   (** ** A guard held *as a formula*
 
     Everything the development does with a stored guard goes through these.
-    [dguard_sem_at] drops one to an actual Leaf guard, which is all one needs
+    [dguard_sem] drops one to an actual Leaf guard, which is all one needs
     to *open* it; every other lemma builds one stored guard out of others,
     and is [Deriv_map] in the intended model.  Each comes in a version at an
     arbitrary candidate interpretation, needed while proving a guard inside
@@ -934,12 +943,12 @@ Section alt_sem.
   Proof. apply ne_proper_2, _. Qed.
 
   (** Elimination *)
-  Lemma dguard_sem_at {sem} (H : alt_sem sem) {Px Qx} :
-    sem (guard_fml Px Qx) ⊢ sem Px &&{alt_WGuard sem}&&> sem Qx.
-  Proof. exact: (guard_fml_sem_into H H (alt_into_refl H)). Qed.
   Lemma guard_fml_sem_1 {Px Qx} :
     bor_sem (guard_fml Px Qx) ⊢ bor_sem Px &&{alerus_WGuard}&&> bor_sem Qx.
-  Proof. rewrite -alt_WGuard_here. exact: (dguard_sem_at alt_here). Qed.
+  Proof.
+    rewrite -alt_WGuard_here.
+    exact: (guard_fml_sem_into alt_here alt_here alt_into_here).
+  Qed.
   Lemma dguard_sem {Px Qx} :
     dguard Px Qx ⊢ bor_sem Px &&{alerus_WGuard}&&> bor_sem Qx.
   Proof. exact guard_fml_sem_1. Qed.
@@ -1207,10 +1216,6 @@ Section alt_sem.
   #[export] Instance dincl_persistent {κ κ'} : Persistent (dincl κ κ').
   Proof. rewrite /dincl. exact _. Qed.
 
-  Lemma dincl_sem_at {sem} (H : alt_sem sem) {κ κ'} :
-    sem (guard_fml (alive_fml κ) (alive_fml κ')) ⊢
-      @[κ] &&{alt_WGuard sem}&&> @[κ'].
-  Proof. rewrite (dguard_sem_at H) !(alive_sem_at H) //. Qed.
   Lemma dincl_sem {κ κ'} : dincl κ κ' ⊢ llft_incl κ κ'.
   Proof.
     iIntros "g". iDestruct (dguard_sem with "g") as "g".

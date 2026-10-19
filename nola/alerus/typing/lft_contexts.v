@@ -197,7 +197,7 @@ Section lft_contexts.
   Lemma lctx_lft_alive_all_now κ : lctx_lft_alive_all κ → lctx_lft_alive κ.
   Proof.
     move=> Alv. rewrite /lctx_lft_alive -alt_WGuard_here.
-    exact: (Alv _ alt_here (alt_into_refl alt_here)).
+    exact: (Alv _ alt_here alt_into_here).
   Qed.
 
   Lemma lctx_lft_alive_static : lctx_lft_alive static.
