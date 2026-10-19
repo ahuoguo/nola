@@ -417,3 +417,88 @@ End judgC.
 
 Notation guardCS := (inCS guardCT).
 Notation idxborCS := (inCS idxborCT).
+
+(** ** Constructor and judgment constraints
+
+  As in [rust_halt/base.v], the development is parametric in a constructor
+  signature [CON] and a judgment type [JUDG] that *contain* the ones above;
+  these classes say so. *)
+Class typingC CON : Type := TYPING_C {
+  typingC_alerus :: alerusC CON;
+  typingC_naInv :: naInvC CON;
+  typingC_guard :: guardC CON;
+  typingC_idxbor :: idxborC CON;
+}.
+Class typingJ CON JUDG Σ : Type := TYPING_J {
+  typingJ_guard :: guardJ (cifO CON Σ) JUDG;
+  typingJ_idxbor :: idxborJ (cifO CON Σ) JUDG;
+}.
+Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
+  `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ} : Prop := TYPING_CS {
+  typingCS_alerus :: alerusCS CON JUDG Σ;
+  typingCS_naInv :: naInvCS CON JUDG Σ;
+  typingCS_guard :: guardCS CON JUDG Σ;
+  typingCS_idxbor :: idxborCS CON JUDG Σ;
+}.
+Class typingJS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
+  `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+    !typingCS CON JUDG Σ} : Prop := TYPING_JS {
+  typingJS_guard :: guardJS CON JUDG Σ;
+  typingJS_idxbor :: idxborJS CON JUDG Σ;
+}.
+
+(** ** The ambient interpretation and the [TypeFml] instance
+
+  The ambient interpretation is [⟦⟧ᶜ(der)]: [der] is Nola's best derivability
+  predicate ([nola/bi/deriv.v], thesis Definition 4.1), whose soundness
+  [der_sound] gives [der J ⊢ ⟦J⟧(der)] - the elimination of a judgment - and
+  whose introduction is [Deriv_factor'], which asks for the judgment's
+  semantics at *every* good candidate. *)
+Section model.
+  Context `{!typingC CON} {JUDG Σ} `{!alerusGS (cifOF CON) Σ,
+    !typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+    !typingCS CON JUDG Σ, !typingJS CON JUDG Σ}.
+
+  (** The ambient interpretation *)
+  #[export] Instance alerusSem_der : AlerusSem (cifOF CON) Σ :=
+    AlerusSem_at der.
+
+  (** Unfolding the leaves at the ambient interpretation *)
+  Lemma cif_alive_sem {κ} : bor_sem (cif_alive κ : cifOF CON $oi Σ) ⊣⊢ @[κ].
+  Proof. by rewrite /bor_sem /= /cif_alive sem_cif_in. Qed.
+  Lemma cif_dead_sem {κ} : bor_sem (cif_dead κ : cifOF CON $oi Σ) ⊣⊢ [†κ].
+  Proof. by rewrite /bor_sem /= /cif_dead sem_cif_in. Qed.
+  Lemma cif_cells_sem {l cs fv} :
+    bor_sem (cif_cells l cs fv : cifOF CON $oi Σ) ⊣⊢ l ↦[^ cs ]!∗ fv.
+  Proof. by rewrite /bor_sem /= /cif_cells sem_cif_in. Qed.
+  Lemma cif_ccells_sem {l fv} :
+    bor_sem (cif_ccells l fv : cifOF CON $oi Σ) ⊣⊢ l #↦!∗ fv.
+  Proof. by rewrite /bor_sem /= /cif_ccells sem_cif_in. Qed.
+  Lemma cif_cmapstoany_sem {l} :
+    bor_sem (cif_cmapstoany l : cifOF CON $oi Σ) ⊣⊢ l #↦∗_.
+  Proof. by rewrite /bor_sem /= /cif_cmapstoany sem_cif_in. Qed.
+  Lemma cif_freeable_sem {n sz l} :
+    bor_sem (cif_freeable n sz l : cifOF CON $oi Σ) ⊣⊢ freeable_sz n sz l.
+  Proof. by rewrite /bor_sem /= /cif_freeable sem_cif_in. Qed.
+  Lemma cif_vo_sem {ξ x d} :
+    bor_sem (cif_vo ξ x d : cifOF CON $oi Σ) ⊣⊢ .VO[ξ] x d.
+  Proof. by rewrite /bor_sem /= /cif_vo sem_cif_in. Qed.
+  Lemma cif_pc_sem {ξ x xp d} :
+    bor_sem (cif_pc ξ x xp d : cifOF CON $oi Σ) ⊣⊢ .PC[ξ] x xp d.
+  Proof. by rewrite /bor_sem /= /cif_pc sem_cif_in. Qed.
+  Lemma cif_gsrc_sem {s} :
+    bor_sem (cif_gsrc s : cifOF CON $oi Σ) ⊣⊢ gsrc_interp s.
+  Proof. by rewrite /bor_sem /= /cif_gsrc sem_cif_in. Qed.
+  Lemma cif_cellsvec_sem {cs fv} :
+    bor_sem (cif_cellsvec cs fv : cifOF CON $oi Σ) ⊣⊢ cs ^↦!∗ fv.
+  Proof. by rewrite /bor_sem /= /cif_cellsvec sem_cif_in. Qed.
+  Lemma cif_pure_sem {φ} :
+    bor_sem (cif_pure φ : cifOF CON $oi Σ) ⊣⊢ ⌜φ⌝.
+  Proof. done. Qed.
+  Lemma cif_or_sem {Px Qx : cifOF CON $oi Σ} :
+    bor_sem (cif_or Px Qx) ⊣⊢ bor_sem Px ∨ bor_sem Qx.
+  Proof. done. Qed.
+  Lemma cif_ex_sem {A} {Φ : A → cifOF CON $oi Σ} :
+    bor_sem (cif_ex Φ) ⊣⊢ ∃ a, bor_sem (Φ a).
+  Proof. done. Qed.
+End model.
