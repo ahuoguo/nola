@@ -109,11 +109,15 @@ provides `lrust_adequacy` and, beyond what the original can state,
      `Deriv_factor'` (`inv_acsr_inv'`).  Note what this does *not* give: a
      `⊣⊢` semantics is impossible, and `psg` yields only the post-fixpoint
      `der J ⊢ ⟦J⟧(der)`.  So `guard_fml_sem`, `idxbor_fml_sem` and
-     `fn_fml_sem` would split into an elimination at `der` and an
-     introduction that must hold **uniformly in `δ'`** - which is exactly why
-     every law of Nola's own `Ty` class is stated `∀ δ`
+     `fn_fml_sem` split into an elimination at `der` and an introduction
+     that must hold **uniformly in `δ'`** - which is exactly why every law
+     of Nola's own `Ty` class is stated `∀ δ`
      (`nola/examples/rust_halt/type.v:128-145`).  Making this development
-     `δ`-parametric is the price.
+     `δ`-parametric is the price.  **This is the route that was taken**; see
+     below.  The first two equations are gone and the third is split, so
+     what the file list above describes as "three constructors that have no
+     semantics" is now, concretely, one missing introduction rule,
+     `fn_fml_sem_2`.
    * **Replace the lifetime logic with Nola's** (`nola/iris/borrow.v`,
      `nola/iris/lft.v`), so that inclusion and shared borrows are tokens and
      the guard disappears from the formulas.  That is a different
@@ -132,76 +136,84 @@ build green.
 
 1. **Tokenise what can be tokenised.**  *Done.*  The two closers are now
    `cna_otok` / `na_otok`, after Nola's `obor_tok`.
-2. **The `AltSem` interface.**  *Done.*  `ctx.v` now carries `AltSem`:
+2. **The `AltSem` interface.**  *Done.*  `ctx.v` carries `AltSem`:
    `alt_sem sem` says `sem` is a derivability candidate, `alt_WGuard sem` is
-   the guarding world satisfaction at it, `alt_into sem` is Nola's
-   `dinto bor_sem sem`, and the `_at` fields repeat the equations of the
-   non-judgment constructors at an arbitrary candidate.  On top of it:
-   `dguard Px Qx` (a guard held as a formula) with `dguard_sem` for
+   the guarding world satisfaction at it, `alt_into sem sem'` is Nola's
+   `dinto`, and the `_at` fields repeat the equations of the non-judgment
+   constructors at an arbitrary candidate.  On top of it: `dguard Px Qx` (a
+   guard held as a formula) with `dguard_sem` / `dguard_alive_sem{,'}` for
    elimination, `dguard_of_all` (`Deriv_factor'`) for introduction, and the
    combinators — `dguard_trans`, `dguard_{lhs,rhs}_iff`,
    `dguard_{lhs,rhs}_sep_{l,r}`, `dguard_and`, `dguard_intro`,
-   `dguard_borrow_shared` — each of which is `Deriv_map` in the model; plus
+   `dguard_cloc_combine_fancy{,'}`, `dguard_cells_nil`, `dguard_depth_mono`,
+   `dguard_and_own` — each of which is `Deriv_map` in the model; plus
    `dincl` and `dbasically_dead`.
-
-   `TypeFml.guard_fml_sem` is **still there**, marked as having no model, so
-   that the files that have not been migrated still build.  Everything that
-   rests on it is exactly what steps 3–5 remove.
-3. **`ty_gho_depth_mono` at a candidate.**  A guard's right-hand side is a
-   type's ghost assertion, and the one thing the development does to it
-   while rebuilding a guard is weaken its depth.  So the `type` record needs
-   `ty_gho_depth_mono_at : ∀ sem, alt_sem sem → …`, proved for each type
-   former (~30 of them); the ambient law then follows by `alt_here`.  This is
-   the same shape as Nola's `Ty` class, whose laws are all `∀ δ`
+3. **The type laws at a candidate.**  *Done.*  `ty_gho_depth_mono_at`,
+   `ty_gho_pers_depth_mono_at` and `ty_gho_pers_pers_at` are record fields
+   taking `sem` and `alt_sem sem`, proved for every type former; the ambient
+   laws follow by `alt_here`.  `Sync` is candidate-indexed, and `type_incl`,
+   `subtype`, `eqtype`, `elctx_elt_interp`, `lctx_lft_incl`, `lft_equiv` and
+   `TypeLftMorphism` are stated with `dincl` and with their ghost components
+   `∀ sem, alt_sem sem → …`.  This is the same shape as Nola's `Ty` class,
+   whose laws are all `∀ δ`
    (`nola/examples/rust_halt/type.v:128-145`).
-4. **Migrate the stored guards.**  `shr_bor`, `uniq_bor`, `uniq_util`'s
+4. **Migrate the stored guards.**  *Done.*  `TypeFml.guard_fml_sem` — the
+   equation that had no model — is **gone**.  A stored guard is only ever
+   eliminated (`guard_fml_sem_into`) or introduced uniformly in the
+   candidate (`guard_fml_sem_2`).  `shr_bor`, `uniq_bor`, `uniq_util`'s
    `basically_dead`, and `borrow.v`'s mid-formulas state their unfolding
-   lemmas with `dguard` instead of a raw guard; the ~20 files downstream use
-   `dguard_*` where they currently use `guard_*` on a guard that is about to
-   be stored, and `dguard_sem` where they actually open one.  Then
-   `guard_fml_sem` goes.
+   lemmas with `dguard`; the ~20 files downstream build their guards as
+   stored guards and drop to a raw one (`dguard_alive_sem'`) only at the
+   point where one is actually opened.
 
-   **What a first attempt at this showed.**  A stored guard can only be
-   built out of other stored guards (`Deriv_map`) or out of a source that is
-   storable in the first place (`dguard_borrow_shared`, `dincl_of_incl`,
-   `dincl_eternalize`).  A *raw* guard cannot be promoted: it holds at the
+   Two places had to become sources of storable guards rather than
+   consumers, because a *raw* guard can never be promoted — it holds at the
    ambient interpretation only, and nothing in it says it holds at the
-   others.  So the migration is not local to the type formers - it runs back
-   through everything that *produces* an inclusion:
+   others:
 
-   * `elctx_elt_interp (κ ⊑ₑ κ')` has to be `dincl κ κ'`, because
-     `ty_outlives_E` entries are where `&uniq{κ}`'s stored `κ ⊑ ty_lft ty`
-     comes from.  Then `lctx_lft_incl`, `lft_equiv`, `type_incl`'s lifetime
-     component and `TypeLftMorphism` all follow (this part works, and is
-     mechanical).
-   * But then `function.v`'s `type_call` has to *store* the inclusions of
-     `fp_E (fp y) ϝ`, and it builds them from `Ltok_guard_frac` and
-     `lctx_lft_alive` - raw guards over world satisfactions the development
-     cannot see at a candidate.  So `lctx_lft_alive`, and the `Ltok` guard
-     under it, have to be candidate-indexed too, which reaches the ~80 sites
-     that use `lctx_lft_alive`.
-   * Likewise `Sync` and `Send`: `&shr{κ}` stores `ty_ghox ty … tid`, so
-     `shr_sync` needs the type's thread-id law at every candidate, which
-     means each type former also needs an `_at` form of its `*_gho`
-     unfolding lemma (~50 lemmas).
+   * `guard_fml_borrow_shared` (`llftl_borrow_shared`: the shared borrow it
+     allocates is a `sinv_tok`, which mentions no interpretation), and
+   * `guard_fml_of_bor` (`bor_to_guard`: a full borrow token is plain CMRA
+     ownership, and `bor_to_guard`'s proof is parametric in `BorSem`).
 
-   None of this is a soundness problem - every one of these facts is true in
-   the model, because the resources involved (`sinv_tok`, `frac_key_wsat`,
-   `llctx_interp`, the lifetime tokens) never mention the interpretation.
-   It is a question of how much of the development has to be stated `∀ δ`,
-   and the answer is: the same proportion as in `rust_halt`, i.e. nearly all
-   of the type-level interfaces.  The attempt was reverted to keep the build
-   green; `AltSem` already carries the fields it identified
-   (`dguard_borrow_shared`, `dincl_of_incl`, `dincl_eternalize`,
-   `dincl_glb_at`, `guard_fml_pers_at`, `idxbor_fml_pers_at`,
-   `fn_fml_pers_at`).
-5. **The same for `idxbor_fml` and `fn_fml`.**  `idx_bor` carries
-   `□ (bor_sem Px' ↔ bor_sem Px)`, which is a judgment in the same sense -
-   compare `nola/iris/borrow_deriv.v`.  `fn_fml` is the function type's own
-   typing judgment; its introduction rule takes the body's typing at every
-   candidate, which is how `soundness.v` already states its premise
-   (`∀ `{!typeG Σ}, typed_val main main_type c`).
-6. **The model.**  A `cif` with the remaining ~25 leaf constructors, a `JUDG`
-   with the three judgments, `bor_sem := ⟦⟧ᶜ(der)`, the `AltSem` instance
-   with `alt_sem := Deriv ih`, and the world-satisfaction allocation (plus
-   the `llft_wsat_alloc` reordering above).  Then `soundness.v`.
+   Everything else is built from those two, from `dincl_of_incl` /
+   `dincl_eternalize` / `Ltok_guard_frac_at`, or out of other stored guards.
+5. **The same for `idxbor_fml` and `fn_fml`.**
+   * `idxbor_fml`: *done*.  `idxbor_fml_sem` is gone.  Elimination is
+     `idxbor_fml_sem_1`, introduction is `idxbor_fml_of_bor` — splitting a
+     full borrow into an index and a token, where the `iff` the indexed
+     borrow carries is reflexivity and the token mentions no interpretation.
+     `uniq_body_pers_component` is now `bor_sem (idxbor_fml …)` rather than
+     `&{κ,idx} …`, and the transformations the development needs
+     (`idxbor_fml_iff_at`, `idxbor_fml_shorten_at`, `idxbor_fml_into`,
+     `idxbor_fml_guard_at`) are `Deriv_map` fields.
+     `incl_uniq_body{,_pers_component}` are dropped: their premises — a raw
+     inclusion and an ambient `↔` — cannot be stated any more, and
+     `incl_uniq_body_pers_component_at` supersedes them.
+   * `fn_fml`: *half done.*  `fn_fml_sem` is split into `fn_fml_sem_1`
+     (elimination, `der_sound`) and `fn_fml_sem_2` (introduction), and
+     `fn_fml_specialize_at` handles `fn_subtype_specialize` as a
+     `Deriv_map`.  **`fn_fml_sem_2` is the one rule left whose model the
+     port does not have.**  `Deriv_factor'` asks for the body at *every*
+     candidate, and the body is `typed_body`, whose every ingredient —
+     `tctx_interp`, `cctx_interp`, the weakest precondition's world
+     satisfaction `alerus_wsat` — is stated at the ambient interpretation.
+     Making it candidate-indexed means carrying the interpretation through
+     the whole program logic: a `typed_body` for the `typeG` instance whose
+     `bor_sem` is `δ'`, and hence a `twpw` over `alerus_wsat` at `δ'`.  The
+     `type` record is already almost interpretation-independent after step 3
+     (its laws are `∀ sem`), so this is a refactor rather than a
+     re-proof — but it is a large one, and `rust_halt` offers no precedent
+     because it has no function type.  `fn_fml_sem_2` is used in exactly one
+     place, `type_fn`.
+6. **The model.**  A `cif` with the remaining ~25 leaf constructors, a
+   `JUDG` with the three judgments (`guard`, `idxbor`, `fn`),
+   `bor_sem := ⟦⟧ᶜ(der)`, the `AltSem` instance with
+   `alt_sem := Deriv ih` and `alt_into := dinto`, and the
+   world-satisfaction allocation (plus the `llft_wsat_alloc` reordering
+   above).  Then `soundness.v`.
+
+   Of the three judgments, `guard` and `idxbor` are now stated exactly as
+   `inv_deriv.v` states `inv_jacsr`, so their `JUDG` entries and their
+   `Deriv_factor'` / `der_sound` proofs follow that file.  `fn` needs step
+   5's remaining half first.

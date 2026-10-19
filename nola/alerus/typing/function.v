@@ -129,9 +129,13 @@ Class FnFml `{!typeG FML Σ} := {
       (fp : B → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅)) (spec : fn_spec 𝔄l 𝔅 ℭ)
       (x : ~~ (exec_funₛ ℭ)),
     sem (fn_fml fp spec x) ⊢ sem (fn_fml (fp ∘ σ) spec x);
-  fn_fml_sem {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
+  (** Eliminating a function type's ghost assertion at the ambient
+    interpretation.  This is [der_sound] in the model: [der J ⊢ ⟦J⟧(der)],
+    with [⟦fn_judg fp spec x⟧(δ)] the body below read with [bor_sem]
+    replaced by [δ]. *)
+  fn_fml_sem_1 {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
     (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) :
-    bor_sem (fn_fml fp spec x) ⊣⊢
+    bor_sem (fn_fml fp spec x) ⊢
       (∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
         □ ∀y ϝ k (wl: plistc _ _),
           typed_body (fp_E (fp y) ϝ) [ϝ ⊑ₗ []]
@@ -142,6 +146,28 @@ Class FnFml `{!typeG FML Σ} := {
               (box_typel (fp y).(fp_ityl)) wl)
             (subst' fb (RecV fb (kb :: bl) e) $ subst' kb k $ subst_plv bl wl e)
             (spec (snd x)))%I;
+  (** Introducing one.  **This is the one rule whose model the port does not
+    have.**  [Deriv_factor'] asks for the body at *every* candidate
+    interpretation, and the body is [typed_body], whose every ingredient -
+    [tctx_interp], [cctx_interp], the weakest precondition's world
+    satisfaction - is stated at the ambient one.  Making it candidate-indexed
+    means carrying the interpretation through the whole program logic, which
+    is the [∀ δ] indexing [rust_halt] does for its [Ty] class and which
+    [rust_halt] never has to do for a function type, because it has none.
+    See [typing/README.md]. *)
+  fn_fml_sem_2 {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
+    (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) :
+      (∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
+        □ ∀y ϝ k (wl: plistc _ _),
+          typed_body (fp_E (fp y) ϝ) [ϝ ⊑ₗ []]
+            (InvCtx [] ϝ (fp_atomic_state (fp y)))
+            [k ◁cont{[ϝ ⊑ₗ []], (InvCtx [] ϝ (fp_atomic_state (fp y))),
+              λ v: vec _ 1, +[vhd v ◁ own.box (fp y).(fp_oty)] } tr_ret]
+            (hzip_with (λ _ boxty (w: val), w ◁ boxty)
+              (box_typel (fp y).(fp_ityl)) wl)
+            (subst' fb (RecV fb (kb :: bl) e) $ subst' kb k $ subst_plv bl wl e)
+            (spec (snd x)))%I
+      ⊢ bor_sem (fn_fml fp spec x);
 }.
 
 Section fn.
@@ -176,9 +202,10 @@ Section fn.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
 
-  (** Unfolding [fn]'s ghost assertion *)
-  Lemma fn_gho {ℭ} (fp: A → fn_params) (spec: fn_spec 𝔄l 𝔅 ℭ) x d g tid :
-    ty_gho (fn fp spec) x d g tid ⊣⊢
+  (** Unfolding [fn]'s ghost assertion.  Only the two directions exist, not
+    an [⊣⊢]: see [FnFml]. *)
+  Lemma fn_gho_1 {ℭ} (fp: A → fn_params) (spec: fn_spec 𝔄l 𝔅 ℭ) x d g tid :
+    ty_gho (fn fp spec) x d g tid ⊢
       (∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
         □ ∀y ϝ k (wl: plistc _ _),
           typed_body (fp_E (fp y) ϝ) [ϝ ⊑ₗ []]
@@ -189,7 +216,20 @@ Section fn.
               (box_typel (fp y).(fp_ityl)) wl)
             (subst' fb (RecV fb (kb :: bl) e) $ subst' kb k $ subst_plv bl wl e)
             (spec (snd x))).
-  Proof. apply fn_fml_sem. Qed.
+  Proof. apply fn_fml_sem_1. Qed.
+  Lemma fn_gho_2 {ℭ} (fp: A → fn_params) (spec: fn_spec 𝔄l 𝔅 ℭ) x d g tid :
+      (∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
+        □ ∀y ϝ k (wl: plistc _ _),
+          typed_body (fp_E (fp y) ϝ) [ϝ ⊑ₗ []]
+            (InvCtx [] ϝ (fp_atomic_state (fp y)))
+            [k ◁cont{[ϝ ⊑ₗ []], (InvCtx [] ϝ (fp_atomic_state (fp y))),
+              λ v: vec _ 1, +[vhd v ◁ own.box (fp y).(fp_oty)] } tr_ret]
+            (hzip_with (λ _ boxty (w: val), w ◁ boxty)
+              (box_typel (fp y).(fp_ityl)) wl)
+            (subst' fb (RecV fb (kb :: bl) e) $ subst' kb k $ subst_plv bl wl e)
+            (spec (snd x)))
+    ⊢ ty_gho (fn fp spec) x d g tid.
+  Proof. apply fn_fml_sem_2. Qed.
 
   (*
   Global Instance fn_ne n :
@@ -494,7 +534,7 @@ Section typing.
       iApply dincl_intersect_r. }
     iModIntro. iFrame "W".
     wp_bind p. iApply (twp_hasty with "p"). iIntros (?? _) "[gho %phys]".
-    rewrite fn_gho. iDestruct "gho" as (fb kb bl e Hclosed) "[%Hrec #e]".
+    rewrite fn_gho_1. iDestruct "gho" as (fb kb bl e Hclosed) "[%Hrec #e]".
     inversion phys as [Eqv].
     have ->: (λ: ["_r"], Skip;; k' ["_r"])%E = (λ: ["_r"], Skip;; k' ["_r"])%V
       by unlock.
@@ -662,7 +702,7 @@ Section typing.
     iExists -[((@RecV BAnon ("return" :: bl')%binder e Cl)%V, tr)].
     iFrame "Obs". iSplit; [|done]. iExists _, 0%nat.
     iSplit; [by rewrite/= decide_True_pi|]. iSplit; last by done.
-    rewrite fn_gho. iExists BAnon, "return", bl', e, _. iSplit; [done|].
+    iApply fn_gho_2. iExists BAnon, "return", bl', e, _. iSplit; [done|].
     iIntros "!>" (y ϝ k wl). iApply Body.
   Qed.
 End typing.
