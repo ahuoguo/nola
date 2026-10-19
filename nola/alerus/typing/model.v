@@ -389,6 +389,10 @@ Section judgC.
     cif_in idxborCT (κ, idx) nullary (unary Px) ().
 
   (** Both are productive, so a type former may nest them *)
+  #[export] Instance cif_guard_ne : NonExpansive2 cif_guard.
+  Proof. move=> ???????. rewrite /cif_guard. solve_proper. Qed.
+  #[export] Instance cif_idxbor_ne {κ idx} : NonExpansive (cif_idxbor κ idx).
+  Proof. move=> ????. rewrite /cif_idxbor. solve_proper. Qed.
   #[export] Instance cif_idxbor_productive {κ idx} :
     Productive (cif_idxbor κ idx).
   Proof.
@@ -501,6 +505,37 @@ Section model.
   Lemma cif_ex_sem {A} {Φ : A → cifOF CON $oi Σ} :
     bor_sem (cif_ex Φ) ⊣⊢ ∃ a, bor_sem (Φ a).
   Proof. done. Qed.
+
+  (** Hence the formula language of [typing/ctx.v] *)
+  #[export] Program Instance typeFml_cif : TypeFml (cifOF CON) Σ := {|
+    false_fml := cif_pure False;
+    pure_fml := (λ φ, cif_pure φ);
+    ex_fml := (λ A Φ, cif_ex Φ);
+    guard_fml := cif_guard;
+    alive_fml := cif_alive;
+    cells_fml := cif_cells;
+    ccells_fml := cif_ccells;
+    freeable_fml := cif_freeable;
+    pc_fml := cif_pc;
+    or_fml := cif_or;
+    vo_fml := cif_vo;
+    idxbor_fml := cif_idxbor;
+    dead_fml := cif_dead;
+    cmapstoany_fml := cif_cmapstoany;
+  |}.
+  Next Obligation. done. Qed.
+  Next Obligation. move=> ?. exact cif_pure_sem. Qed.
+  Next Obligation. move=> *. exact cif_ex_sem. Qed.
+  Next Obligation. move=> ?????. by apply cif_ex_ne. Qed.
+  Next Obligation. move=> ?. exact cif_alive_sem. Qed.
+  Next Obligation. move=> *. exact cif_cells_sem. Qed.
+  Next Obligation. move=> *. exact cif_ccells_sem. Qed.
+  Next Obligation. move=> *. exact cif_freeable_sem. Qed.
+  Next Obligation. move=> *. exact cif_pc_sem. Qed.
+  Next Obligation. move=> *. exact cif_or_sem. Qed.
+  Next Obligation. move=> *. exact cif_vo_sem. Qed.
+  Next Obligation. move=> ?. exact cif_dead_sem. Qed.
+  Next Obligation. move=> ?. exact cif_cmapstoany_sem. Qed.
 End model.
 
 (** ** What is left, and the one thing in the way
