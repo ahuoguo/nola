@@ -499,7 +499,7 @@ Section type_sum.
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
     rewrite xsum_gho_pers_pinj.
     iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
-    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "ξBorFull".
+    iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBorFull".
     iAssert (bor_sem (gsrc_fml (GFrac γ q)) &&{Wguard}&&> @[κ])%I as "#Gκx".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ q))). iApply "Gκ". }
     iDestruct (llftl_bor_acc_guarded ⊤ (gsrc_fml (GFrac γ q)) κ
@@ -548,7 +548,7 @@ Section type_sum.
       [set_solver|].
     iMod ("B'" with "W") as "[W [Bor f]]".
     iDestruct (gsrc_fml_sem_1 (s := GFrac γ q) with "f") as "f".
-    rewrite (llftl_bor_idx κ (uniq_body_fml (tyl +!! i) x1 ζi tid
+    rewrite (idxbor_fml_of_bor (κ:=κ) (Px:=uniq_body_fml (tyl +!! i) x1 ζi tid
       (cloc_take (cloc_skip l 1) (ty_size (tyl +!! i))))).
     iDestruct "Bor" as (ζidx) "[#ζBor ζTok]".
     iDestruct (dguard_rhs_iff

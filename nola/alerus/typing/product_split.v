@@ -357,7 +357,7 @@ Section product_split.
       iDestruct (guard_acc with "G3 f1 Wg") as "[Alive _]".
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
     iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
-    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "ξBorFull".
+    iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBorFull".
     iAssert (bor_sem (gsrc_fml (GFrac γ (1/2))) &&{Wguard}&&> @[κ])%I
       as "#Gκx".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ (1/2)))). iApply "Gκ". }
@@ -422,11 +422,11 @@ Section product_split.
     iMod ("C'" with "W") as "[W [Bor1 Bor2]]".
     iDestruct (Ltok_split_2 with "[$key $f1] [$key $f2]") as "tok".
     iMod (Ltok_withdraw with "tok W") as "[W L]".
-    rewrite (llftl_bor_idx κ
-      (uniq_body_fml ty x0 ζi tid (cloc_take l ty.(ty_size)))).
+    rewrite (idxbor_fml_of_bor (κ:=κ)
+      (Px:=uniq_body_fml ty x0 ζi tid (cloc_take l ty.(ty_size)))).
     iDestruct "Bor1" as (ζidx) "[#ζBor ζTok]".
-    rewrite (llftl_bor_idx κ
-      (uniq_body_fml ty' y0 ζ'i tid (cloc_skip l ty.(ty_size)))).
+    rewrite (idxbor_fml_of_bor (κ:=κ)
+      (Px:=uniq_body_fml ty' y0 ζ'i tid (cloc_skip l ty.(ty_size)))).
     iDestruct "Bor2" as (ζ'idx) "[#ζ'Bor ζ'Tok]".
     have HsplitPt : ∀ sem', alt_sem sem' →
       sem' (cmapstoany_fml l) ⊣⊢

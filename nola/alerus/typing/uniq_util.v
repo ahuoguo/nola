@@ -92,7 +92,7 @@ Section uniq_util.
 
   Definition uniq_body_pers_component {𝔄} (ty: type 𝔄) (x: ~~𝔄)
     (ξi: positive) (d g: nat) (idx: Idx) (κ: lft) (tid: thread_id) (l: cloc)
-    : iProp Σ := &{κ, idx} (uniq_body_fml ty x ξi tid l).
+    : iProp Σ := bor_sem (idxbor_fml κ idx (uniq_body_fml ty x ξi tid l)).
 
   (** The original also carries [⧗1], the credit its clients spend on the
     [▷] in front of the borrowed contents.  There is none here. *)
@@ -147,7 +147,7 @@ Section uniq_util.
     { by iApply (uniq_body_fml_sem_2 with "ξPc gho pt"). }
     iDestruct (bupdw_incl (W:=alerus_wsat) with "B") as "B'".
     iMod ("B'" with "W") as "[$ [Bor Back]]".
-    rewrite llftl_bor_idx. iDestruct "Bor" as (idx) "[Bor Tok]".
+    rewrite idxbor_fml_of_bor. iDestruct "Bor" as (idx) "[Bor Tok]".
     iModIntro. iExists ξi, ζi, idx. iFrame "ζObs Bor Tok ξVo".
     iIntros "†". by iApply (bupdw_incl (W:=alerus_wsat) with "(Back †)").
   Qed.
@@ -174,7 +174,8 @@ Section uniq_util.
     llft_ctx -∗ &{κ} Px =[alerus_wsat]=∗ (@[κ] &&{Wguard}&&> bor_sem Px).
   Proof.
     iIntros "#LFT Bor W".
-    rewrite llftl_bor_idx. iDestruct "Bor" as (idx) "[#Bor Tok]".
+    rewrite idxbor_fml_of_bor. iDestruct "Bor" as (idx) "[#Borx Tok]".
+    iDestruct (idxbor_fml_sem_1 with "Borx") as "#Bor".
     iDestruct (llftl_borrow_shared κ (idx_bor_tok_fml idx) with "[Tok]")
       as "Sh"; [by rewrite idx_bor_tok_fml_sem|].
     iDestruct (bupdw_incl (W:=alerus_wsat) with "Sh") as "Sh'".
@@ -237,35 +238,6 @@ Section uniq_util.
     iApply (dincl_trans with "Incl Incl2").
   Qed.
 
-  Lemma incl_uniq_body_pers_component {𝔄} (ty ty': type 𝔄)
-      x ξi d g idx κ κ' tid l :
-    κ' ⊑ κ -∗
-    □ (∀ y e h t, ty_gho ty y e h t ↔ ty_gho ty' y e h t) -∗
-    (∀ y t, ⌜ty_phys ty y t = ty_phys ty' y t⌝) -∗
-    uniq_body_pers_component ty x ξi d g idx κ tid l -∗
-    uniq_body_pers_component ty' x ξi d g idx κ' tid l.
-  Proof.
-    iIntros "#InLft #EqOwn %EqPhys Pc". rewrite /uniq_body_pers_component.
-    iApply (llftl_idx_shorten with "InLft").
-    iApply (llftl_idx_bor_iff with "[] Pc"). iIntros "!>".
-    rewrite !uniq_body_fml_sem. iSplit.
-    - iIntros "(%y & %e & %h & Pc & gho & pt)". iExists y, e, h.
-      rewrite EqPhys. iFrame "Pc pt". by iApply "EqOwn".
-    - iIntros "(%y & %e & %h & Pc & gho & pt)". iExists y, e, h.
-      rewrite EqPhys. iFrame "Pc pt". by iApply "EqOwn".
-  Qed.
-
-  Lemma incl_uniq_body {𝔄} (ty ty': type 𝔄) x ξi d g idx κ κ' tid l :
-    κ' ⊑ κ -∗
-    □ (∀ y e h t, ty_gho ty y e h t ↔ ty_gho ty' y e h t) -∗
-    (∀ y t, ⌜ty_phys ty y t = ty_phys ty' y t⌝) -∗
-    uniq_body ty x ξi d g idx κ tid l -∗
-    uniq_body ty' x ξi d g idx κ' tid l.
-  Proof.
-    iIntros "#InLft #EqOwn %EqPhys (A & Tok & Pc)". iFrame "A Tok".
-    by iApply (incl_uniq_body_pers_component with "InLft EqOwn [] Pc").
-  Qed.
-
   (** Bumping the depth indices of a unique borrow.
 
     The original's [⧖(S d' `max` g')] and its credit disappear with the time
@@ -281,8 +253,9 @@ Section uniq_util.
     move=> HE ??. iIntros "#LFT #UNIQ #Gκ [#key tok] (ξVo & ξTok & #ξBor) W".
     iAssert (bor_sem (gsrc_fml (GFrac γ q)) &&{Wguard}&&> @[κ])%I as "#Gκ'".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ q))). iApply "Gκ". }
+    iDestruct (idxbor_fml_sem_1 with "ξBor") as "#ξBor1".
     iDestruct (llftl_bor_idx_acc_guarded E (gsrc_fml (GFrac γ q)) κ idx
-      with "LFT ξBor ξTok Gκ' [tok]") as "A".
+      with "LFT ξBor1 ξTok Gκ' [tok]") as "A".
     { by iApply (gsrc_fml_sem_2 (s := GFrac γ q)). }
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=E) with "A") as "A'";
       [done|].
@@ -344,7 +317,7 @@ Section uniq_util.
     { iApply (guard_trans with "[] Gκ").
       iApply (guard_rhs_iff (gsrc_fml_sem (GFrac γ (q/2)))). iApply "Sh0". }
     (* Freeze the three existentials away. *)
-    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "Bor".
+    iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor".
     iDestruct (llftl_bor_freeze F κ
       (λ y, ex_fml (λ e, ex_fml (λ h, uniq_body_at_fml ty x ξi y e h tid l)))
       (uniq_body_fml ty x ξi tid l) (ex_fml_sem _) with "LFT Bor") as "Fr".
@@ -495,7 +468,8 @@ Section uniq_util.
     iDestruct (guard_rhs_sep_l with "Guniq") as "#Gvo".
     iDestruct (guard_rhs_sep_r with "Guniq") as "#Guniq2".
     iDestruct (guard_rhs_sep_l with "Guniq2") as "#Gtok".
-    iDestruct (llftl_idx_bor_guard' with "LFT Bor Gk Gtok") as "#Ginner".
+    iDestruct (idxbor_fml_sem_1 with "Bor") as "#Bor1".
+    iDestruct (llftl_idx_bor_guard' with "LFT Bor1 Gk Gtok") as "#Ginner".
     iDestruct (guard_rhs_sep_r with "Ginner") as "#Ginner2".
     iDestruct (guard_rhs_iff (uniq_body_fml_sem ty x ξi tid l) with "Ginner2")
       as "#Ginner3".
@@ -527,7 +501,7 @@ Section uniq_util.
   Proof.
     move=> ? HE.
     iIntros "#LFT #PROPH #UNIQ wand #Gκ [#key f] (ξVo & ξTok & #ξBor) W".
-    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "Bor".
+    iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor".
     iAssert (bor_sem (gsrc_fml (GFrac γ q)) &&{Wguard}&&> @[κ])%I as "#Gκ'".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ q))). iApply "Gκ". }
     iDestruct (llftl_bor_acc_guarded E (gsrc_fml (GFrac γ q)) κ
@@ -569,7 +543,7 @@ Section uniq_util.
     iMod ("A'" with "W") as "[W [Bor2 f]]".
     iDestruct (gsrc_fml_sem_1 (s := GFrac γ q) with "f") as "f".
     iModIntro. iFrame "W".
-    rewrite llftl_bor_idx. iDestruct "Bor2" as (ζidx) "[ζBor ζTok]".
+    rewrite idxbor_fml_of_bor. iDestruct "Bor2" as (ζidx) "[ζBor ζTok]".
     iExists ζi, ζidx. iFrame "EqObs key f ζVo ζTok ζBor".
   Qed.
 
@@ -585,7 +559,7 @@ Section uniq_util.
       uniq_body ty x ξi d g idx κ tid l.
   Proof.
     rewrite /uniq_body_fmlx /uniq_body /uniq_body_pers_component !bor_sep_sem
-      vo_fml_sem idx_bor_tok_fml_sem idxbor_fml_sem //.
+      vo_fml_sem idx_bor_tok_fml_sem //.
   Qed.
 
   (** [guard_inner_from_guard_uniq_body] for *stored* guards: the inner
@@ -612,7 +586,7 @@ Section uniq_util.
     iDestruct (guard_rhs_sep_l with "Gu2") as "#Gtok0".
     iDestruct (guard_rhs_iff (idx_bor_tok_fml_sem_at Hs ξidx) with "Gtok0")
       as "#Gtok".
-    rewrite /uniq_body_pers_component -idxbor_fml_sem.
+    rewrite /uniq_body_pers_component.
     iDestruct (idxbor_fml_into alt_here Hs Hi with "Bor") as "#Bor'".
     iDestruct (idxbor_fml_guard_at Hs κ ξidx _ (sem' Gx)
       with "Bor' Gκ Gtok") as "#Ginner".

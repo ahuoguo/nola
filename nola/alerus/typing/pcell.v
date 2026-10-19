@@ -448,7 +448,7 @@ Section typing.
     destruct cl' as [cl'1 cs']. destruct cs' as [|cs'0 cs']; last first.
     { (* the permission's own cell list is empty, so this cannot happen *)
       iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
-      iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "Bor".
+      iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor".
       iAssert (bor_sem (gsrc_fml (GFrac γ 1)) &&{Wguard}&&> @[κ])%I as "#Gκx".
       { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ 1))). iApply "Gκ". }
       iDestruct (llftl_bor_acc_guarded ⊤ (gsrc_fml (GFrac γ 1)) κ
@@ -677,8 +677,9 @@ Section typing.
     destruct cls as [|cs1 [|??]]; simpl in Hlen'; [done| |done].
     (* open the unique borrow over the permission *)
     iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
+    iDestruct (idxbor_fml_sem_1 with "ξBor") as "#ξBor1".
     iDestruct (llftl_bor_idx_acc_guarded ⊤ (gsrc_fml (GFrac γl (1/2))) κ ξidx
-      with "LFT ξBor ξTok Gκ' [fa]") as "A".
+      with "LFT ξBor1 ξTok Gκ' [fa]") as "A".
     { by iApply (gsrc_fml_sem_2 (s := GFrac γl (1/2))). }
     iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
     iMod ("A'" with "W") as "[W [Inner Back]]".
@@ -811,8 +812,9 @@ Section typing.
     destruct cl as [cll cls]. simpl in Hlen', Heval.
     destruct cls as [|cs1 [|??]]; simpl in Hlen'; [done| |done].
     iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
+    iDestruct (idxbor_fml_sem_1 with "ξBor") as "#ξBor1".
     iDestruct (llftl_bor_idx_acc_guarded ⊤ (gsrc_fml (GFrac γl (1/2))) κ ξidx
-      with "LFT ξBor ξTok Gκ' [fa]") as "A".
+      with "LFT ξBor1 ξTok Gκ' [fa]") as "A".
     { by iApply (gsrc_fml_sem_2 (s := GFrac γl (1/2))). }
     iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
     iMod ("A'" with "W") as "[W [Inner Back]]".

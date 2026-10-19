@@ -98,7 +98,7 @@ Section uniq_bor.
   Next Obligation.
     move=> 𝔄 κ ty κ0 [[[[[l x0] ξi] d'] g'] idx] d g tid ξ R Hin. rewrite /=.
     rewrite !bor_sep_sem !pure_fml_sem !or_fml_sem !basically_dead_fml_sem
-      !idxbor_fml_sem ?alive_fml_sem ?cmapstoany_fml_sem
+      ?alive_fml_sem ?cmapstoany_fml_sem
       !vo_fml_sem !idx_bor_tok_fml_sem.
     iIntros "#LFT #Incl1 (%Hle & #Pers & #Bor) #Rk #Rg".
     iAssert (κ0 ⊑ κ)%I as "#Inκ".
@@ -126,7 +126,8 @@ Section uniq_bor.
       iFrame. }
     iAssert (R &&{Wguard}&&> @[κ])%I as "#Rκ".
     { iApply (guard_trans with "Rk Inκ"). }
-    iDestruct (llftl_idx_bor_guard' κ idx _ R with "LFT Bor Rκ Rtok")
+    iDestruct (idxbor_fml_sem_1 with "Bor") as "#Bor1".
+    iDestruct (llftl_idx_bor_guard' κ idx _ R with "LFT Bor1 Rκ Rtok")
       as "#Ginner".
     iDestruct (guard_rhs_sep_r with "Ginner") as "#Ginner2".
     iDestruct (guard_rhs_iff (uniq_body_fml_sem ty x0 ξi tid l) with "Ginner2")
@@ -155,7 +156,7 @@ Section uniq_bor.
   Next Obligation.
     move=> 𝔄 κ ty [[[[[l x0] ξi] d'] g'] idx] d g tid. rewrite /=.
     rewrite !bor_sep_sem !pure_fml_sem !or_fml_sem !basically_dead_fml_sem
-      !idxbor_fml_sem ?alive_fml_sem ?cmapstoany_fml_sem
+      ?alive_fml_sem ?cmapstoany_fml_sem
       !vo_fml_sem !idx_bor_tok_fml_sem.
     iIntros "(_ & %B & (_ & _ & #C3) & _ & #E)".
     iFrame "E C3". iPureIntro. lia.
@@ -177,7 +178,7 @@ Section uniq_bor_sem.
   Proof.
     rewrite /ty_gho /uniq_body /uniq_body_pers_component /= !bor_sep_sem
       !pure_fml_sem !or_fml_sem !basically_dead_fml_sem
-      !vo_fml_sem !idx_bor_tok_fml_sem !idxbor_fml_sem //.
+      !vo_fml_sem !idx_bor_tok_fml_sem //.
   Qed.
   Lemma uniq_bor_gho_pers {𝔄} κ (ty: type 𝔄) l x0 ξi d' g' idx d g tid :
     ty_gho_pers (uniq_bor κ ty) (l, x0, ξi, d', g', idx) d g tid ⊣⊢
@@ -186,7 +187,7 @@ Section uniq_bor_sem.
       uniq_body_pers_component ty x0 ξi d' g' idx κ tid l.
   Proof.
     rewrite /ty_gho_pers /uniq_body_pers_component /= !bor_sep_sem
-      !pure_fml_sem !or_fml_sem !basically_dead_fml_sem !idxbor_fml_sem //.
+      !pure_fml_sem !or_fml_sem !basically_dead_fml_sem //.
   Qed.
 
   Global Instance uniq_bor_ne {𝔄} κ : NonExpansive (@uniq_bor _ _ _ 𝔄 κ).
@@ -381,8 +382,9 @@ Section uniq_bor_sem.
     iAssert (bor_sem (gsrc_fml (GFrac γ (q/2))) &&{Wguard}&&> @[κ])%I as "#Gκ'".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ (q/2)))). iApply "Gκ". }
     iDestruct (Ltok_split_1 with "[$key $f]") as "[[_ fa] [_ fb]]".
+    iDestruct (idxbor_fml_sem_1 with "Bor") as "#Bor1".
     iDestruct (llftl_bor_idx_acc_guarded ⊤ (gsrc_fml (GFrac γ (q/2))) κ idx
-      with "LFT Bor Tok Gκ' [fa]") as "A";
+      with "LFT Bor1 Tok Gκ' [fa]") as "A";
       [by iApply (gsrc_fml_sem_2 (s := GFrac γ (q/2)))|].
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "A") as "A'";
       [done|].
@@ -462,8 +464,9 @@ Section uniq_bor_sem.
     iAssert (bor_sem Hx &&{Wguard}&&> .VO[ξ] x0 (d', g'))%I as "#HGvo".
     { iApply (guard_lhs_iff HxS). iApply guard_intro.
       iIntros "!> (A & B & C)". iFrame "A". iIntros "A". iFrame. }
+    iDestruct (idxbor_fml_sem_1 with "Bor") as "#Bor1".
     iDestruct (llftl_idx_bor_guard' κ idx _ (bor_sem Hx)
-      with "LFT Bor HGκ HGtok") as "#Ginner".
+      with "LFT Bor1 HGκ HGtok") as "#Ginner".
     iDestruct (guard_rhs_sep_r with "Ginner") as "#Ginner2".
     iDestruct (guard_rhs_iff (uniq_body_fml_sem ty x0 ξi tid l) with "Ginner2")
       as "#Ginner3".
@@ -528,7 +531,7 @@ Section uniq_bor_typing.
     move=> tid tid' [[[[[l x0] ξi] d'] g'] idx] d g G κs.
     iIntros "#LFT #UNIQ lfts #gs K gho W". rewrite uniq_bor_gho.
     iDestruct "gho" as "(#Incl & %Hle & (ξVo & Tok & #Bor) & #PtBase & #Pers)".
-    iDestruct (llftl_bor_idx_to_full with "Bor Tok") as "Bor2".
+    iDestruct (idxbor_fml_to_full with "Bor Tok") as "Bor2".
     iDestruct (llftl_bor_acc NalerusE _ static with "LFT Bor2 []") as "A";
       [iApply llftl_tok_unit|].
     iDestruct (fupdw_incl_mask (W:=alerus_wsat_core) (E':=NalerusE) with "A")
@@ -551,7 +554,7 @@ Section uniq_bor_typing.
       by rewrite -(Hphys tid tid' x0 x' (eq_sym Habs)). }
     iDestruct (bupdw_incl (W:=alerus_wsat_core) with "B") as "B'".
     iMod ("B'" with "W") as "[W [Bor3 _]]".
-    rewrite llftl_bor_idx. iDestruct "Bor3" as (idx2) "[#Bor3 Tok3]".
+    rewrite idxbor_fml_of_bor. iDestruct "Bor3" as (idx2) "[#Bor3 Tok3]".
     iModIntro. iFrame "W". iExists (l, x', ξi, d' + off, g', idx2), off.
     iFrame "lfts K". rewrite uniq_bor_gho.
     iSplitL.

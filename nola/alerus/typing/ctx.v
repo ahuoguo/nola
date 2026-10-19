@@ -624,8 +624,10 @@ Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ} := {
   vo_fml_sem ξ x d : bor_sem (vo_fml ξ x d) ⊣⊢ .VO[ξ] x d;
   (** An indexed borrow, for the body of a unique reference *)
   idxbor_fml : lft → Idx → FML $oi Σ → FML $oi Σ;
-  idxbor_fml_sem κ idx Px :
-    bor_sem (idxbor_fml κ idx Px) ⊣⊢ idx_bor κ idx Px;
+  (** [idxbor_fml] has *no* [⊣⊢] semantics either: [idx_bor κ i Px] carries
+    [□ (bor_sem Px' ↔ bor_sem Px)] at an existentially quantified [Px'],
+    which is not a subformula.  Its elimination is [idxbor_fml_sem_1] and
+    its introduction [idxbor_fml_of_bor], both in [AltSem]. *)
   idxbor_fml_ne κ idx :: NonExpansive (idxbor_fml κ idx);
   (** A dead lifetime *)
   dead_fml : lft → FML $oi Σ;
@@ -667,9 +669,6 @@ Section type_fml.
   #[export] Instance pure_fml_persistent {φ} :
     Persistent (bor_sem (pure_fml φ)).
   Proof. rewrite pure_fml_sem. exact _. Qed.
-  #[export] Instance idxbor_fml_persistent {κ idx Px} :
-    Persistent (bor_sem (idxbor_fml κ idx Px)).
-  Proof. rewrite idxbor_fml_sem. exact _. Qed.
   #[export] Instance dead_fml_persistent {κ} :
     Persistent (bor_sem (dead_fml κ)).
   Proof. rewrite dead_fml_sem. exact _. Qed.
@@ -799,6 +798,16 @@ Class AltSem (FML : oFunctor) Σ
     here; see the note in README.md. *)
   idxbor_fml_pers_at {sem} : alt_sem sem → ∀ κ idx Px,
     Persistent (sem (idxbor_fml κ idx Px));
+  (** Eliminating a stored indexed borrow at the ambient interpretation.
+    [der_sound] in the model. *)
+  idxbor_fml_sem_1 {κ idx Px} :
+    bor_sem (idxbor_fml κ idx Px) ⊢ idx_bor κ idx Px;
+  (** Introducing one.  Splitting a full borrow into an index and a token
+    gives an indexed borrow whose [iff] is reflexivity and whose token does
+    not mention the interpretation, so it holds at every candidate - this is
+    where an indexed borrow can be stored in the first place. *)
+  idxbor_fml_of_bor {κ Px} :
+    full_bor κ Px ⊣⊢ ∃ idx, bor_sem (idxbor_fml κ idx Px) ∗ idx_bor_tok idx;
   (** [idx_bor_iff] at a candidate: an indexed borrow only cares about the
     semantics of its contents. *)
   idxbor_fml_iff_at {sem} : alt_sem sem → ∀ κ idx Px Qx,
@@ -923,6 +932,14 @@ Section alt_sem.
     [TypeFml] section cannot state this: [guard_fml] has no [⊣⊢] there. *)
   #[export] Instance guard_fml_persistent {Px Qx} :
     Persistent (bor_sem (guard_fml Px Qx)) := guard_fml_pers_at alt_here _ _.
+  #[export] Instance idxbor_fml_persistent {κ idx Px} :
+    Persistent (bor_sem (idxbor_fml κ idx Px)) :=
+    idxbor_fml_pers_at alt_here _ _ _.
+
+  (** A stored indexed borrow plus its token is a full borrow *)
+  Lemma idxbor_fml_to_full {κ idx Px} :
+    bor_sem (idxbor_fml κ idx Px) -∗ idx_bor_tok idx -∗ full_bor κ Px.
+  Proof. rewrite idxbor_fml_sem_1. apply llftl_bor_idx_to_full. Qed.
 
   (** Introduction *)
   Lemma dguard_of_all_at {sem} (H : alt_sem sem) {Px Qx} :
@@ -1282,7 +1299,7 @@ Create HintDb fml_sem.
 Global Hint Rewrite @false_fml_sem @pure_fml_sem @alive_fml_sem
   @cells_fml_sem @ccells_fml_sem @freeable_fml_sem @pc_fml_sem
   @mapsto_fml_sem @bor_sep_sem @empty_fml_sem @or_fml_sem @vo_fml_sem
-  @idxbor_fml_sem @dead_fml_sem @cmapstoany_fml_sem : fml_sem.
+  @dead_fml_sem @cmapstoany_fml_sem : fml_sem.
 Ltac fml_simpl := autorewrite with fml_sem.
 Ltac fml_simpl' := simpl; autorewrite with fml_sem.
 
