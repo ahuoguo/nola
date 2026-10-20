@@ -138,7 +138,45 @@ Section soundness.
     - by iIntros (? ?%elem_of_nil).
     - iApply proph_obs_true. move=> ?. apply Htr.
   Qed.
+
+  (** The original's conclusion: no data race, and no thread gets stuck.
+
+    It follows from the same hypothesis, through the partial weakest
+    precondition that the total one implies. *)
+  Theorem type_safety {𝔅} (e : expr) (tr : predl_trans' [] 𝔅) t σ :
+    (∀ post xl mask π, tr post xl mask π) →
+    (∀ H : alerusGS (cifOF CON) Σ,
+      ∃ (_ : Csem CON JUDG Σ) (_ : Jsem JUDG (iProp Σ))
+        (_ : typingCS CON JUDG Σ) (_ : typingJS CON JUDG Σ),
+      ⊢ typed_body [] [] (InvCtx [] static AtomicClosed) ([] : cctx 𝔅)
+          +[] e tr) →
+    rtc erased_step ([e], (∅, false)) (t, σ) →
+    nonracing_threadpool t σ ∧
+      (∀ e', e' ∈ t → is_Some (to_val e') ∨ reducible e' σ).
+  Proof.
+    move=> Htr big Hrtc.
+    cut (adequate NotStuck e (∅, false) (λ _ _, True)).
+    { split; [by eapply adequate_nonracing|].
+      move=> *. by eapply (adequate_not_stuck _ e). }
+    apply: (lrust_adequacy (s:=NotStuck) (φ:=λ _ _, True)).
+    move=> iG hGS.
+    iMod (alerus_wsat_alloc (invGS_gen0 := iG) hGS)
+      as (H) "[%eq1 [%eq2 (#PROPH & #UNIQ & →W)]]".
+    subst. move: (big H)=> [Cs [Js [CS [JS ty]]]].
+    iMod (invctx_alloc ⊤) as (tid) "I". iModIntro.
+    iExists (existT _ heapSem_cif), alerus_wsat.
+    iDestruct ("→W" $! Cs Js CS JS) as "[%Heq $]".
+    cbn [projT1 projT2]. rewrite Heq.
+    iApply (wp_wand with "[I]").
+    { iApply twpw_wpw. iApply (ty $! tid -[] ⊤ (λ _ _ _, True) [] with
+        "[] PROPH UNIQ [] [] I [] [] []"); try done;
+        [by rewrite /llctx_interp|by iIntros (? ?%elem_of_nil)|].
+      iApply proph_obs_true. move=> ?. apply Htr. }
+    iIntros (v) "_". iIntros (σ') "ctx W".
+    iApply fupd_mask_intro_discard; [set_solver|done].
+  Qed.
 End soundness.
 
-(** The theorem rests on nothing but the axioms Iris itself uses. *)
+(** The two theorems rest on nothing but the axiom Iris itself uses. *)
 Print Assumptions type_soundness.
+Print Assumptions type_safety.
