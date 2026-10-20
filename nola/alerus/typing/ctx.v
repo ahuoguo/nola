@@ -204,6 +204,35 @@ Class AlerusSem (FML : oFunctor) Σ `{!alerusGS FML Σ} : Type := AlerusSemI {
   #[global] alerus_emptySem :: EmptySem FML Σ;
 }.
 
+(** ** Candidate interpretations
+
+  A *candidate* carries a whole [AlerusSem], not just a function on formulas:
+  the guarding world satisfaction a guard lives at contains [llft_inv_main],
+  which the lifetime logic builds from the [BorSem] record, so it is not a
+  function of [bor_sem] alone.
+
+  It is *wrapped*, though.  [AlerusSem] is a class, so a candidate bound by a
+  [∀] would be an instance in its own scope and would shadow the ambient one
+  for every [bor_sem], [empty_fml], [bor_state_fml] … in the statement under
+  it.  [Cand] is a record with no instances, and the coercion below lets one
+  still write [sem Px]. *)
+Record Cand (FML : oFunctor) Σ `{!alerusGS FML Σ} : Type :=
+  MkCand { cand_asem : AlerusSem FML Σ }.
+Arguments MkCand {_ _ _} _. Arguments cand_asem {_ _ _} _.
+
+Definition cand_fun `{!alerusGS FML Σ} (S : Cand FML Σ)
+  : FML $oi Σ → iProp Σ :=
+  @bor_sem FML Σ (@alerus_borSem FML Σ _ (cand_asem S)).
+Coercion cand_fun : Cand >-> Funclass.
+
+#[export] Instance cand_ne `{!alerusGS FML Σ} {S : Cand FML Σ} :
+  NonExpansive S.
+Proof. rewrite /cand_fun. exact bor_sem_ne. Qed.
+
+(** The ambient candidate *)
+Definition alt_amb `{!alerusGS FML Σ, AS : !AlerusSem FML Σ} : Cand FML Σ :=
+  MkCand AS.
+
 Section alerus.
   Context `{!alerusGS FML Σ, !AlerusSem FML Σ}.
 
@@ -571,6 +600,16 @@ Section alerus.
   Qed.
 End alerus.
 
+(** The guarding world satisfaction at a candidate.  It is a function of the
+  whole [AlerusSem] the candidate carries - that is why a candidate is not a
+  bare function on formulas. *)
+Definition cand_WGuard `{!alerusGS FML Σ} (S : Cand FML Σ) : iProp Σ :=
+  @alerus_WGuard FML Σ _ (cand_asem S).
+Notation alt_WGuard := cand_WGuard.
+Lemma alt_WGuard_here `{!alerusGS FML Σ, !AlerusSem FML Σ} :
+  alt_WGuard alt_amb = alerus_WGuard.
+Proof. done. Qed.
+
 (** The formula language must express every guard source.
 
   Like [HeapSem] this is *not* a field of [alerusGS]: [gsrc_interp] is stated
@@ -781,15 +820,14 @@ Class AltSem (FML : oFunctor) Σ
     StBor0 : !StBor FML Σ, StBorSem0 : !StBorSem} := {
   (** [sem] is a candidate interpretation.  In the model, [Deriv ih sem]:
     [sem] is a good derivability predicate. *)
-  alt_sem : (FML $oi Σ → iProp Σ) → Prop;
+  alt_sem : Cand FML Σ → Prop;
   (** [alt_into sem sem']: a judgment stored at [sem] can be read at [sem'].
     Nola's [dinto δ δ'], which [Deriv_factor'] hands out. *)
-  alt_into : (FML $oi Σ → iProp Σ) → (FML $oi Σ → iProp Σ) → Prop;
+  alt_into : Cand FML Σ → Cand FML Σ → Prop;
   (** The guarding world satisfaction at a candidate *)
-  alt_WGuard : (FML $oi Σ → iProp Σ) → iProp Σ;
   (** The ambient interpretation is a candidate and is its own guarding world
     satisfaction; every candidate maps into itself *)
-  alt_here : alt_sem bor_sem;
+  alt_here : alt_sem alt_amb;
   (** The ambient interpretation maps into itself.
 
     **Only** the ambient one.  In the model [alt_into δ δ'] is Nola's
@@ -799,13 +837,12 @@ Class AltSem (FML : oFunctor) Σ
     can be eliminated at the ambient interpretation and nowhere else; a
     candidate only ever *receives* judgments stored at the ambient one,
     by instantiating the family that [dincl] is. *)
-  alt_into_here : alt_into bor_sem bor_sem;
+  alt_into_here : alt_into alt_amb alt_amb;
   (** Every candidate can read a judgment stored at the ambient
     interpretation.  In the model the candidates are the derivability
     candidates [δ'] with [dinto der δ'], which [Deriv_factor']'s induction
     hypothesis carries along. *)
 
-  alt_WGuard_here : alt_WGuard bor_sem = alerus_WGuard;
   alt_sem_ne {sem} : alt_sem sem → NonExpansive sem;
   (** The non-judgment constructors mean the same at every candidate *)
   sep_sem_at {sem} : alt_sem sem → ∀ Px Qx,
@@ -1008,10 +1045,11 @@ Section alt_sem.
     (∀ sem', ⌜alt_sem sem'⌝ → ⌜alt_into sem sem'⌝ →
       sem' Px &&{alt_WGuard sem'}&&> sem' Qx) ⊢ sem (guard_fml Px Qx).
   Proof. exact: guard_fml_sem_2. Qed.
-  Lemma dguard_of_all {Px Qx} :
-    (∀ sem', ⌜alt_sem sem'⌝ → ⌜alt_into bor_sem sem'⌝ →
-      sem' Px &&{alt_WGuard sem'}&&> sem' Qx) ⊢ dguard Px Qx.
-  Proof. exact: (dguard_of_all_at alt_here). Qed.
+  (** [dguard_of_all_at] at the ambient interpretation.  Note it is not
+    stated separately: writing the ambient candidate in a statement that
+    also binds a candidate would have the binder shadow it, since any
+    [AlerusSem] in scope is an instance. *)
+  Notation dguard_of_all := (dguard_of_all_at alt_here).
 
   (** ** Building stored guards out of stored guards *)
 
@@ -1490,6 +1528,9 @@ Section alt_sem.
     llft_ctx -∗ full_bor κ Px =[alerus_wsat]=∗ dguard (alive_fml κ) Px.
   Proof. exact guard_fml_of_bor. Qed.
 End alt_sem.
+
+(** [dguard_of_all_at] at the ambient interpretation *)
+Notation dguard_of_all := (dguard_of_all_at alt_here).
 
 Global Typeclasses Opaque dguard_all fguardx dincl.
 

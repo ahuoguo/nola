@@ -643,12 +643,12 @@ Section uniq_bor_typing.
       γ L q fⁱ _ Hmask with "LFT PROPH UNIQ [] Gκ [$key $f] UniqBody W")
       as "[W (%ζi & %ζidx & #Obs2 & UniqBody & tok)]".
     { iIntros "[gho pt]". iModIntro.
-      iDestruct ("EqGho" $! bor_sem alt_here x0 d' g' tid) as "[G1 _]".
+      iDestruct ("EqGho" $! _ alt_here x0 d' g' tid) as "[G1 _]".
       iDestruct ("G1" with "gho") as "$". rewrite EqPhys. iFrame "pt".
       iIntros (z e h) "[gho pt]". iModIntro. iExists e, h.
       rewrite EqPhys
         (semi_iso' (syn_type_morphism_fn fⁱ) (syn_type_morphism_fn f)).
-      iFrame "pt". iDestruct ("EqGho" $! bor_sem alt_here (fⁱ ~~$ₛ z) e h tid) as "[_ G2]".
+      iFrame "pt". iDestruct ("EqGho" $! _ alt_here (fⁱ ~~$ₛ z) e h tid) as "[_ G2]".
       iApply "G2".
       rewrite (semi_iso' (syn_type_morphism_fn fⁱ) (syn_type_morphism_fn f)).
       iFrame "gho". }
@@ -662,7 +662,7 @@ Section uniq_bor_typing.
       iSplitR; [iPureIntro; lia|]. iFrame "UniqBody".
       iSplitR; [iApply "PtBase"|].
       iDestruct "Pers" as "[Dead|P]"; [by iLeft|iRight].
-      by iDestruct ("EqPers" $! bor_sem alt_here x0 d' g' tid) as "[G _]"; iApply "G". }
+      by iDestruct ("EqPers" $! _ alt_here x0 d' g' tid) as "[G _]"; iApply "G". }
     iApply (proph_obs_impl with "Obs3")=> π [Ha Hb]. apply Ha; [done|done|].
     rewrite /uniq_bor_future /=. by rewrite Hb semi_iso'.
   Qed.

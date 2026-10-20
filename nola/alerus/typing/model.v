@@ -814,20 +814,69 @@ Section altSem.
   Context `{!typingC CON} {JUDG Σ} `{!alerusGS (cifOF CON) Σ,
     !typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
     !typingCS CON JUDG Σ, !typingJS CON JUDG Σ}.
-  Implicit Type sem : cifOF CON $oi Σ → iProp Σ.
+  Implicit Type S : Cand (cifOF CON) Σ.
 
-  Definition alt_sem_cif sem : Prop :=
-    ∃ δ : JUDG -n> iProp Σ, Deriv (λ _, True) δ ∧ ∀ Px, sem Px = ⟦ Px ⟧ᶜ(δ).
-  Definition alt_into_cif sem sem' : Prop :=
-    ∀ Px Qx, sem (cif_guard Px Qx) ⊢
-      sem' Px &&{alerus_WGuard_of sem'}&&> sem' Qx.
+  (** A candidate is an interpretation at a good derivability predicate *)
+  Definition alt_sem_cif S : Prop :=
+    ∃ δ : JUDG -n> iProp Σ, Deriv (λ _, True) δ ∧ cand_asem S = AlerusSem_at δ.
+  Definition alt_into_cif S S' : Prop :=
+    ∀ Px Qx, S (cif_guard Px Qx) ⊢
+      S' Px &&{alt_WGuard S'}&&> S' Qx.
 
   (** The ambient interpretation is a candidate *)
-  Lemma alt_sem_cif_here : alt_sem_cif bor_sem.
+  Lemma alt_sem_cif_here : alt_sem_cif alt_amb.
   Proof. exists der. split; [exact _|done]. Qed.
 
-  (** A candidate's interpretation, recovered *)
-  Lemma alt_sem_cif_eq {sem} (H : alt_sem_cif sem) :
-    ∃ δ : JUDG -n> iProp Σ, Deriv (λ _, True) δ ∧ ∀ Px, sem Px = ⟦ Px ⟧ᶜ(δ).
-  Proof. exact H. Qed.
+  (** Replace a candidate by the derivability predicate behind it *)
+  Local Ltac alt_at H :=
+    let d := fresh "δ" in let Hd := fresh "Hδ" in let Heq := fresh "Heq" in
+    destruct H as (d & Hd & Heq); rewrite /cand_fun /alt_WGuard /= ?Heq.
+
+  (** *** The non-judgment constructors mean the same at every candidate *)
+  Lemma sep_sem_cif {S} (H : alt_sem_cif S) Px Qx :
+    S (cif_sep Px Qx) ⊣⊢ S Px ∗ S Qx.
+  Proof. alt_at H. exact cif_sem_sep. Qed.
+  Lemma false_sem_cif {S} (H : alt_sem_cif S) :
+    S (cif_pure False : cifOF CON $oi Σ) ⊣⊢ False.
+  Proof. alt_at H. done. Qed.
+  Lemma empty_sem_cif {S} (H : alt_sem_cif S) :
+    S (cif_pure True : cifOF CON $oi Σ) ⊣⊢ True.
+  Proof. alt_at H. done. Qed.
+  Lemma pure_sem_cif {S} (H : alt_sem_cif S) φ :
+    S (cif_pure φ : cifOF CON $oi Σ) ⊣⊢ ⌜φ⌝.
+  Proof. alt_at H. done. Qed.
+  Lemma ex_sem_cif {S} (H : alt_sem_cif S) A (Φ : A → cifOF CON $oi Σ) :
+    S (cif_ex Φ) ⊣⊢ ∃ a, S (Φ a).
+  Proof. alt_at H. done. Qed.
+  Lemma or_sem_cif {S} (H : alt_sem_cif S) Px Qx :
+    S (cif_or Px Qx) ⊣⊢ S Px ∨ S Qx.
+  Proof. alt_at H. done. Qed.
+  Lemma alive_sem_cif {S} (H : alt_sem_cif S) κ : S (cif_alive κ) ⊣⊢ @[κ].
+  Proof. alt_at H. exact cif_alive_sem_at. Qed.
+  Lemma dead_sem_cif {S} (H : alt_sem_cif S) κ : S (cif_dead κ) ⊣⊢ [†κ].
+  Proof. alt_at H. exact cif_dead_sem_at. Qed.
+  Lemma cells_sem_cif {S} (H : alt_sem_cif S) l cs fv :
+    S (cif_cells l cs fv) ⊣⊢ l ↦[^ cs ]!∗ fv.
+  Proof. alt_at H. exact cif_cells_sem_at. Qed.
+  Lemma ccells_sem_cif {S} (H : alt_sem_cif S) l fv :
+    S (cif_ccells l fv) ⊣⊢ l #↦!∗ fv.
+  Proof. alt_at H. exact cif_ccells_sem_at. Qed.
+  Lemma cmapstoany_sem_cif {S} (H : alt_sem_cif S) l :
+    S (cif_cmapstoany l) ⊣⊢ l #↦∗_.
+  Proof. alt_at H. exact cif_cmapstoany_sem_at. Qed.
+  Lemma freeable_sem_cif {S} (H : alt_sem_cif S) n sz l :
+    S (cif_freeable n sz l) ⊣⊢ freeable_sz n sz l.
+  Proof. alt_at H. exact cif_freeable_sem_at. Qed.
+  Lemma vo_sem_cif {S} (H : alt_sem_cif S) ξ x d :
+    S (cif_vo ξ x d) ⊣⊢ .VO[ξ] x d.
+  Proof. alt_at H. exact cif_vo_sem_at. Qed.
+  Lemma pc_sem_cif {S} (H : alt_sem_cif S) ξ x vπ d :
+    S (cif_pc ξ x vπ d) ⊣⊢ .PC[ξ] x vπ d.
+  Proof. alt_at H. exact cif_pc_sem_at. Qed.
+  Lemma gsrc_sem_cif {S} (H : alt_sem_cif S) s :
+    S (cif_gsrc s) ⊣⊢ gsrc_interp s.
+  Proof. alt_at H. exact cif_gsrc_sem_at. Qed.
+  Lemma bor_state_sem_cif {S} (H : alt_sem_cif S) sn bs :
+    S (cif_bor_state sn bs) ⊣⊢ bor_sem (cif_bor_state sn bs).
+  Proof. alt_at H. rewrite /bor_sem /= !cif_bor_state_sem //. Qed.
 End altSem.

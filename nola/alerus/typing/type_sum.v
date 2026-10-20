@@ -890,7 +890,7 @@ Section type_sum.
       iFrame "↦1 ↦2". iSplitL.
       { iAssert (ty_own () () d' (S d') tid []) as "Hu";
           [by rewrite unit_ty_own|]. iDestruct "Hu" as "[Hu _]".
-        iDestruct ("Sgho" $! bor_sem alt_here () d' (S d') tid with "Hu") as "[$ _]". }
+        iDestruct ("Sgho" $! _ alt_here () d' (S d') tid with "Hu") as "[$ _]". }
       iPureIntro. rewrite /ty_phys /xsum_ty /= to_xsum_pinj -Sphys /=.
       apply pad_length'. rewrite /= length_fmap Hlen2.
       rewrite Eq in Sz. simpl in Sz. simpl. lia. }
