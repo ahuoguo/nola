@@ -106,29 +106,43 @@ the other half of the same divergence.
 
 ## Next
 
-0. **Close the model.**  Four steps, in order; `lifetime_full.v` is not
-   touched, because the lifetime logic is *instantiated at the candidate*
-   rather than rewritten.
+0. **Close the model.**  Step (a) is done.  The order of the rest is forced,
+   and not the one first written here.
 
-   a. `st_incl` becomes a token, per-atom:
-      `st_incl κ κ' := ∃ E, ⌜κ' ⊆ κ ∪ E⌝ ∗ [∗ set] a ∈ E, eternal_tok {[a]}`.
-      `st_incl_at` follows from `llftl_incl_sub` on `κ' ∩ κ` and a
-      `llftl_incl_glb` fold of `eternal_tok_guard` over `κ' ∖ κ`.  Drop
-      `st_incl_of_all`, and with it `dincl_fguardx` and the one use in
-      `function.v`.
-   b. `stBor_cif` takes the candidate: `st_iff := λ Px Qx, □ (⟦Px⟧ᶜ(δ) ↔
-      ⟦Qx⟧ᶜ(δ))`, so `idxborJT_sem` **applies** δ instead of being constant
-      in it.  `idxbor_fml_iff_at` takes `bor_wand`'s shape (`alt_into sem
-      sem'`) and `idxbor_fml_guard_into` gains `alt_into alt_amb sem`; both
-      call sites in `uniq_util.v` already have what that asks for.
-   c. `inclJT` can go away entirely - a token needs no judgment, so
-      `inclCT`'s `Ecsem` returns `st_incl` directly.
-   d. `inst.v`'s `Csem` and `Jsem`, which are then mechanical: `sigTCT_Csem`
-      from the `Ecsem`s, `sigT_dsem` from the two remaining judgments.
+   a. **Done.**  `st_incl` is a token:
+      `st_incl κ κ' := ∃ S, ⌜covers κ S κ'⌝ ∧ eternal_lfts S` - every atom of
+      `κ'` is supplied by `κ` or covered by one of a finite set of
+      eternalized lifetimes.  `st_incl_cif_at` derives the guard at any
+      candidate from `llftl_incl_sub` on the supplied part and a
+      `llftl_incl_glb` fold of `eternal_tok_guard` over the covered part.
+      `st_incl_of_all` moved to `FnFml` as `fn_incl_of_all`, beside
+      `fn_fml_sem_2`: its one use creates a fresh lifetime whose aliveness is
+      guarded by the caller's context, which is neither of the two shapes a
+      token records.  `AltSem` is otherwise untouched.
+   b. **`Send`/`Sync` become `≡` on formulas**, as `rust_halt` has them
+      (`send : ty_own T t d xπ vl ≡ ty_own T t' d xπ vl`).  This is the
+      prerequisite, not the optional extra it was listed as.  `st_iff` only
+      has to lose its `⌜Deriv ⊤ δ⌝` for `Jsem` to be definable - that much is
+      a three-line change - but then `idxbor_fml_iff_at`'s premise has to
+      hold at *every* interpretation, candidate or not, and a semantic
+      `∀ sem, alt_sem sem → sem … ⊣⊢ sem …` cannot supply that: at a
+      non-candidate there is no `Deriv_map`, so neither `uniq_sync` nor
+      `shr_sync` goes through.  With `≡` every instance is a congruence,
+      because each type former builds its formula from `ty_ghox` by
+      non-expansive constructors - which is exactly why `rust_halt` can
+      state them that way.  21 instances.
+   c. `st_iff` drops `⌜Deriv ⊤ δ⌝`; `idxbor_fml_iff_at` and the definitional
+      `*_sem_at` fields quantify over interpretations rather than candidates.
+   d. `inclJT` goes away - `inclJT_sem` already mentions no `JUDG` after (a),
+      so `inclCT`'s `Ecsem` can return `st_incl` directly.
+   e. `inst.v`'s `Csem` and `Jsem`, then mechanical.
 
-   Not needed, but worth doing afterwards: `Send`/`Sync` to `≡` on formulas,
-   as `rust_halt` has them.  It is strictly stronger and removes their use of
-   `idxbor_fml_iff_at` outright.
+   What (b) and (c) cost is `uniq_subtype` for types whose difference is
+   itself behind a judgment: the inner alteration has to hold at
+   non-candidates, so a nested `&uniq{κ} (&uniq{κ'} ty)` subtyping does not
+   go through.  That is the precise price, and it is smaller than the one
+   first recorded (the `&uniq` rule keeps semantic type equality in general).
+
 1. **`fn` must be stratified by an execution level** (thesis (5.4),
    § 3.4.1).  `FnFml`'s `fn_fml_sem_2` has no model and must not be
    discharged as it stands, so `fn` is the one type former the model does

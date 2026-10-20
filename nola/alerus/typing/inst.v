@@ -160,22 +160,56 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
   survives.  [nola/examples/rust_halt]'s [ty_mutref] never needs the
   alteration only because mutable references are invariant there.
 
+  *** What the two moves really depend on
+
+  Move (1) is done.  Move (2) turns out to need less than it looked for
+  [Jsem] and more than it looked everywhere else.
+
+  For [Jsem] it is enough that [st_iff] drop its [⌜Deriv (λ _, True) δ⌝]:
+
+    [st_iff Px Qx := □ ∀ δ, ⟦ Px ⟧ᶜ(δ) ↔ ⟦ Qx ⟧ᶜ(δ)]
+
+  mentions no [Deriv], so [idx_bor] - which is [idxborJT_sem] - mentions
+  none either, and the construction order goes through.  Nothing is lost on
+  the elimination side, since a borrow is only ever opened at an
+  interpretation that is a candidate anyway.
+
+  What it costs is on the introduction side: [AltSem]'s [idxbor_fml_iff_at]
+  now wants the alteration at interpretations that are *not* candidates, and
+  a *semantic* family cannot supply one.  [Sync] here reads
+
+    [sync_change_tid : ∀ sem, alt_sem sem →
+       sem (ty_ghox ty x d g tid) ⊣⊢ sem (ty_ghox ty x d g tid')]
+
+  and its proof for [&uniq{κ} ty] goes through [idxbor_fml_iff_at], its proof
+  for [&shr{κ} ty] through [guard_fml_sem_2] - both [Deriv_map] in the model,
+  both unavailable at a non-candidate.  So the chain bottoms out not in the
+  borrow at all but in the fact that this port's type-level equations are
+  equations *of interpretations*.
+
+  [nola/examples/rust_halt/] does not have them.  Its types are formulas all
+  the way down - [ty_own, ty_shr : … → cif CON Σ] - so [Send], [Sync] and
+  type equality are [≡] in the [cif] OFE:
+
+    [send : ty_own T t d xπ vl ≡ ty_own T t' d xπ vl]
+
+  and every instance is then a *congruence*, because each type former builds
+  its formula from the argument's by non-expansive constructors.  An [≡] is
+  strictly stronger than the family at every interpretation, so it supplies
+  what [idxbor_fml_iff_at] asks for, at candidates and non-candidates alike.
+  That is why [rust_halt] never meets any of this, and adopting it here is
+  the prerequisite for move (2) rather than the tidy-up it first looked like.
+
+  The residual price, once that is done, is [uniq_subtype] for types whose
+  difference is itself behind a judgment: a nested
+  [&uniq{κ} (&uniq{κ'} ty)] subtyping would need its inner alteration at a
+  non-candidate.  That is narrower than losing the semantic type equality
+  outright, which is what an earlier version of this comment predicted.
+
   *** A caveat about parity
 
   [nola/examples/rust_halt/] is parametric in [CON] and [JUDG] exactly as
   this port is, and never instantiates them either: [sigTCT] and [sigTO] are
   used nowhere in [nola/examples/].  But for [rust_halt] the instantiation is
-  a mechanical exercise, because its [Jsem] already applies δ, and the deeper
-  reason is that its types are *formulas all the way down* -
-  [ty_own, ty_shr : … → cif CON Σ] - so that [Send], [Sync] and type equality
-  are [≡] in the [cif] OFE, with no interpretation anywhere:
-
-    [send : ty_own T t d xπ vl ≡ ty_own T t' d xπ vl]
-
-  This port states them as [∀ sem, alt_sem sem → sem … ⊣⊢ sem …], which is
-  what propagates a family into [idx_bor] in the first place.  Adopting
-  [rust_halt]'s [≡] for [Send] and [Sync] (strictly stronger, and provable
-  the same way by congruence) would remove their dependence on
-  [idxbor_fml_iff_at] entirely, leaving only [subtype]/[eqtype] to use the
-  [bor_wand] shape of (2).  So this port is *not* at parity with [rust_halt]
-  on this point; the gap is real, specific and closable. *)
+  mechanical, for the reason just given.  So this port is *not* at parity
+  with [rust_halt] on this point; the gap is real, specific and closable. *)
