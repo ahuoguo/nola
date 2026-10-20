@@ -438,16 +438,16 @@ Section product_split.
     iDestruct (dguard_rhs_iff HsplitPt with "PtBase") as "#PtBase'".
     iDestruct (dguard_rhs_sep_l with "PtBase'") as "#PtBase1".
     iDestruct (dguard_rhs_sep_r with "PtBase'") as "#PtBase2".
-    have Hl1 : ⊢ llft_incl (foldr meet static (ty_lfts ty ++ ty_lfts ty'))
-                 (ty_lft ty).
-    { rewrite lft_intersect_list_app. iApply llftl_intersect_incl_l. }
-    have Hl2 : ⊢ llft_incl (foldr meet static (ty_lfts ty ++ ty_lfts ty'))
-                 (ty_lft ty').
-    { rewrite lft_intersect_list_app. iApply llftl_intersect_incl_r. }
+    have Hl1 : ty_lft ty ⊆ foldr meet static (ty_lfts ty ++ ty_lfts ty').
+    { rewrite lft_intersect_list_app. unfold meet, llft_intersect.
+      set_solver. }
+    have Hl2 : ty_lft ty' ⊆ foldr meet static (ty_lfts ty ++ ty_lfts ty').
+    { rewrite lft_intersect_list_app. unfold meet, llft_intersect.
+      set_solver. }
     iAssert (dincl κ (ty_lft ty)) as "#Inκ1".
-    { iApply (dincl_trans with "Incl []"). by iApply (dincl_of Hl1). }
+    { iApply (dincl_trans with "Incl []"). by iApply (dincl_of_sub Hl1). }
     iAssert (dincl κ (ty_lft ty')) as "#Inκ2".
-    { iApply (dincl_trans with "Incl []"). by iApply (dincl_of Hl2). }
+    { iApply (dincl_trans with "Incl []"). by iApply (dincl_of_sub Hl2). }
     rewrite prod_ty_gho_pers /=. iDestruct "Pers" as "#[Pers1 Pers2]".
     inversion Phys as [Eqv]. subst v. iModIntro. iFrame "W L I".
     iExists -[(cloc_take l ty.(ty_size), x0, ζi, d', g', ζidx);

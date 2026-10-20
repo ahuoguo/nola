@@ -937,8 +937,10 @@ Class AltSem (FML : oFunctor) Σ
   (** The stored inclusion means the storable one, at every candidate *)
   incl_fml_sem_at {sem} : alt_sem sem → ∀ κ κ',
     sem (incl_fml κ κ') ⊣⊢ st_incl κ κ';
-  st_incl_of_incl {κ κ'} :
-    (⊢ @[κ] &&{alerus_WGuard}&&> @[κ']) → ⊢ st_incl κ κ';
+  (** A *structural* inclusion is storable: [llftl_incl_sub]'s proof
+    mentions no interpretation, so it replays at every candidate.  Every
+    inclusion the typing layer creates from nothing is of this shape. *)
+  st_incl_of_sub {κ κ'} : κ' ⊆ κ → ⊢ st_incl κ κ';
   (** An inclusion that holds at *every* candidate is a storable one.  This
     is the only way to build one from scratch; in the model both sides are
     the same family. *)
@@ -1458,8 +1460,8 @@ Section alt_sem.
     dguard (alive_fml κ) (alive_fml κ') ⊢ llft_incl κ κ'.
   Proof. rewrite dguard_sem !alive_fml_sem //. Qed.
 
-  Lemma dincl_of {κ κ'} : (⊢ llft_incl κ κ') → ⊢ dincl κ κ'.
-  Proof. exact st_incl_of_incl. Qed.
+  Lemma dincl_of_sub {κ κ'} : κ' ⊆ κ → ⊢ dincl κ κ'.
+  Proof. exact st_incl_of_sub. Qed.
   Lemma dincl_eternalize {κ} : @[κ] =[alerus_wsat]=∗ dincl static κ.
   Proof. exact st_incl_eternalize. Qed.
   Lemma dincl_refl {κ} : ⊢ dincl κ κ.

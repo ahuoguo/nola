@@ -399,15 +399,21 @@ Section LlftWsat.
          iExists k0. iFrame "Dead". done.
   Qed.
 
-  Lemma llftl_intersect_incl_l κ κ' : ⊢ (κ ⊓ κ') ⊑ κ.
+  (** Inclusion of lifetimes is *structural*: it holds whenever the right
+    lifetime's atoms are among the left one's.  Every inclusion the typing
+    layer creates from nothing is of this shape, which matters because such
+    an inclusion is storable - the proof mentions no interpretation. *)
+  Lemma llftl_incl_sub κ κ' : κ' ⊆ κ → ⊢ κ ⊑ κ'.
   Proof.
-    rewrite /llft_incl. iApply guard_intro. unseal. iIntros "!> Alive".
-    replace (κ ∪ κ') with (κ ∪ ((κ ∪ κ') ∖ κ)).
-    - rewrite big_sepS_union.
-      + iDestruct "Alive" as "[A1 A2]". iFrame "A1". iIntros "A3". iFrame.
-      + set_solver.
-    - symmetry. apply union_difference_L. set_solver.
+    move=> Hsub. rewrite /llft_incl. iApply guard_intro. unseal.
+    iIntros "!> Alive". replace κ with (κ' ∪ (κ ∖ κ')).
+    - rewrite big_sepS_union; [|set_solver].
+      iDestruct "Alive" as "[A1 A2]". iFrame "A1". iIntros "A3". iFrame.
+    - symmetry. by apply union_difference_L.
   Qed.
+
+  Lemma llftl_intersect_incl_l κ κ' : ⊢ (κ ⊓ κ') ⊑ κ.
+  Proof. apply llftl_incl_sub. unfold meet, llft_intersect. set_solver. Qed.
 
   Lemma llftl_intersect_incl_r κ κ' : ⊢ (κ' ⊓ κ) ⊑ κ.
   Proof.
@@ -907,6 +913,11 @@ Section LlftLogic.
       let (sn, κ') := idx in
           OwnBorState llft_name sn
             (Borrow (set_map LtAtomSwell κ') {[default_dead]}).
+
+  Lemma idx_bor_tok_unfold idx :
+    idx_bor_tok idx = OwnBorState llft_name idx.1
+      (Borrow (set_map LtAtomSwell idx.2) {[default_dead]}).
+  Proof. by destruct idx. Qed.
 
   Notation "&{ κ }" := (full_bor κ) (format "&{ κ }") : bi_scope.
   Notation "&{ κ , i }" := (idx_bor κ i) (format "&{ κ , i }") : bi_scope.

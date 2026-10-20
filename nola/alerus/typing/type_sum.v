@@ -570,7 +570,7 @@ Section type_sum.
     rewrite /ty_own uniq_bor_gho. iSplit; [|done].
     iSplitR.
     { iApply (dincl_trans with "Incl").
-      iApply (dincl_of (lft_intersect_tyl_lfts_lookup_incl tyl i)). }
+      iApply (dincl_of_sub (lft_intersect_tyl_lfts_lookup_sub tyl i)). }
     iSplitR; [iPureIntro; lia|]. iFrame "ζVo ζTok ζBor".
     iFrame "PtBase2". by iRight.
   Qed.

@@ -360,6 +360,18 @@ Section stbor_at.
   Proof. exact: llftl_intersect_incl_l. Qed.
   Lemma st_meet_r_at {κ κ'} : ⊢ @[κ' ⊓ κ] &&{alerus_WGuard_at δ}&&> @[κ].
   Proof. exact: llftl_intersect_incl_r. Qed.
+  Lemma st_sub_at {κ κ'} : κ' ⊆ κ → ⊢ @[κ] &&{alerus_WGuard_at δ}&&> @[κ'].
+  Proof. exact (llftl_incl_sub κ κ'). Qed.
+  Lemma eternal_incl_at {κ} :
+    eternal_tok alerus_eternal_name κ ⊢
+      @[static] &&{alerus_WGuard_at δ}&&> @[κ].
+  Proof.
+    iIntros "#tok".
+    iApply (guard_wsat_incl
+      (W':=eternal_wsat alerus_eternal_name llft_alive)).
+    iApply (eternal_tok_guard with "tok").
+  Qed.
+
   Lemma st_glb_at {κ κ' κ''} :
     (@[κ] &&{alerus_WGuard_at δ}&&> @[κ']) -∗
     (@[κ] &&{alerus_WGuard_at δ}&&> @[κ'']) -∗
@@ -851,6 +863,11 @@ Section altSem.
 
   (** *** The three judgments, unfolded *)
 
+  Lemma guardJ_sem_at {δ} {Px Qx : cif CON Σ} :
+    ⟦ guard_j Px Qx ⟧(δ) ⊣⊢
+      (⟦ Px ⟧ᶜ(δ) &&{alerus_WGuard_at δ}&&> ⟦ Qx ⟧ᶜ(δ))%I.
+  Proof. by rewrite in_js. Qed.
+
   (** A stored guard at the ambient interpretation is the guard *)
   Lemma alt_into_cif_here : alt_into_cif alt_amb alt_amb.
   Proof.
@@ -1048,10 +1065,101 @@ Section altSem.
     iApply (shr_tok_guard_at δ). iApply "tok".
   Qed.
 
+  Lemma st_incl_of_sub_cif {κ κ'} : κ' ⊆ κ → ⊢ st_incl κ κ'.
+  Proof. move=> ?. iIntros "!>" (δ Hδ). by iApply st_sub_at. Qed.
+
+  (** Eternalizing a lifetime.  The [eternal_tok] it allocates mentions no
+    interpretation, so the inclusion it yields holds at every candidate. *)
+  Lemma st_incl_eternalize_cif {κ} : @[κ] =[alerus_wsat]=∗ st_incl static κ.
+  Proof.
+    iIntros "K W".
+    rewrite (wsat_incl alerus_wsat
+      (eternal_wsat alerus_eternal_name llft_alive) _).
+    iDestruct "W" as "[We Wr]".
+    iMod (eternal_tok_alloc with "K We") as "[#tok We]". iModIntro.
+    iSplitL "We Wr"; [by iFrame|]. iIntros "!>" (δ Hδ).
+    iApply (eternal_incl_at δ). iApply "tok".
+  Qed.
+
+  (** *** A full borrow, stored as a guard
+
+    Sharing the borrow's *token* with [llftl_borrow_shared_tok] gives a guard
+    to the token at every candidate; composing it with the indexed borrow's
+    own guard gives [@[κ] &&{W}&&> Px] there, which is what storing asks
+    for.  This is the second place where a guard can be stored. *)
+  Lemma guard_fml_of_bor_cif {κ} {Px : cif CON Σ} :
+    llft_ctx -∗ full_bor κ Px =[alerus_wsat]=∗
+      bor_sem (cif_guard (cif_alive κ) Px).
+  Proof.
+    iIntros "_ B W". rewrite (llftl_bor_idx (FML:=cifOF CON)).
+    iDestruct "B" as (idx) "[#b tok]".
+    rewrite (wsat_incl alerus_wsat alerus_WGuard _).
+    iDestruct "W" as "[Wg Wr]".
+    iMod (llftl_borrow_shared_tok (FML:=cifOF CON) κ
+      (cif_bor_state idx.1
+        (ra.Borrow (set_map ra.LtAtomSwell idx.2) {[ra.default_dead]}))
+      with "[tok] Wg") as "[Wg (%γc & %sn2 & #stok & _)]".
+    { rewrite /bor_sem /= cif_bor_state_sem -idx_bor_tok_unfold. iFrame "tok". }
+    iModIntro. iSplitL "Wg Wr"; [by iFrame|].
+    rewrite /bor_sem /= /cif_guard sem_cif_in /=.
+    iIntros "!>". iApply Deriv_factor'. iIntros (δ' Hδ' _ _).
+    rewrite guardJ_sem_at cif_alive_sem_at.
+    iDestruct (shr_tok_guard_at δ' with "stok") as "#Gtok0".
+    iDestruct (guard_rhs_iff cif_bor_state_sem with "Gtok0") as "#Gtok0'".
+    rewrite -idx_bor_tok_unfold.
+    iDestruct "Gtok0'" as "#Gtok".
+    iDestruct (idxbor_guard_at δ' Hδ' with "b [] Gtok") as "#G";
+      [iApply guard_refl|].
+    by iApply (guard_rhs_sep_r with "G").
+  Qed.
+
   Lemma st_incl_at_cif {S} (H : alt_sem_cif S) κ κ' :
     st_incl κ κ' ⊢ @[κ] &&{alt_WGuard S}&&> @[κ'].
   Proof.
     move: H=> [δ[Hδ Heq]]. rewrite /alt_WGuard /= Heq.
     iIntros "#g". iApply ("g" $! δ Hδ).
   Qed.
+
+  (** ** The [AltSem] instance *)
+  #[export] Instance altSem_cif : AltSem (cifOF CON) Σ := {|
+    alt_sem := alt_sem_cif;
+    alt_into := alt_into_cif;
+    alt_here := alt_sem_cif_here;
+    alt_into_here := alt_into_cif_here;
+    alt_sem_ne := (λ _ _, cand_ne);
+    sep_sem_at := @sep_sem_cif;
+    false_sem_at := @false_sem_cif;
+    empty_sem_at := @empty_sem_cif;
+    pure_sem_at := @pure_sem_cif;
+    ex_sem_at := @ex_sem_cif;
+    or_sem_at := @or_sem_cif;
+    alive_sem_at := @alive_sem_cif;
+    dead_sem_at := @dead_sem_cif;
+    cells_sem_at := @cells_sem_cif;
+    ccells_sem_at := @ccells_sem_cif;
+    cmapstoany_sem_at := @cmapstoany_sem_cif;
+    freeable_sem_at := @freeable_sem_cif;
+    vo_sem_at := @vo_sem_cif;
+    pc_sem_at := @pc_sem_cif;
+    gsrc_sem_at := @gsrc_sem_cif;
+    guard_fml_sem_into := (λ _ _ _ _ Hi, Hi);
+    guard_fml_sem_2 := @guard_fml_sem_2_cif;
+    guard_fml_pers_at := @guard_fml_pers_cif;
+    idxbor_fml_pers_at := @idxbor_fml_pers_cif;
+    idxbor_fml_sem_1 := @idxbor_fml_sem_1_cif;
+    idxbor_fml_of_bor := @idxbor_fml_of_bor_cif;
+    idxbor_fml_iff_at := @idxbor_fml_iff_at_cif;
+    bor_state_sem_at := @bor_state_sem_cif;
+    idxbor_fml_into := (λ S S' H H' _, @idxbor_fml_into_cif S S' H H');
+    idxbor_fml_guard_at := @idxbor_fml_guard_at_cif;
+    idxbor_fml_shorten_at := @idxbor_fml_shorten_at_cif;
+    incl_fml_sem_at := @incl_fml_sem_at_cif;
+    st_incl_of_sub := @st_incl_of_sub_cif;
+    st_incl_of_all := @st_incl_of_all_cif;
+    st_incl_at := @st_incl_at_cif;
+    st_incl_eternalize := @st_incl_eternalize_cif;
+    Ltok_guard_frac_at := @Ltok_guard_frac_at_cif;
+    guard_fml_borrow_shared := @guard_fml_borrow_shared_cif;
+    guard_fml_of_bor := @guard_fml_of_bor_cif;
+  |}.
 End altSem.
