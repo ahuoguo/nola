@@ -18,7 +18,8 @@ From iris.algebra Require Import gmap_view agree auth gset.
 From iris.proofmode Require Import proofmode.
 From nola.alerus.lang Require Import adequacy races proofmode notation.
 From nola.alerus.typing Require Export model_inst.
-From nola.alerus.typing Require Import function programs.
+From nola.alerus.typing Require Import function programs product base_type
+  type_context.
 From nola.bi Require Import modw.
 Import ModwNotation WpwNotation iPropAppNotation.
 
@@ -52,21 +53,27 @@ Section alloc.
       ⌜@alerus_invGS _ _ H = _⌝ ∧ ⌜@alerus_heapGS _ _ H = hGS⌝ ∧
       proph_ctx ∗ uniq_ctx ∗
       ∀ (_ : Csem CON JUDG Σ) (_ : Jsem JUDG (iProp Σ))
-        (_ : typingCS CON JUDG Σ) (_ : typingJS CON JUDG Σ), alerus_wsat.
+        (_ : typingCS CON JUDG Σ) (_ : typingJS CON JUDG Σ),
+        ⌜LRustGS HasNoLc (cifOF CON) Σ _
+           (@lrustGpreS_na_inv _ _ alerus_preG_lrust)
+           (@lrustGpreS_alc _ _ alerus_preG_lrust)
+           _ alerus_NaSem heapSem_cif = alerus_lrustGS⌝ ∧ alerus_wsat.
   Proof.
     iMod (frac_key_wsat_alloc (K:=llctx)) as (Hllctx) "Wllctx".
     iMod (frac_key_wsat_alloc (K:=gmultiset lft)) as (Hlfts) "Wlfts".
     iMod eternal_wsat_alloc as (γe) "We".
     iMod (frac_wsat_alloc (FML:=cifOF CON)) as (Hfrac) "Wfrac".
-    iMod (na_inv_wsat_alloc (FML:=cifOF CON)) as (Hna) "Wna".
     iMod (llft_wsat_alloc (FML:=cifOF CON)) as (Hllft Hsinv shr) "Wllft".
+    iMod (na_inv_wsat_alloc_name (FML:=cifOF CON)) as (γna) "Wna".
     iMod (cna_wsat_alloc (FML:=cifOF CON)) as (Hcna) "Wcna".
     iMod (proph_init ⊤) as (Hproph) "#PROPH"; [done|].
     iMod (uniq_init ⊤) as (Huniq) "[#UNIQ Wsend]"; [done|].
     iModIntro.
-    iExists (AlerusGS _ _ _ Hllft Hsinv hGS Hna _ Hproph Huniq Hcna Hfrac
+    iExists (AlerusGS _ _ _ Hllft Hsinv hGS
+      (NaInvGS _ _ sinvGS_pre _ γna) _ Hproph Huniq Hcna Hfrac
       _ Hllctx Hlfts shr γe).
     do 2 (iSplit; [done|]). iFrame "PROPH UNIQ". iIntros (????).
+    iSplit; [done|].
     iSplitR "Wsend"; last iExact "Wsend".
     iSplitL "Wllft We Wfrac Wllctx Wlfts"; last first.
     { iSplitL "Wcna"; first by iApply "Wcna".
@@ -79,3 +86,50 @@ Section alloc.
     iExact "Wlfts".
   Qed.
 End alloc.
+
+(** ** Soundness
+
+  As in [nola/examples/rust_halt/adequacy.v], the statement is about a
+  *typing judgment*, not about a function value: [fn] is the one type former
+  whose interpretation the model does not yet give (it has to be stratified
+  by an execution level first - see [typing/README.md]), and nothing else
+  needs it. *)
+Definition exit_cont : val := λ: [<>], #☠.
+
+Section soundness.
+  Context `{!typingC CON} {JUDG Σ}
+    `{!alerusGpreS (cifOF CON) Σ, !typingJ CON JUDG Σ}.
+
+  (** A closed, semantically well-typed program terminates.
+
+    The original ([typing/soundness.v]) can only conclude safety: its
+    weakest precondition is partial, because a guard there hands out a [▷]
+    that only a later credit can pay for.  Here it is total. *)
+  Theorem type_soundness {𝔅} (e : expr) (tr : predl_trans' [] 𝔅) :
+    (∀ post xl mask π, tr post xl mask π) →
+    (∀ H : alerusGS (cifOF CON) Σ,
+      ∃ (_ : Csem CON JUDG Σ) (_ : Jsem JUDG (iProp Σ))
+        (_ : typingCS CON JUDG Σ) (_ : typingJS CON JUDG Σ),
+      ⊢ typed_body [] [] (InvCtx [] static AtomicClosed) ([] : cctx 𝔅)
+          +[] e tr) →
+    sn erased_step ([e], (∅, false)).
+  Proof.
+    move=> Htr big. apply: (lrust_total (s:=NotStuck)).
+    move=> iG hGS.
+    iMod (alerus_wsat_alloc (invGS_gen0 := iG) hGS)
+      as (H) "[%eq1 [%eq2 (#PROPH & #UNIQ & →W)]]".
+    subst. move: (big H)=> [Cs [Js [CS [JS ty]]]].
+    iMod (invctx_alloc ⊤) as (tid) "I". iModIntro.
+    iExists (existT _ heapSem_cif), alerus_wsat, (λ _, cont_postcondition).
+    iDestruct ("→W" $! Cs Js CS JS) as "[%Heq $]".
+    cbn [projT1 projT2]. rewrite Heq.
+    iApply (ty $! tid -[] ⊤ (λ _ _ _, True) [] with
+      "[] PROPH UNIQ [] [] I [] [] []"); try done.
+    - by rewrite /llctx_interp.
+    - by iIntros (? ?%elem_of_nil).
+    - iApply proph_obs_true. move=> ?. apply Htr.
+  Qed.
+End soundness.
+
+(** The theorem rests on nothing but the axioms Iris itself uses. *)
+Print Assumptions type_soundness.

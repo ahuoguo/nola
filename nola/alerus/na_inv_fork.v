@@ -185,6 +185,19 @@ Section na_inv.
   Qed.
 End na_inv.
 
+(** The same with the ghost state given, so that the record is a
+  constructor application and its fields reduce.  A client that has to
+  compare the [na_invG] it allocated with the one it started from - the
+  program logic's [lrustGS_gen] does - needs that. *)
+Lemma na_inv_wsat_alloc_name `{!sinvGS FML Σ, na_invG0 : !na_invG Σ} :
+  ⊢ |==> ∃ γ : gname, ∀ p sm, internal_ne (PROP:=iProp Σ) sm -∗
+    @na_inv_wsat FML Σ (NaInvGS FML Σ sinvGS_pre na_invG0 γ) p sm.
+Proof.
+  iMod (sinv_wsat_alloc_name (FML:=FML)) as (γ) "W". iModIntro.
+  iExists γ. iIntros (p sm) "Ne". rewrite /na_inv_wsat /naSinvGS.
+  iApply "W". by iApply na_body_ne.
+Qed.
+
 (** Allocate the world satisfaction for non-atomic invariants *)
 Lemma na_inv_wsat_alloc `{!sinvGpreS FML Σ, !na_invG Σ} :
   ⊢ |==> ∃ _ : naInvGS FML Σ, ∀ p sm,
