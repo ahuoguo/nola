@@ -934,8 +934,8 @@ Class AltSem (FML : oFunctor) Σ
   (** [llftl_idx_bor_guard'] for a stored indexed borrow, at a candidate:
     the lifetime logic's proof is parametric in [BorSem], so it replays at
     the candidate's own world satisfaction. *)
-  idxbor_fml_guard_at {sem} : alt_sem sem → ∀ κ idx Px (G : iProp Σ),
-    sem (idxbor_fml κ idx Px) -∗
+  idxbor_fml_guard_into {sem} : alt_sem sem → ∀ κ idx Px (G : iProp Σ),
+    bor_sem (idxbor_fml κ idx Px) -∗
     (G &&{alt_WGuard sem}&&> @[κ]) -∗
     (G &&{alt_WGuard sem}&&> idx_bor_tok idx) -∗
     G &&{alt_WGuard sem}&&> (@[κ] ∗ sem Px);
@@ -953,8 +953,18 @@ Class AltSem (FML : oFunctor) Σ
     holds at the ambient interpretation holds at every candidate.  In the
     model this is [Deriv_factor'] followed by replaying the same proof. *)
   (** The stored inclusion means the storable one, at every candidate *)
-  incl_fml_sem_at {sem} : alt_sem sem → ∀ κ κ',
-    sem (incl_fml κ κ') ⊣⊢ st_incl κ κ';
+  incl_fml_sem_1 {κ κ'} : bor_sem (incl_fml κ κ') ⊢ st_incl κ κ';
+  incl_fml_of_incl {sem} : alt_sem sem → ∀ κ κ',
+    st_incl κ κ' ⊢ sem (incl_fml κ κ');
+  incl_fml_pers_at {sem} : alt_sem sem → ∀ κ κ',
+    Persistent (sem (incl_fml κ κ'));
+  (** An inclusion stored at a candidate is monotone in both arguments.
+    [Deriv_map] in the model: the stored inclusion's semantics does not
+    mention the interpretation, so the obligation is [st_incl]'s own
+    transitivity. *)
+  incl_fml_mono_at {sem} : alt_sem sem → ∀ κ0 κ κ' κ1,
+    st_incl κ0 κ -∗ st_incl κ' κ1 -∗
+    sem (incl_fml κ κ') -∗ sem (incl_fml κ0 κ1);
   (** A *structural* inclusion is storable: [llftl_incl_sub]'s proof
     mentions no interpretation, so it replays at every candidate.  Every
     inclusion the typing layer creates from nothing is of this shape. *)
@@ -1465,10 +1475,12 @@ Section alt_sem.
   Qed.
 
   Lemma incl_fml_sem {κ κ'} : bor_sem (incl_fml κ κ') ⊣⊢ dincl κ κ'.
-  Proof. exact (incl_fml_sem_at alt_here _ _). Qed.
+  Proof.
+    apply bi.equiv_entails; split;
+      [exact incl_fml_sem_1|exact (incl_fml_of_incl alt_here _ _)].
+  Qed.
   #[export] Instance incl_fml_persistent_at {sem} `{Hs : !alt_sem sem} {κ κ'} :
-    Persistent (sem (incl_fml κ κ')).
-  Proof. rewrite (incl_fml_sem_at Hs). exact _. Qed.
+    Persistent (sem (incl_fml κ κ')) := incl_fml_pers_at Hs _ _.
 
   Lemma dincl_dguard {κ κ'} : dincl κ κ' ⊢ dguard (alive_fml κ) (alive_fml κ').
   Proof. exact (dincl_at alt_here). Qed.

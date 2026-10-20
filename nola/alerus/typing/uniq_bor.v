@@ -283,8 +283,8 @@ Section uniq_bor_sem.
       rewrite /basically_dead_fml !(ex_sem_at Hs).
       iIntros "#In0 (%κ'' & D)". rewrite !(sep_sem_at Hs).
       iDestruct "D" as "[#I #Dd]". iExists κ''. rewrite (sep_sem_at Hs).
-      rewrite !(incl_fml_sem_at Hs). iFrame "Dd".
-      iApply (dincl_trans with "In0 I"). }
+      iFrame "Dd". iApply (incl_fml_mono_at Hs with "In0 [] I").
+      iApply dincl_refl. }
     iSplit.
     { iIntros "!>" (sem Hsem [[[[[l x0] ξi] d'] g'] idx] d g tid).
       have ? := guard_fml_pers_at Hsem. have ? := idxbor_fml_pers_at Hsem.
@@ -295,7 +295,6 @@ Section uniq_bor_sem.
       iDestruct (dincl_at Hsem with "In") as "#In0".
       rewrite /= /uniq_body_fmlx !(sep_sem_at Hsem) !(pure_sem_at Hsem)
         !(or_sem_at Hsem).
-      rewrite !(incl_fml_sem_at Hsem).
       iIntros "(#Incl & %Hle & (Vo & Tok & #Bor) & #PtBase & #Pers)".
       iAssert (sem (basically_dead_fml κ') ∨
         sem (ty'.(ty_gho_persx) x0 d' g' tid))%I as "#Pers'".
@@ -308,8 +307,8 @@ Section uniq_bor_sem.
       { iDestruct ("HGho" $! tid) as "#HGho'".
         iApply (incl_uniq_body_pers_component_at Hsem ty ty' x0 ξi idx κ κ'
           tid l (λ y, HPhys y tid) with "HGho' In Bor"). }
-      iDestruct (dincl_trans with "In Incl") as "#Incl1".
-      iDestruct (dincl_trans with "Incl1 Lfts1") as "#Incl2".
+      iAssert (sem (incl_fml κ' (ty_lft ty'))) as "#Incl2".
+      { iApply (incl_fml_mono_at Hsem with "In Lfts1 Incl"). }
       iAssert (sem (guard_fml (alive_fml κ') (cmapstoany_fml l))) as "#PtBase'".
       { iApply (dguard_trans_at Hsem with "In0 PtBase"). }
       iSplitL "Vo Tok".

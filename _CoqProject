@@ -197,3 +197,4 @@ nola/alerus/typing/pcell.v
 nola/alerus/typing/model.v
 nola/alerus/typing/model_inst.v
 nola/alerus/typing/soundness.v
+nola/alerus/typing/inst.v
