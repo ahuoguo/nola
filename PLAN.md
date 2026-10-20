@@ -38,6 +38,40 @@ later/`iLöb`/`pers` machinery disappears.  Nothing in the tree waits on a
 missing guarding lemma, so pull in `storage_protocol/` when starting
 `protocol.v`, not before.
 
+## The one open hole: is the model concrete?
+
+`model.v` gives the interpretation *parametrically* in `CON` and `JUDG`,
+with constraint classes - exactly as `nola/examples/rust_halt/` does.
+`typing/inst.v` tries to build the smallest `CON` and `JUDG` that satisfy
+them.  The constructor signature and the judgment type come out fine, and
+`Csem` is now free of `Jsem` (no `Ecsem` quantifies the interpretation).
+`Jsem` is not free of *itself*:
+
+> `idxborJT_sem` is `idx_bor`, which carries `StBor`'s `st_incl` and
+> `st_iff`, and both are families over the **good** derivability
+> predicates.  `Deriv` is defined from `Jsem`.
+
+Dropping the goodness restriction is the obvious next move, and every
+closure rule survives it - `llftl_incl_sub`, `eternal_tok_guard`,
+`sinv_tok_guard`, `guard_trans` all hold at every interpretation.  One
+source does not: `AltSem`'s `idxbor_fml_iff_at` takes an alteration that
+holds at every *candidate*, and its callers get it from a type's subtyping,
+whose proof for `&uniq{κ}` has to produce `δ J` and so needs `δ` to be
+good.
+
+Two routes out, written up in `inst.v`:
+
+* make lifetime inclusion and the borrow's alteration **tokens**, as Nola's
+  own lifetime logic does (`nola/iris/lft.v`: `lft_incl` is pure and `⊑□` a
+  persistent token).  Every inclusion this model *creates* is structural or
+  eternal - both token-shaped - except the one `type_call_iris'` builds
+  from a shared borrow of a fraction;
+* stratify, so that a judgment whose semantics quantifies over
+  interpretations lives below the ones quantified over.
+
+Until one is done the development is at parity with `rust_halt`: sound and
+parametric, with the satisfiability of its constraints open.
+
 ## Next
 
 1. **`fn` must be stratified by an execution level** (thesis (5.4),
