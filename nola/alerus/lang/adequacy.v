@@ -62,16 +62,17 @@ Qed.
 (** Safety adequacy for the partial weakest precondition *)
 Theorem lrust_adequacy `{!lrustGpreS FML Σ} {hlc s e φ} :
   (∀ (iG : invGS_gen hlc Σ) (hGS : heapGS FML Σ),
-    ∃ (naS : NaSem FML Σ) (hS : HeapSem FML Σ),
-    let _ : lrustGS_gen hlc FML Σ := LRustGS hlc FML Σ iG _ _ hGS naS hS in
-    (⊢ |={⊤}=> ∃ W : iProp Σ, W ∗ WP[W] e @ s; ⊤ {{ v,
-      ∀ σ', heap_ctx σ' -∗ W ={⊤,∅}=∗ ⌜φ v σ'⌝ }})) →
+    ⊢ |={⊤}=> ∃ nhS : {naS : NaSem FML Σ & HeapSem FML Σ},
+      let _ : lrustGS_gen hlc FML Σ :=
+        LRustGS hlc FML Σ iG _ _ hGS (projT1 nhS) (projT2 nhS) in
+      ∃ W : iProp Σ, W ∗ WP[W] e @ s; ⊤ {{ v,
+        ∀ σ', heap_ctx σ' -∗ W ={⊤,∅}=∗ ⌜φ v σ'⌝ }}) →
   adequate s e (∅, false) φ.
 Proof.
   move=> big. apply adequate_alt=> ?? /erased_steps_nsteps[?[??]].
   eapply (wpw_strong_adequacy_gen hlc Σ _); [|done]=> Hinv.
   iMod heap_init as (Hheap) "→ctx".
-  destruct (big Hinv Hheap) as (naS & hS & towp). iMod towp as (W) "[W wp]".
+  iMod (big Hinv Hheap) as ([naS hS] W) "[W wp]".
   iDestruct ("→ctx" $! naS) as "ctx". iModIntro.
   iExists (λ σ _ _ _, heap_ctx (heapGS0:=Hheap) (NaSem0:=naS) σ)%I,
     [_], (λ _, True)%I, _, W=>/=.
@@ -92,15 +93,15 @@ Qed.
   [twp_total]. *)
 Theorem lrust_total `{!lrustGpreS FML Σ} {s e} :
   (∀ (iG : invGS_gen HasNoLc Σ) (hGS : heapGS FML Σ),
-    ∃ (naS : NaSem FML Σ) (hS : HeapSem FML Σ),
-    let _ : lrustGS_gen HasNoLc FML Σ :=
-      LRustGS HasNoLc FML Σ iG _ _ hGS naS hS in
-    (⊢ |={⊤}=> ∃ W Φ, W ∗ WP[W] e @ s; ⊤ [{ Φ }])) →
+    ⊢ |={⊤}=> ∃ nhS : {naS : NaSem FML Σ & HeapSem FML Σ},
+      let _ : lrustGS_gen HasNoLc FML Σ :=
+        LRustGS HasNoLc FML Σ iG _ _ hGS (projT1 nhS) (projT2 nhS) in
+      ∃ W Φ, W ∗ WP[W] e @ s; ⊤ [{ Φ }]) →
   sn erased_step ([e], (∅, false)).
 Proof.
   move=> big. apply (twpw_total Σ lrust_lang s e (∅, false) 0)=> Hinv.
   iMod heap_init as (Hheap) "→ctx".
-  destruct (big Hinv Hheap) as (naS & hS & totwp). iMod totwp as (W Φ) "[W twp]".
+  iMod (big Hinv Hheap) as ([naS hS] W Φ) "[W twp]".
   iDestruct ("→ctx" $! naS) as "ctx". iModIntro.
   iExists (λ σ _ _ _, heap_ctx (heapGS0:=Hheap) (NaSem0:=naS) σ)%I,
     (λ _, 0%nat), (λ _, True)%I, _, W, Φ. iFrame "W ctx twp".

@@ -57,6 +57,15 @@ Class cnaGS (FML : oFunctor) Σ : Type := CnaGS {
   cna_name : gname;
 }.
 
+(** The same, before the ghost name is allocated *)
+Class cnaGpreS (FML : oFunctor) Σ : Type := CnaGpreS {
+  #[global] cnaGpreS_tok :: inG Σ (prodR coPset_disjR (gset_disjR positive));
+  #[global] cnaGpreS_excl :: inG Σ (exclR unitO);
+  #[global] cnaGpreS_multiset :: inG Σ (authR (gmultisetUR lft));
+  #[global] cnaGpreS_lft :: inG Σ (dfrac_agreeR (leibnizO (option lft)));
+  #[global] cnaGpreS_sinv :: sinvGpreS (cnaOF FML) Σ;
+}.
+
 Definition cnaΣ FML `{!oFunctorContractive FML} : gFunctors :=
   #[ GFunctor (constRF (prodR coPset_disjR (gset_disjR positive)));
      GFunctor (constRF (exclR unitO));
@@ -461,3 +470,16 @@ Section cna.
       iDestruct (cna_active_2_no with "Active Active2") as "[]".
   Qed.
 End cna.
+
+(** Allocate the world satisfaction for cancellable non-atomic invariants *)
+Lemma cna_wsat_alloc `{!cnaGpreS FML Σ, !llft_logicGS Σ} :
+  ⊢ |==> ∃ _ : cnaGS FML Σ, ∀ WG (sm : FML $oi Σ → iProp Σ)
+    (_ : NonExpansive sm), cna_wsat WG sm.
+Proof.
+  iMod (sinv_wsat_alloc (FML:=cnaOF FML)) as ([pre γ]) "W". iModIntro.
+  iExists (CnaGS FML Σ _ _ _ _ pre γ). iIntros (WG sm ?).
+  rewrite /cna_wsat /cna_sinvGS. iApply "W". iIntros (i).
+  iApply ne_internal_ne.
+  move=> n [[g1 g2] Px] [[g1' g2'] Qx] [[/=->->] eq]. rewrite /cna_body /=.
+  solve_proper.
+Qed.

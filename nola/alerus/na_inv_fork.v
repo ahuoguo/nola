@@ -93,6 +93,14 @@ Section na_inv.
   #[export] Instance na_inv_tok_ne {p N} : NonExpansive (na_inv_tok p N).
   Proof. solve_proper. Qed.
 
+  (** Non-expansiveness of the body, for allocating the world satisfaction *)
+  Lemma na_body_ne {p sm} :
+    internal_ne (PROP:=iProp Σ) sm -∗ ∀ i, internal_ne (na_body p sm i).
+  Proof.
+    iIntros "#Ne" (i). rewrite /internal_ne /na_body. iIntros (Px Qx) "eq".
+    iDestruct ("Ne" $! Px Qx with "eq") as "eq'". by iRewrite "eq'".
+  Qed.
+
   (** Allocate a non-atomic invariant *)
   Lemma na_inv_tok_alloc {p sm} Px N :
     sm Px -∗ |=[na_inv_wsat p sm]=> na_inv_tok p N Px.
@@ -176,3 +184,13 @@ Section na_inv.
     iFrame "F".
   Qed.
 End na_inv.
+
+(** Allocate the world satisfaction for non-atomic invariants *)
+Lemma na_inv_wsat_alloc `{!sinvGpreS FML Σ, !na_invG Σ} :
+  ⊢ |==> ∃ _ : naInvGS FML Σ, ∀ p sm,
+    internal_ne (PROP:=iProp Σ) sm -∗ na_inv_wsat p sm.
+Proof.
+  iMod (sinv_wsat_alloc (FML:=FML)) as ([pre γ]) "W". iModIntro.
+  iExists (NaInvGS FML Σ pre _ γ). iIntros (p sm) "Ne".
+  rewrite /na_inv_wsat /naSinvGS. iApply "W". by iApply na_body_ne.
+Qed.
