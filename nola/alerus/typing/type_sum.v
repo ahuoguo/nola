@@ -570,7 +570,7 @@ Section type_sum.
     rewrite /ty_own uniq_bor_gho. iSplit; [|done].
     iSplitR.
     { iApply (dincl_trans with "Incl").
-      iApply (dincl_of (lft_intersect_tyl_lfts_lookup_incl tyl i)). }
+      iApply (dincl_of_sub (lft_intersect_tyl_lfts_lookup_sub tyl i)). }
     iSplitR; [iPureIntro; lia|]. iFrame "ζVo ζTok ζBor".
     iFrame "PtBase2". by iRight.
   Qed.
@@ -890,7 +890,7 @@ Section type_sum.
       iFrame "↦1 ↦2". iSplitL.
       { iAssert (ty_own () () d' (S d') tid []) as "Hu";
           [by rewrite unit_ty_own|]. iDestruct "Hu" as "[Hu _]".
-        iDestruct ("Sgho" $! bor_sem alt_here () d' (S d') tid with "Hu") as "[$ _]". }
+        iDestruct ("Sgho" $! _ alt_here () d' (S d') tid with "Hu") as "[$ _]". }
       iPureIntro. rewrite /ty_phys /xsum_ty /= to_xsum_pinj -Sphys /=.
       apply pad_length'. rewrite /= length_fmap Hlen2.
       rewrite Eq in Sz. simpl in Sz. simpl. lia. }

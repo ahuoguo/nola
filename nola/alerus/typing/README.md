@@ -216,7 +216,156 @@ build green.
      exactly one place, `type_fn`, and is to be replaced by a stratified
      definition rather than discharged.
 
-6. **The model.**  A `cif` with the remaining ~25 leaf constructors, a
+6. **The model.**  *In progress*, in [`model.v`](model.v).  What is there:
+
+   * the `cif` constructor signature - about twenty *leaves*, whose
+     semantics is a token (lifetime, dead lifetime, the two points-to
+     forms, allocatedness, deallocation permission, value observer,
+     prophecy controller, guard source, borrow state, heap cell, cell
+     vector, the two "active" tokens, prophecy observation, lock handle,
+     dead atom, cancellation token), and four constructors holding a
+     *syntactic* sub-formula (the atomic and cancellable non-atomic
+     invariants, open and closed), after `cif_inv` in
+     `nola/iris/inv_deriv.v`.  The shared-borrow formula needed no
+     constructor of its own: it is built from `cif_or`, `cif_sep`,
+     `cif_ex` and two leaves.
+   * `BorSem_at δ`, `BorStateFml_at δ`, `ShrBorSem_at δ`, `EmptySem_at δ`,
+     hence `AlerusSem_at δ`, hence **`alerus_WGuard_at δ`** - the guarding
+     world satisfaction at a candidate.  This is what the
+     `alerusGS`/`AlerusSem` split was for, and it is Nola's
+     `inv_wsat ⟦⟧(δ)` one level up.
+   * the two judgments `guardJT` and `idxborJT` with their `Dsem`
+     instances, and the constructors `cif_guard` / `cif_idxbor` whose
+     meaning is `□ δ (…)`, after `inv'`.
+   * the constraint classes `typingC` / `typingJ` / `typingCS` /
+     `typingJS`, after `rust_haltC` and friends.
+   * `bor_sem := ⟦⟧ᶜ(der)` as the ambient interpretation, and the
+     `TypeFml`, `GsrcSem` and `HeapSem` instances at it.
+
+   What is left: the `AltSem` instance, then `typeG`, then `PcellFml` /
+   `AtomicInvFml` / `LocalInvFml` / `RaFml`, then the world-satisfaction
+   allocation and `soundness.v`.
+
+### What building the model showed about `AltSem`
+
+**The rule.**  A stored guard lives at one interpretation and *cannot be
+moved to another*: that would need `δ J ⊢ δ' J`, while `Deriv_factor'`
+gives only `δ J ⊢ ⟦J⟧(δ')` (`Psgoidp_factor'` yields one conjunct of the
+thesis's `δ ⇝ δ'`, not the `δ' J` one).  So anything that has to be
+*usable while building* a stored guard at a candidate - and candidates
+only ever arise from such a build - must be held as a **family**, one
+member per candidate, from the moment it is created.
+
+That is now how inclusions work: `dguard_all Px Qx` is
+`□ ∀ sem, alt_sem sem → sem (guard_fml Px Qx)`, `dincl` is its
+lifetime-token case, `dincl_at` reads the member at a candidate and
+`dincl_dguard` at the ambient one.  Everything that creates one creates
+the whole family (`dincl_of_incl` replays a closed lifetime-logic fact at
+each candidate; `dincl_eternalize`'s and `guard_fml_borrow_shared`'s
+tokens mention no interpretation).  `&uniq{κ} ty`'s *own* inclusion
+component stays a plain `dguard` - it is one formula at one
+interpretation.
+
+**Still open, and the same shape: the indexed borrow.**
+`idxbor_fml_into : sem (idxbor_fml κ idx Px) ⊢ sem' (idxbor_fml κ idx Px)`
+is not realisable, for exactly the reason above.  Its one consumer is
+`dguard_inner_from_guard_uniq_body`, which turns `&uniq`'s indexed borrow
+into a guard at a candidate (`idxbor_fml_guard_at`) in order to build
+`&shr`'s ghost assertion - so `type_deref_shr_uniq` really does need the
+indexed borrow at every candidate.  The fix is the same move
+(`idxbor_fml_of_bor` yields a family, `uniq_body_pers_component` becomes
+one), but unlike the inclusion case it does not fit behind the existing
+formula: `uniq_body_fmlx` holds a single `idxbor_fml`, so
+`uniq_body_fmlx_sem` would no longer relate the formula to the family.
+Deciding where that family lives is the next piece of design.
+
+**`alt_into` should be defined by what it is used for.**  In the model a
+candidate is a function `FML $oi Σ → iProp Σ`, and nothing recovers the
+`δ` behind it, so `alt_into` cannot be `dinto δ δ'` as written.  Both of
+its uses are "a judgment stored at `sem` can be read at `sem'`", which
+*is* a function of the two interpretations - so that is what it should be
+defined as, with `dinto δ δ'` discharging it.  `alt_WGuard` had the same
+problem and is solved: `alerus_WGuard_of` is `llft_wsatG`'s body with
+`bor_sem` replaced by the argument, and agrees with both `alerus_WGuard`
+and `alerus_WGuard_at δ` definitionally.
+
+**A performance note.**  `dguard_all` is sealed and `Typeclasses Opaque`.
+Unfolded it is a `□ ∀ sem` under a class binder, and with about a hundred
+occurrences that sends every unification and every `Persistent` search
+under the binder: `lft_contexts.v` alone went from 4s to over ten minutes
+before sealing.  Any further family-shaped definition needs the same
+treatment.
+
+
+
+Trying to instantiate `AltSem` turned up two things the interface claimed
+that Nola's `Deriv` cannot give.  The first is fixed; the second says how
+the interface has to be reshaped.
+
+1. **`alt_into_refl` was unsound.**  It said every candidate maps into
+   itself, i.e. `dinto δ δ` - which is *soundness* of `δ`.
+   `nola/bi/deriv.v` proves that for `der` alone (`der_sound`; thesis
+   Theorem 4.3) and for no other member of `Deriv`.  It is now
+   `alt_into_here : alt_into bor_sem bor_sem`, and the development turned
+   out never to need more: `dguard_sem_at` and `dincl_sem_at` were only
+   ever used at `alt_here`, so both are gone.  **A judgment can be
+   eliminated at the ambient interpretation and nowhere else.**
+
+2. **`alt_sem_into` and introduction-at-an-arbitrary-candidate are
+   jointly unrealisable.**  Write `reach δ` for `dinto der δ`.
+   `alt_sem_into` needs `reach` of every candidate in range; introduction
+   at a candidate `δ` is `Deriv_factor'` at `δ`, whose binder gives
+   `Deriv ih δ'`, `ih δ'` and `dinto δ δ'` - and `reach δ` together with
+   `dinto δ δ'` does *not* give `reach δ'`, because that would need
+   `⟦J⟧(δ) ⊢ δ J`.  Putting `reach` into Nola's induction hypothesis `ih`
+   does not help either: then the binder does hand out `reach δ'`, but
+   `alt_here` becomes `Deriv reach der`, and `nola/bi/deriv.v` gives only
+   `der_Deriv : Deriv (λ _, True) der`.  Reachability has to be carried,
+   not recovered.
+
+   The shape that *is* realisable, and the next piece of work:
+
+   * `alt_cand sem` - "`sem` is a derivability candidate", `Deriv ⊤ δ`.
+     All the `_sem_at` equations, `guard_fml_pers_at`,
+     `idxbor_fml_pers_at` and `guard_fml_sem_into` are stated at this.
+   * `alt_sem sem` - "… and reachable from the ambient", `Deriv ⊤ δ ∧
+     reach δ`.  `alt_here` holds (`der_Deriv` and `der_sound`),
+     `alt_sem_into` is a projection, and this is what the type-record
+     laws and `type_incl` quantify over, since they read stored guards
+     that were made at the ambient interpretation.
+   * **Introduction only at the ambient**: `guard_fml_sem_2` becomes
+     `dguard_of_all`, whose binder gives `⌜alt_sem sem'⌝` - this is
+     `Deriv_factor'` at `der`, which does give `dinto der δ'`.
+   * The combinators that currently derive from `dguard_of_all_at` at a
+     non-ambient candidate - `dguard_trans_at`, `dguard_intro_at`,
+     `dguard_{lhs,rhs}_iff_at`, `dguard_{lhs,rhs}_sep_*_at`,
+     `dguard_and_at`, `dincl_glb_at`, `idxbor_fml_iff_at`,
+     `idxbor_fml_shorten_at`, about sixteen in all - become *fields*,
+     realised by `Deriv_map` / `Deriv_map2`, whose binders give
+     `⌜alt_cand sem''⌝` and `⌜alt_into sem sem''⌝`.  Their bodies never
+     read an ambient guard, so that is enough.  Their users do not
+     change.
+
+   Two things found along the way, both now fixed or recorded:
+
+   * `Default Proof Using "Type"` was making sealed definitions generalise
+     over their whole section context, so a points-to *token* carried a
+     `NaSem` - hence a `bor_sem` - that it never used.  Invisible while the
+     interpretation was bundled into `alerusGS`; fatal once a
+     constructor's semantics has to be written before the interpretation
+     exists.  Fixed in `non_atomic_cell_map.v` and `lang/heap.v`.
+   * `TypeFml` demanded `Cofe (FML $oi Σ)`, which **a `cif` does not
+     satisfy**: Nola's `cit` is complete as a `prost`, not as an OFE
+     (`nola/util/cit.v`'s `cit_prolimit`), and recursion over it goes
+     through `profix` with `Productive`, as `rust_halt/rec.v`'s `ty_rec`
+     does.  Only `typing/fixpoint.v` needs it - it builds a recursive type
+     as the COFE limit `compl` of a chain of ghost assertions, the
+     step-indexed idiom - so the assumption now lives there.  Converting
+     that file to `profix` is a separate piece of work and the last
+     structural obstacle to recursive types at the concrete
+     interpretation.
+
+   The original sketch of this step read:  A `cif` with the remaining ~25 leaf constructors, a
    `JUDG`, `bor_sem := ⟦⟧ᶜ(der)`, the `AltSem` instance with
    `alt_sem := Deriv ih` and `alt_into := dinto`, and the
    world-satisfaction allocation (plus the `llft_wsat_alloc` reordering
@@ -287,3 +436,129 @@ harder obligation than the stratified definition and still leaves the
 paradox of § 3.4.1 unaddressed.  `rust_halt` keeps its typing judgment at
 the ambient interpretation (`type_def` uses `WP[rust_halt_wsat]` with
 `⟦⟧ᶜ = ⟦⟧ᶜ(der)`, `type.v:910-932`) precisely because it never stores one.
+
+## The last obstacle in the model: a full borrow is not storable
+
+Building the `AltSem` instance turns every field into one of two shapes.
+
+*Elimination at a candidate* - `guard_fml_sem_into`, and the merged form
+`idxbor_fml_guard_at` should take - is `dinto der δ'`, which `Deriv_factor'`
+hands out: a judgment held at the ambient interpretation can be read as its
+*semantics* at any candidate the ambient one maps into.  Every `dguard_*_at`
+lemma in `ctx.v` is of this shape, and all of them are fine.
+
+*Introduction at every candidate* - the families `dguard_all`, `dincl`,
+`dincl_eternalize_all`, `guard_fml_borrow_shared` - needs the ingredient to
+be interpretation-independent.  `sinv_tok`, `eternal_tok` and `OwnBorState`
+are plain ghost state, so those four are fine too.
+
+Two fields are neither: `idxbor_fml_of_bor` and `guard_fml_of_bor` start
+from a `full_bor κ Px`, and
+
+```coq
+full_bor_def κ Px := ∃ sn κ',
+  κ ⊑ κ' ∗ (∃ Px', □ (bor_sem Px' ↔ bor_sem Px) ∗ sinv_tok sn Px')
+  ∗ OwnBorState …
+```
+
+mentions the interpretation **twice** in a way that does not transport:
+`κ ⊑ κ'` is `llft_incl`, a Leaf guard over `llft_wsatG`, which contains
+`box_wsat bor_sem`; and the `□ (bor_sem Px' ↔ bor_sem Px)` is the borrow's
+semantic alteration.  Neither is a judgment held at `der`, so `dinto der δ'`
+does not move them, and neither is ghost state, so they do not hold at every
+candidate either.  A full borrow is therefore *not storable*: no amount of
+rephrasing on the `typing/` side can store one in a formula.
+
+This is exactly the point where Nola's own lifetime logic differs.  In
+`nola/iris/lft.v` lifetime inclusion is **pure** (`lft_incl`, inclusion of
+multisets) or a **persistent token** (`⊑□`), and `bor_tok` is ghost state;
+that is why `rust_halt` can write `cif_bor κ Px` as a leaf and why
+`bor_tok_bor` holds at every `δ`.  Leaf's inclusion is a guard, and that is
+the one place where keeping Leaf's guarding logic costs something.
+
+### The fix: a storable inclusion and a storable alteration
+
+Both occurrences are *parameters* of the lifetime logic, not things it
+inspects: `lifetime_full.v` only ever uses `κ ⊑ κ'` through `guard_trans` /
+`llftl_incl_glb` and the iff through `□ (bor_sem Px' ↔ bor_sem Px)`.  So
+abstract them.  A class `StBor` supplies
+
+```coq
+st_incl : lft → lft → iProp Σ      st_iff : FML $oi Σ → FML $oi Σ → iProp Σ
+```
+
+with the closure properties the 18 `unseal_bor` sites use (`refl`, `trans`,
+`glb`, the `bor_sep` congruence for `st_iff`) and, at each `BorSem`, the two
+elimination rules `st_incl κ κ' ⊢ κ ⊑ κ'` and
+`st_iff Px Qx ⊢ □ (bor_sem Px ↔ bor_sem Qx)`.  `idx_bor_def` and
+`full_bor_def` use `st_incl`/`st_iff` in place of the two occurrences above.
+
+In the model both are the *plain-`iProp` family*, which is available because
+`idx_bor` is an `iProp` and not a formula - so no judgment, and hence no
+family rule, is involved:
+
+```coq
+st_incl κ κ' := □ ∀ δ' (_ : Deriv (λ _, True) δ'),
+                  @[κ] &&{alerus_WGuard_at δ'}&&> @[κ']
+st_iff Px Qx := □ ∀ δ' (_ : Deriv (λ _, True) δ'),
+                  ⟦ Px ⟧ᶜ(δ') ∗-∗ ⟦ Qx ⟧ᶜ(δ')
+```
+
+Each eliminates at *every* good `δ`, so a full borrow becomes
+interpretation-independent and `idxbor_fml_of_bor` goes through by
+`Deriv_factor'`.  `st_iff` is the shape `AltSem`'s `idxbor_fml_iff_at`
+already asks for, and `st_incl` is `dincl`'s content with the stored guard
+replaced by the guard itself - note it is *not* `dincl`: a formula-level
+inclusion stays a `guard_fml` judgment, eliminated at candidates by
+`dinto der δ'` as before.
+
+`llftl_bor_shorten` and `llftl_idx_shorten` take an `st_incl` after this
+change; the one call site outside the lifetime logic (`borrow.v`) passes a
+closed inclusion, which is storable.
+
+### Done: the lifetime logic now carries both as parameters
+
+`lifetime_full.v` is split in two sections.  The first ends once
+`llft_wsatG`, the lifetime tokens and `llft_incl` are defined; between them
+sits `StBor`, with `st_incl` and `st_iff` and their closure properties, and
+the second section adds `StBorSem` - the two elimination rules at *this*
+interpretation - and uses them in
+
+```coq
+idx_bor_def κ (sn, κ') Px := st_incl κ κ' ∗ ∃ Px', st_iff Px' Px ∗ sinv_tok sn Px'
+```
+
+With both abstracted, **`idx_bor` and `full_bor` no longer mention the
+interpretation at all**; `idxborJT_sem` is constant in `δ`, and that is what
+makes an indexed borrow storable.  `llftl_bor_shorten`, `llftl_idx_shorten`,
+`llftl_reborrow`, `llftl_bor_iff` and `llftl_idx_bor_iff` take an `st_incl`
+or an `st_iff`; `llftl_reborrow_meet` is the inclusion-free reborrow, whose
+result lives at `κ ⊓ κ'`, for the one caller that has only an ambient
+inclusion.
+
+In the model `st_incl`/`st_iff` are the plain-`iProp` families over good
+`δ`, and `StBorSem_at δ` instantiates each at `δ`.
+
+### What this changed in the typing layer
+
+Three notions now exist where there used to be one, and the difference is
+exactly whether the thing can be *used* at a candidate or only *stored*:
+
+| | lives at | use at a candidate | store in a formula |
+|---|---|---|---|
+| `dguard Px Qx` | the ambient `δ` | via `dinto der δ'` | it *is* a formula |
+| `dguard_all Px Qx` | every `δ`, as judgments | no - reading gives a judgment | yes |
+| `fguardx Px Qx` | every `δ`, as guards | yes | via `fguardx_dguard_all` |
+
+`dincl κ κ'` is now `st_incl κ κ'`, i.e. the `fguardx` of two lifetime
+tokens, and `incl_fml κ κ'` (the notation `κ ⊑x κ'`) is the formula for it.
+`incl_fml` is a *third* judgment in the model (`inclJT`, `cif_incl`), with
+the same shape as the indexed borrow: its semantics does not mention `δ`, so
+`incl_fml_sem_at` is a `⊣⊢` at **every** candidate - reading it anywhere is
+reading it at `der`.  That is what lets `&uniq{κ}`'s ghost assertion store an
+inclusion that is later strong enough to shorten a borrow.
+`basically_dead` holds a `dincl` for the same reason.
+
+A general guard between two formulas cannot be treated this way: its
+endpoints are interpreted, so `guard_fml` stays a judgment at one
+interpretation, eliminated at candidates by `dinto der δ'`.

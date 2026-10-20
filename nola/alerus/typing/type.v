@@ -48,6 +48,8 @@ Class typeG (FML : oFunctor) Σ : Type := TypeG {
   #[global] type_heapSem :: HeapSem FML Σ;
   #[global] type_gsrcSem :: GsrcSem FML Σ;
   #[global] type_typeFml :: TypeFml FML Σ;
+  #[global] type_stBor :: StBor FML Σ;
+  #[global] type_stBorSem :: StBorSem;
   #[global] type_altSem :: AltSem FML Σ;
 }.
 
@@ -220,7 +222,7 @@ Arguments ty_gho_pers_depth_mono_at {_ _ _ _}.
 Arguments ty_gho_pers_pers_at {_ _ _ _}.
 Global Instance ty_gho_pers_pers `{!typeG FML Σ} {𝔄} (ty: type 𝔄) x d g tid :
   Persistent (bor_sem (@ty_gho_persx _ _ _ _ ty x d g tid)).
-Proof. apply (ty_gho_pers_pers_at ty bor_sem alt_here). Qed.
+Proof. apply (ty_gho_pers_pers_at ty _ alt_here). Qed.
 
 (** The semantic views of the ghost assertion.  Everything outside the record
   and the type formers themselves speaks in terms of these. *)
@@ -234,7 +236,7 @@ Proof. exact: (ty_gho_depth_mono_at ty _ alt_here). Qed.
 Lemma ty_gho_pers_depth_mono `{!typeG FML Σ} {𝔄} (ty: type 𝔄) d g d' g' x tid :
   (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (ty.(ty_gho_persx) x d g tid) -∗
     bor_sem (ty.(ty_gho_persx) x d' g' tid).
-Proof. apply (ty_gho_pers_depth_mono_at ty bor_sem alt_here). Qed.
+Proof. apply (ty_gho_pers_depth_mono_at ty _ alt_here). Qed.
 
 (** Weakening the depth inside a *stored* guard *)
 Lemma dguard_depth_mono `{!typeG FML Σ} {𝔄} (ty: type 𝔄) {Px} d g d' g' x tid :
@@ -383,11 +385,11 @@ Arguments st_gho_depth_mono_at {_ _ _ _}.
 Arguments st_gho_persistent_at {_ _ _ _}.
 Global Instance st_gho_persistent `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄)
   x d g tid : Persistent (bor_sem (@st_ghox _ _ _ _ st x d g tid)).
-Proof. apply (st_gho_persistent_at st bor_sem alt_here). Qed.
+Proof. apply (st_gho_persistent_at st _ alt_here). Qed.
 Lemma st_gho_depth_mono `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄) d g d' g' x tid :
   (d ≤ d')%nat → (g ≤ g')%nat → bor_sem (st.(st_ghox) x d g tid) -∗
     bor_sem (st.(st_ghox) x d' g' tid).
-Proof. apply (st_gho_depth_mono_at st bor_sem alt_here). Qed.
+Proof. apply (st_gho_depth_mono_at st _ alt_here). Qed.
 
 Definition st_gho `{!typeG FML Σ} {𝔄} (st: simple_type 𝔄)
   (x: ~~𝔄) (d g: nat) (tid: thread_id) : iProp Σ :=
@@ -465,7 +467,7 @@ Arguments pt_ghox {_ _ _ _} _ _ _ / : simpl nomatch.
 Arguments pt_gho_persistent_at {_ _ _ _}.
 Global Instance pt_gho_persistent `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄)
   x tid : Persistent (bor_sem (pt.(pt_ghox) x tid)).
-Proof. apply (pt_gho_persistent_at pt bor_sem alt_here). Qed.
+Proof. apply (pt_gho_persistent_at pt _ alt_here). Qed.
 Definition pt_gho `{!typeG FML Σ} {𝔄} (pt: plain_type 𝔄)
   (x: ~~𝔄) (tid: thread_id) : iProp Σ := bor_sem (pt.(pt_ghox) x tid).
 Arguments pt_gho {_ _ _ _} _ _ _ : simpl never.
@@ -1290,7 +1292,7 @@ Lemma type_incl_gho_now `{!typeG FML Σ} {𝔄 𝔅} (ty: type 𝔄) (ty': type 
           sem (ty.(ty_ghox) x d g tid))) ⊢
   □ ∀x d g tid, ty_gho ty x d g tid -∗ ty_gho ty' (f ~~$ₛ x) d g tid ∗
     (ty_gho ty' (f ~~$ₛ x) d g tid -∗ ty_gho ty x d g tid).
-Proof. iIntros "#H !>" (????). iApply ("H" $! bor_sem alt_here). Qed.
+Proof. iIntros "#H !>" (????). iApply ("H" $! _ alt_here). Qed.
 Lemma type_incl_gho_pers_now `{!typeG FML Σ} {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅)
     f :
   (□ ∀ sem (_ : alt_sem sem), ∀x d g tid,
@@ -1298,7 +1300,7 @@ Lemma type_incl_gho_pers_now `{!typeG FML Σ} {𝔄 𝔅} (ty: type 𝔄) (ty': 
      sem (ty'.(ty_gho_persx) (f ~~$ₛ x) d g tid)) ⊢
   □ ∀x d g tid, ty_gho_pers ty x d g tid -∗
     ty_gho_pers ty' (f ~~$ₛ x) d g tid.
-Proof. iIntros "#H !>" (????). iApply ("H" $! bor_sem alt_here). Qed.
+Proof. iIntros "#H !>" (????). iApply ("H" $! _ alt_here). Qed.
 Global Instance: Params (@type_incl) 5 := {}.
 
 Definition subtype `{!typeG FML Σ} {𝔄 𝔅} E L (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
@@ -1692,7 +1694,7 @@ Section subtyping.
     iDestruct (Sub with "L1") as "#Sub".
     iDestruct ("back" with "L1") as "[W tok]".
     iDestruct ("Sub" with "E") as "#(_ & _ & #InOwn & _)".
-    iDestruct ("InOwn" $! bor_sem alt_here with "ty") as "[ty' _]".
+    iDestruct ("InOwn" $! _ alt_here with "ty") as "[ty' _]".
     unfold "∘".
     by iApply (Rslv with "LFT PROPH UNIQ E tok ty' W").
   Qed.

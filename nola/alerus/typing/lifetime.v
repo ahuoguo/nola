@@ -28,12 +28,12 @@ Proof. intros κ; unfold llft_intersect; set_solver. Qed.
   a type's ghost assertion through [type_incl], which is a formula.  See
   [AltSem] in [typing/ctx.v]. *)
 Definition lft_equiv `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
-  !AltSem FML Σ} (κ κ': lft) : iProp Σ := (dincl κ κ' ∗ dincl κ' κ)%I.
+  StBor0 : !StBor FML Σ, StBorSem0 : !StBorSem, !AltSem FML Σ} (κ κ': lft) : iProp Σ := (dincl κ κ' ∗ dincl κ' κ)%I.
 
 Infix "≡ₗ" := lft_equiv (at level 70) : bi_scope.
 
 Section lifetimes.
-  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ, !AltSem FML Σ}.
+  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ, StBor0 : !StBor FML Σ, StBorSem0 : !StBorSem, !AltSem FML Σ}.
   Implicit Type (κ: lft).
 
   Global Instance lft_intersect_comm : Comm (A:=lft) eq (⊓).
@@ -61,6 +61,22 @@ Section lifetimes.
     - iApply llftl_incl_weaken_lhs_r. by iApply IH.
   Qed.
 
+  Lemma lft_intersect_list_elem_of_sub κs κ :
+    κ ∈ κs → κ ⊆ lft_intersect_list κs.
+  Proof.
+    induction κs as [ | κ' κs' IH ] in κ |- *; first set_solver.
+    move=> /elem_of_cons[->|Hin] /=; unfold meet, llft_intersect;
+      [set_solver|]. have := IH _ Hin. set_solver.
+  Qed.
+  Lemma lft_intersect_list_sub l1 l2 :
+    (∀ κ, κ ∈ l1 → κ ∈ l2) → lft_intersect_list l1 ⊆ lft_intersect_list l2.
+  Proof.
+    induction l1 as [ | κ l1' IH ]=>/= Hsub; [set_solver|].
+    unfold meet, llft_intersect. apply union_least.
+    - apply lft_intersect_list_elem_of_sub, Hsub, elem_of_cons. by left.
+    - apply IH=> ??. apply Hsub, elem_of_cons. by right.
+  Qed.
+
   Lemma lft_intersect_list_app l1 l2 :
     lft_intersect_list (l1 ++ l2) =
       lft_intersect_list l1 ⊓ lft_intersect_list l2.
@@ -75,10 +91,10 @@ Section lifetimes.
   Lemma lft_equiv_refl κ : ⊢ lft_equiv κ κ.
   Proof. by iSplit; iApply dincl_refl. Qed.
   Lemma dincl_static κ : ⊢ dincl κ static.
-  Proof. apply dincl_of, lft_incl_static. Qed.
+  Proof. apply dincl_of_sub. unfold static, llft_empty. set_solver. Qed.
   Lemma dincl_intersect_list_elem_of κs κ :
     κ ∈ κs → ⊢ dincl (lft_intersect_list κs) κ.
-  Proof. move=> ?. apply dincl_of. by apply lft_intersect_list_elem_of_incl. Qed.
+  Proof. move=> ?. by apply dincl_of_sub, lft_intersect_list_elem_of_sub. Qed.
 
   Lemma lft_intersect_equiv_idemp κ : ⊢ κ ⊓ κ ≡ₗ κ.
   Proof.

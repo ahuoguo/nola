@@ -187,20 +187,20 @@ Section definitions.
       end.
       
   Global Instance heap_complete_mapsto_fancy_vec'_timeless l cs fvs : Timeless (heap_complete_mapsto_fancy_vec' l cs fvs). 
-  Proof. generalize l, fvs. clear l. clear fvs. induction cs.
+  Proof using All. generalize l, fvs. clear l. clear fvs. induction cs.
     - simpl. apply _. - intros l fvs. simpl. destruct fvs; first by apply _.
       apply sep_timeless; apply _.
   Qed.
 
   Global Instance heap_complete_mapsto_fancy_vec_timeless l fv : Timeless (heap_complete_mapsto_fancy_vec l fv). 
-  Proof. apply _. Qed.
+  Proof using All. apply _. Qed.
 
   Global Instance cell_points_to_value_timeless c v : Timeless (cell_points_to_value c v).
-  Proof. apply _. Qed.
+  Proof using All. apply _. Qed.
   Global Instance cell_points_to_fancy_value_timeless c fv : Timeless (cell_points_to_fancy_value c fv). 
-  Proof. apply _. Qed.
+  Proof using All. apply _. Qed.
   Global Instance cells_points_to_fancy_value_vec_timeless cells fv : Timeless (cells_points_to_fancy_value_vec cells fv).
-  Proof.
+  Proof using All.
     induction cells in fv |- *.
     - simpl. apply _.
     - simpl. destruct fv; first by apply _. apply sep_timeless; apply _.
@@ -291,10 +291,10 @@ Section heap.
 
   (** General properties of mapsto and freeable *)
   Global Instance heap_mapsto_timeless l v : Timeless (l ↦ v).
-  Proof. apply points_to_timeless. Qed.
+  Proof using All. apply points_to_timeless. Qed.
 
   Global Instance heap_mapsto_vec_timeless l vl : Timeless (l ↦∗ vl).
-  Proof. rewrite /heap_mapsto_vec. apply _. Qed.
+  Proof using All. rewrite /heap_mapsto_vec. apply _. Qed.
 
   Global Instance heap_freeable_timeless q l n : Timeless (†{q}l…n).
   Proof. rewrite heap_freeable_eq /heap_freeable_def. apply _. Qed.
@@ -1052,7 +1052,7 @@ Section heap.
 
   Lemma heap_mapsto_cells_to_complete_mapsto_fancy (l : cloc1) (fv : fancy_val) :
     l.1 ↦[^ l.2 ]! fv ⊣⊢ l #↦_ ∗ l #↦! fv. 
-  Proof.
+  Proof using All.
     destruct l as [l cell_ids]. simpl.
     rewrite /heap_mapsto_cells_fancy/heap_complete_mapsto/heap_complete_mapsto_fancy.
     destruct (decide (cell_ids = [])) as [-> | Hnempty].
@@ -1066,7 +1066,7 @@ Section heap.
 
   Lemma heap_mapsto_cells_to_complete_mapsto_fancy_vec (l : cloc) (fv : list fancy_val) :
     l.1 ↦[^ l.2 ]!∗ fv ⊣⊢ l #↦∗_ ∗ l #↦!∗ fv. 
-  Proof.
+  Proof using All.
     destruct l as [l list_cell_ids]. simpl.
     induction list_cell_ids as [| cell_ids list_cell_ids IH] in l, fv |- *.
     - destruct fv => //=.
@@ -1098,7 +1098,7 @@ Section heap.
 
     Lemma cell_alloc2 l fv :
     l ↦!∗ fv ==∗ ∃ γs, ⌜ length γs = length fv ⌝ ∗ l ↦[^ ((λ γ, [γ]) <$> γs) ]!∗ fv.
-  Proof.
+  Proof using All.
     induction fv as [ | fv fvs IH] in l |- *.
     - iIntros "? !>"; iExists []; iSplit => //.
     - rewrite heap_mapsto_fancy_vec_cons.
@@ -1181,7 +1181,7 @@ Section heap.
   Lemma heap_complete_mapsto_combine γs cl :
     length cl.2 = length γs →
     cl #↦∗_ ∗ cl #↦!∗ (FCell <$> γs)  ⊣⊢ cloc_flat_insert cl γs #↦∗_.
-  Proof.
+  Proof using All.
     move => Hlen.
     destruct cl as [l list_cell_ids].
     induction γs as [ | γ γs IH] in l, list_cell_ids, Hlen |- *; simpl.
@@ -1233,7 +1233,7 @@ Section heap.
     
   Lemma point_prop_heap_mapsto_cells_fancy_vec l cells vl :
       point_prop (l ↦[^ cells ]!∗ vl).
-  Proof.
+  Proof using All.
       generalize l, cells. clear l. clear cells. induction vl.
       - intros. destruct cells; apply point_prop_persistent.
       - intros. destruct cells. { apply point_prop_persistent. }
@@ -1388,7 +1388,7 @@ Section heap.
   
   Lemma and_cloc_combine_fancy (l: cloc) (fvl: list fancy_val) :
       l #↦∗_ ∧ l #↦!∗ fvl ⊢ l.1 ↦[^ l.2 ]!∗ fvl.
-  Proof.
+  Proof using All.
       iIntros "And".
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "[And]") as "%HLen".
         { iDestruct "And" as "[_ $]". }
@@ -1412,13 +1412,13 @@ Section heap.
     
   Lemma and_cloc_combine (l: cloc) (vl: list val) :
       l #↦∗_ ∧ l #↦∗ vl ⊢ l.1 ↦[^ l.2 ]∗ vl.
-  Proof.
+  Proof using All.
       apply and_cloc_combine_fancy.
   Qed.
   
   Lemma guard_cloc_combine G Wg (l: cloc) (vl: list val) :
       ⊢ (G &&{Wg}&&> l #↦∗_) -∗ (G &&{Wg}&&> l #↦∗ vl) -∗ (G &&{Wg}&&> (l.1 ↦[^ l.2]∗ vl)).
-  Proof.
+  Proof using All.
       iApply (guard_and (point_prop0 := point_prop_heap_mapsto_cells_fancy_vec _ _ _)).
       apply and_cloc_combine.
   Qed.
@@ -1426,7 +1426,7 @@ Section heap.
   Lemma guard_cloc_combine_fancy G Wg (l: cloc) (vl: list fancy_val) :
       ⊢ (G &&{Wg}&&> l #↦∗_) -∗ (G &&{Wg}&&> l #↦!∗ vl)
           -∗ (G &&{Wg}&&> (l.1 ↦[^ l.2]!∗ vl)).
-  Proof.
+  Proof using All.
       iApply (guard_and (point_prop0 := point_prop_heap_mapsto_cells_fancy_vec _ _ _)).
       apply and_cloc_combine_fancy.
   Qed.
@@ -1442,7 +1442,7 @@ Section heap.
 
   Lemma guard_cloc_combine_fancy' G Wg (l : cloc) (γs : list cell_id) (vl: list fancy_val) :
       ⊢ (G &&{Wg}&&> l.1 ↦[^ l.2 ]!∗ (FCell <$> γs)) -∗ (G &&{Wg}&&> γs ^↦!∗ vl) -∗ let l' := cloc_flat_insert l γs in (G &&{Wg}&&> (l'.1 ↦[^ l'.2]!∗ vl)).
-  Proof.
+  Proof using All.
     iApply (guard_and (point_prop0 := point_prop_heap_mapsto_cells_fancy_vec _ _ _)).
     iIntros "And".
       rewrite -(heap_complete_mapsto_fancy_val_vec_eq' l.1).
@@ -1518,7 +1518,7 @@ Section heap.
       l #↦! fv ={E}=∗ ∃ (v: val), l #↦ v
           ∗ (∀ l₁, l₁ #↦_ ∗ l₁ #↦ v ={F}=∗ l₁ #↦_ ∗ l₁ #↦! fv)%I
           ∗ ⌜ match fv with FVal v0 => v0 = v | _ => True end ⌝.
-  Proof.
+  Proof using All.
       iIntros "pt". destruct fv.
        - iModIntro. iExists v. iFrame. iSplit. { iIntros. { iModIntro. iFrame. } } done.
        - iMod (pt_untether with "pt") as (v) "[pt back]".
@@ -1533,7 +1533,7 @@ Section heap.
       l #↦!∗ fv ={E}=∗ ∃ (v: list val), l #↦∗ v ∗ ⌜length v = length fv⌝
           ∗ (∀ l₁, l₁ #↦∗_ ∗ l₁ #↦∗ v ={F}=∗ l₁ #↦∗_ ∗ l₁ #↦!∗ fv)%I
           ∗ ⌜ all_concrete fv → fv = fmap FVal v ⌝.
-  Proof.
+  Proof using All.
       destruct l as [l cs]. generalize l, fv. clear l. clear fv. induction cs.
        - intros l fv. iIntros "A". iModIntro. iExists []. 
          rewrite heap_complete_mapsto_val_empty.
@@ -1566,7 +1566,7 @@ Section heap.
   Lemma mapsto_vec_untether l fv E F :
       l #↦!∗ fv ={E}=∗ ∃ (v: list val), l #↦∗ v ∗ ⌜length v = length fv⌝
           ∗ (∀ l₁, l₁ #↦∗_ ∗ l₁ #↦∗ v ={F}=∗ l₁ #↦∗_ ∗ l₁ #↦!∗ fv)%I.
-  Proof.
+  Proof using All.
       iIntros "pt". iMod (mapsto_vec_untether' _ _ _ F with "pt") as (v) "(A & B & C & D)".
       iExists v. iModIntro. iFrame.
   Qed.
@@ -1574,7 +1574,7 @@ Section heap.
   Lemma mapsto_vec_untether_singleton l f E F :
       l #↦!∗ [f] ={E}=∗ ∃ v l₀ c₀, ⌜l = (l₀, [c₀])⌝ ∗ (l₀, c₀) #↦ v
           ∗ (∀ l₁ c₁, (l₁, c₁) #↦_ ∗ (l₁, c₁) #↦ v ={F}=∗ (l₁, c₁) #↦_ ∗ (l₁, [c₁]) #↦!∗ [f]).
-  Proof.
+  Proof using All.
     iIntros "pt". iMod (mapsto_vec_untether _ _ _ F with "pt") as (v) "[pt [%Heq Hback]]".
     iModIntro. destruct l as [l cs].
     iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "pt") as "%Hlen".
@@ -1593,7 +1593,7 @@ Section heap.
       l ↦!∗ fv ={E}=∗ ∃ (v: list val), l ↦∗ v ∗ ⌜length v = length fv⌝
           ∗ (∀ l₁, l₁ #↦∗_ ∗ l₁ #↦∗ v ={F}=∗ l₁ #↦∗_ ∗ l₁ #↦!∗ fv)
           ∗ ⌜ all_concrete fv → fv = fmap FVal v ⌝.
-  Proof. 
+  Proof using All. 
       have Ha := (mapsto_vec_untether' (l, repeat [] (length fv)) fv E F).
       rewrite <- heap_cloc_mapsto_fancy_empty in Ha. 
       iIntros "A". iMod (Ha with "A") as (v) "(B & %lens & D & E)".
@@ -1609,7 +1609,7 @@ Section heap.
   
   Lemma heap_delete_cell (l : loc) (γs : list cell_id) (fl : list fancy_val) :
     l ↦!∗ (FCell <$> γs) -∗ (l, (λ γ : cell_id, [γ]) <$> γs) #↦!∗ fl ==∗ l ↦!∗ fl.
-  Proof.
+  Proof using All.
     induction γs as [ | γ γs IH] in l, fl |- *.
     - simpl. iIntros "_ Hl !>". destruct fl => //.
     - rewrite !fmap_cons.

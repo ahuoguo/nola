@@ -30,11 +30,11 @@ Import GuardNotation ModwNotation.
   inside [&uniq{κ}]'s ghost assertion, which is a formula.  See [AltSem] in
   [typing/ctx.v]. *)
 Definition elctx_elt_interp `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
-  !AltSem FML Σ} (x : elctx_elt) : iProp Σ := dincl x.1 x.2.
+  StBor0 : !StBor FML Σ, StBorSem0 : !StBorSem, !AltSem FML Σ} (x : elctx_elt) : iProp Σ := dincl x.1 x.2.
 Notation elctx_interp := (big_sepL (λ _, elctx_elt_interp)).
 
 Section lft_contexts.
-  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ, !AltSem FML Σ}.
+  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ, StBor0 : !StBor FML Σ, StBorSem0 : !StBorSem, !AltSem FML Σ}.
   Implicit Type (κ: lft).
 
   Global Instance elctx_interp_permut :
@@ -190,14 +190,14 @@ Section lft_contexts.
     every candidate, so [type_call] asks for this stronger form.  See
     [AltSem] in [typing/ctx.v]. *)
   Definition lctx_lft_alive_all (κ : lft) : Prop :=
-    ∀ sem, alt_sem sem → alt_into bor_sem sem →
+    ∀ sem, alt_sem sem →
       llctx_interp L ⊢ elctx_interp E -∗
         (llctx_interp L &&{alt_WGuard sem}&&> @[κ]).
 
   Lemma lctx_lft_alive_all_now κ : lctx_lft_alive_all κ → lctx_lft_alive κ.
   Proof.
     move=> Alv. rewrite /lctx_lft_alive -alt_WGuard_here.
-    exact: (Alv _ alt_here (alt_into_refl alt_here)).
+    exact: (Alv _ alt_here).
   Qed.
 
   Lemma lctx_lft_alive_static : lctx_lft_alive static.
@@ -245,16 +245,16 @@ Section lft_contexts.
 
   Lemma lctx_lft_alive_all_static : lctx_lft_alive_all static.
   Proof.
-    move=> sem ??. iIntros "**". rewrite -llftl_tok_unit_equiv.
+    move=> sem ?. iIntros "**". rewrite -llftl_tok_unit_equiv.
     iApply guard_true.
   Qed.
 
   Lemma lctx_lft_alive_all_intersect α β :
     lctx_lft_alive_all α → lctx_lft_alive_all β → lctx_lft_alive_all (α ⊓ β).
   Proof.
-    move=> alα alβ sem Hs Hi. iIntros "L #E".
-    iDestruct (alα sem Hs Hi with "L E") as "#gα".
-    iDestruct (alβ sem Hs Hi with "L E") as "#gβ".
+    move=> alα alβ sem Hs. iIntros "L #E".
+    iDestruct (alα sem Hs with "L E") as "#gα".
+    iDestruct (alβ sem Hs with "L E") as "#gβ".
     iApply (guard_and (point_prop0 := point_prop_llft_alive _) with "gα gβ").
     by rewrite llftl_tok_inter_and.
   Qed.
@@ -270,8 +270,8 @@ Section lft_contexts.
   Lemma lctx_lft_alive_all_local κ κs :
     κ ⊑ₗ κs ∈ L → Forall lctx_lft_alive_all κs → lctx_lft_alive_all κ.
   Proof.
-    move=> Hin Hf sem Hs Hi.
-    have H2 := lctx_lft_alive_all_tok_list _ Hf sem Hs Hi.
+    move=> Hin Hf sem Hs.
+    have H2 := lctx_lft_alive_all_tok_list _ Hf sem Hs.
     iIntros "HL #HE". iDestruct (H2 with "HL HE") as "#Alv".
     iAssert (llctx_interp L &&{alt_WGuard sem}&&>
       llctx_elt_interp (κ ⊑ₗ κs))%I with "[HL]" as "#HL1".
@@ -294,10 +294,9 @@ Section lft_contexts.
     before the local lifetime context is consumed *)
   Lemma lctx_lft_alive_all_guards κ : lctx_lft_alive_all κ →
     llctx_interp L -∗ elctx_interp E -∗
-      ∀ sem, ⌜alt_sem sem⌝ → ⌜alt_into bor_sem sem⌝ →
-        llctx_interp L &&{alt_WGuard sem}&&> @[κ].
+      ∀ sem, ⌜alt_sem sem⌝ → llctx_interp L &&{alt_WGuard sem}&&> @[κ].
   Proof.
-    move=> Alv. iIntros "L #E" (sem Hs Hi). iApply (Alv sem Hs Hi with "L E").
+    move=> Alv. iIntros "L #E" (sem Hs). iApply (Alv sem Hs with "L E").
   Qed.
 
   Lemma lctx_lft_alive_incl κ κ':
@@ -373,22 +372,22 @@ Section lft_contexts.
   Qed.
 End lft_contexts.
 
-Arguments lctx_lft_incl {_ _ _ _ _ _ _} _ _ _ _.
-Arguments lctx_lft_eq {_ _ _ _ _ _ _} _ _ _ _.
-Arguments lctx_lft_alive {_ _ _ _ _ _ _} _ _ _.
-Arguments lctx_lft_alive_all {_ _ _ _ _ _ _} _ _ _.
-Arguments elctx_sat {_ _ _ _ _ _ _} _ _ _.
-Arguments lctx_lft_incl_incl {_ _ _ _ _ _ _ _ _} _ _.
+Arguments lctx_lft_incl {_ _ _ _ _ _ _ _ _} _ _ _ _.
+Arguments lctx_lft_eq {_ _ _ _ _ _ _ _ _} _ _ _ _.
+Arguments lctx_lft_alive {_ _ _ _ _ _ _ _ _} _ _ _.
+Arguments lctx_lft_alive_all {_ _ _ _ _ _ _ _ _} _ _ _.
+Arguments elctx_sat {_ _ _ _ _ _ _ _ _} _ _ _.
+Arguments lctx_lft_incl_incl {_ _ _ _ _ _ _ _ _ _ _} _ _.
 
 Lemma elctx_sat_submseteq `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ,
-  !TypeFml FML Σ, !AltSem FML Σ} E E' L :
+  !TypeFml FML Σ, StBor0 : !StBor FML Σ, StBorSem0 : !StBorSem, !AltSem FML Σ} E E' L :
   E' ⊆+ E → elctx_sat E L E'.
 Proof. iIntros (HE') "_ !> H". by iApply big_sepL_submseteq. Qed.
 
 (** The original takes a fancy update at [↑NllftG ⊆ F]; here the guard is
   simply opened against the world satisfaction. *)
 Lemma lctx_lft_alive_get_guards `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ,
-    !TypeFml FML Σ, !AltSem FML Σ, !WsatIncl W Wguard Wr}
+    !TypeFml FML Σ, StBor0 : !StBor FML Σ, StBorSem0 : !StBorSem, !AltSem FML Σ, !WsatIncl W Wguard Wr}
     γ q E L κ :
   lctx_lft_alive E L κ →
   ([∗ list] x ∈ E, elctx_elt_interp x) -∗ Ltok γ L q -∗ W -∗

@@ -51,7 +51,7 @@ Section local_invariants.
   Definition local_inv_body {𝔄 ℭ} (ty: type 𝔄)
       (pred: abstracted_syn_type 𝔄 → ~~ℭ → Prop) (c: ~~ℭ) (tid: thread_id)
       : FML $oi Σ :=
-    ex_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
+    exs_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
       (ty.(ty_ghox) x' d' g' tid ∗
         pure_fml (pred (syn_abstract x') c))%FML))).
 
@@ -60,7 +60,7 @@ Section local_invariants.
       ∃ (x': ~~𝔄) (d' g': nat),
         ty_gho ty x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝.
   Proof.
-    rewrite /local_inv_body ex_fml_sem. apply bi.exist_proper=> x'.
+    rewrite /local_inv_body exs_fml_sem. apply bi.exist_proper=> x'.
     rewrite ex_fml_sem. apply bi.exist_proper=> d'.
     rewrite ex_fml_sem. apply bi.exist_proper=> g'.
     by rewrite bor_sep_sem pure_fml_sem.

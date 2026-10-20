@@ -434,13 +434,7 @@ Section NonAtomicMap.
   Context `{!Inhabited V}.
 
   Context {Σ: gFunctors} {FML : oFunctor}.
-  Context `{!na_logicG L V FML Σ, !NaSem FML Σ}.
-
-  (** Local names matching the original's section variables *)
-  Local Notation sm := na_sem.
-  Local Notation W := na_wsat.
-  Local Notation emptyx := na_emptyx.
-  Local Notation emptyx_sem := na_emptyx_sem.
+  Context `{!na_logicG L V FML Σ}.
 
   (** [point_prop] of a cell chain, so that [guard_and] applies *)
   Local Existing Instance cmap_pt_seq_point_prop.
@@ -475,6 +469,20 @@ Section NonAtomicMap.
     (at level 20, format "l  @↦[ ι ][^ cells ]  v") : bi_scope.
   Notation "l @↦[ ι ] v" := (points_to_seq ι l [] v)
     (at level 20, format "l  @↦[ ι ]  v") : bi_scope.
+
+  (** The interpretation of the stored formulas enters only from here on.
+    Keeping it out of the definitions above matters for the [cif] model: a
+    points-to token mentions no interpretation, and if it generalised over
+    [NaSem] anyway - which [Default Proof Using "Type*"] would make it do -
+    then a constructor whose semantics is such a token could not be given
+    before the interpretation exists. *)
+  Context `{!NaSem FML Σ}.
+
+  (** Local names matching the original's section variables *)
+  Local Notation sm := na_sem.
+  Local Notation W := na_wsat.
+  Local Notation emptyx := na_emptyx.
+  Local Notation emptyx_sem := na_emptyx_sem.
 
   (** The write bank's camera.  The original stored [laterO (iPropO Σ)]. *)
   Local Definition wR :=

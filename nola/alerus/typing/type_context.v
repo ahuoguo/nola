@@ -406,7 +406,7 @@ Section lemmas.
     iExists (f ~~$ₛ x -:: wπl). iFrame "tok T".
     iSplitR "Obs".
     - iExists v, d. iSplit; [done|].
-      iDestruct ("InOwn" $! bor_sem alt_here with "ty") as "[ty1 _]".
+      iDestruct ("InOwn" $! _ alt_here with "ty") as "[ty1 _]".
       iFrame.
       iPureIntro. rewrite <- InPhys. trivial.
     - iApply (proph_obs_impl with "Obs"). intros. done.

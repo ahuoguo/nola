@@ -51,6 +51,14 @@ Section sum.
   Qed.
   Opaque pad.
 
+  Lemma lft_intersect_tyl_lfts_lookup_sub {𝔄l} (tyl: typel 𝔄l) i :
+    lft_intersect_list (ty_lfts (tyl +!! i)) ⊆
+      lft_intersect_list (tyl_lfts tyl).
+  Proof.
+    apply lft_intersect_list_sub=> κ Hin. eapply elem_of_submseteq;
+      [exact Hin|]. apply sublist_submseteq, tyl_lfts_lookup_sublist.
+  Qed.
+
   Lemma lft_intersect_tyl_lfts_lookup_incl {𝔄l} (tyl: typel 𝔄l) i :
     ⊢ lft_intersect_list (tyl_lfts tyl) ⊑ lft_intersect_list (ty_lfts (tyl +!! i)).
   Proof.

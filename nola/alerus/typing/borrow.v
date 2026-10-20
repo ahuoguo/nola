@@ -67,7 +67,7 @@ Section borrow.
     iSplitL "UniqBody".
     { iExists v, (S (S d')). iSplit; [done|].
       rewrite /ty_own uniq_bor_gho. iSplitL; [|by rewrite /= -phys].
-      iSplitR; [iApply "Inκ"|]. iSplitR; [iPureIntro; lia|].
+      iSplitR; [done|]. iSplitR; [iPureIntro; lia|].
       iFrame "UniqBody". iSplitR.
       { iApply dguard_cmapstoany_nil. }
       by iRight. }
@@ -156,7 +156,7 @@ Section borrow.
     old value observer paired with the new prophecy controller.  The
     original's [⧖(S d' `max` g')] inside it goes with the time receipts. *)
   Definition reborrow_mid_fml {𝔄} (x0: ~~𝔄) (ξi ζi: positive) : FML $oi Σ :=
-    ex_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
+    exs_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
       (.VOx[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi] x' (d', g') ∗
        .PCx[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ζi] x' (vπ x') (d', g'))%FML))).
 
@@ -166,7 +166,7 @@ Section borrow.
         .VO[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi] x' (d', g') ∗
         .PC[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ζi] x' (vπ x') (d', g').
   Proof.
-    rewrite /reborrow_mid_fml ex_fml_sem. apply bi.exist_proper=> x'.
+    rewrite /reborrow_mid_fml exs_fml_sem. apply bi.exist_proper=> x'.
     rewrite ex_fml_sem. apply bi.exist_proper=> d'.
     rewrite ex_fml_sem. apply bi.exist_proper=> g'.
     by rewrite bor_sep_sem vo_fml_sem pc_fml_sem.
@@ -202,8 +202,9 @@ Section borrow.
       [set_solver|].
     set ξ := PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi.
     set ζ := PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ζi.
-    iDestruct (dguard_trans with "Inκ'κ Incl") as "#Inclκ'".
-    iDestruct (dguard_trans with "Inκ'κ PtBase") as "#PtBase'".
+    iDestruct (dincl_dguard with "Inκ'κ") as "#Inκ'κd".
+    iDestruct (dincl_trans with "Inκ'κ Incl") as "#Inclκ'".
+    iDestruct (dguard_trans with "Inκ'κd PtBase") as "#PtBase'".
     iDestruct (dincl_sem with "Inκ'κ") as "#Inκ'κs".
     iDestruct "Pers" as "[Dead|#Pers2]".
     { (* [κ] is already dead, so everything can be faked. *)
@@ -232,7 +233,7 @@ Section borrow.
         rewrite /ty_own uniq_bor_gho. iSplit; [|by rewrite /= -phys].
         iSplitR; [by iApply "Inclκ'"|]. iSplitR; [iPureIntro; lia|].
         iFrame "ζVo FTok FBor". iSplitR; [by iApply "PtBase'"|].
-        iLeft. iExists κ. by iFrame "Inκ'κ †κ". }
+        iLeft. iExists κ. iFrame "†κ". iApply "Inκ'κ". }
       iSplit; [|done]. rewrite /tctx_elt_interp /=. iExists v.
       iSplit; [done|]. iIntros "_ W". iModIntro. iFrame "W".
       iExists (l, x0, ξi, d', g', idx), (S d).
@@ -247,7 +248,7 @@ Section borrow.
     (* The main case. *)
     iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBor2".
     iDestruct (llftl_reborrow ⊤ κ κ' (uniq_body_fml ty x0 ξi tid l)
-      with "LFT Inκ'κs ξBor2") as "A".
+      with "LFT Inκ'κ ξBor2") as "A".
     iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
     iMod ("A'" with "W") as "[W [ξBor3 ToξBor]]".
     iDestruct (llftl_borrow κ' (reborrow_mid_fml x0 ξi ζi)
@@ -579,7 +580,7 @@ Section borrow.
   Definition deref_uniq_uniq_mid_fml {𝔄} (ty: type 𝔄) (x0: ~~ (uniq_borₛ 𝔄))
       (ξi ωi: positive) (ωidx: Idx) (κ': lft) (tid: thread_id) (l1: cloc)
       : FML $oi Σ :=
-    ex_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
+    exs_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
       (.VOx[PrVar (𝔄 ↾ prval_to_inh (vπ (uniq_bor_current x0))) ωi]
          x' (d', g') ∗
        .PCx[PrVar (uniq_borₛ 𝔄 ↾ prval_to_inh (vπ x0)) ξi]
@@ -599,7 +600,7 @@ Section borrow.
         dguard (alive_fml κ') (cmapstoany_fml l1) ∗
         (basically_dead κ' ∨ ty_gho_pers ty x' d' g' tid).
   Proof.
-    rewrite /deref_uniq_uniq_mid_fml ex_fml_sem. apply bi.exist_proper=> x'.
+    rewrite /deref_uniq_uniq_mid_fml exs_fml_sem. apply bi.exist_proper=> x'.
     rewrite ex_fml_sem. apply bi.exist_proper=> d'.
     rewrite ex_fml_sem. apply bi.exist_proper=> g'.
     rewrite !bor_sep_sem vo_fml_sem pc_fml_sem or_fml_sem
@@ -634,14 +635,14 @@ Section borrow.
     iDestruct "gho" as "(#Incl & %Ineqs & UniqBody & #PtBase & #Pers)".
     iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
     iDestruct (dincl_sem with "Incl") as "#Incls".
-    iDestruct (dincl_trans with "Incl []") as "#Inκκ'd";
+    iDestruct (dincl_trans with "Incl []") as "#Inκκ'D";
       [iApply dincl_intersect_l|].
-    iDestruct (dincl_trans with "Incl []") as "#Inκrestd";
+    iDestruct (dincl_trans with "Incl []") as "#InκrestD";
       [iApply dincl_intersect_r|].
-    iAssert (κ ⊑ κ')%I as "#Inκκ'".
-    { iApply (guard_trans with "Incls []"). iApply llftl_intersect_incl_l. }
-    iAssert (κ ⊑ ty_lft ty)%I as "#Inκrest".
-    { iApply (guard_trans with "Incls []"). iApply llftl_intersect_incl_r. }
+    iDestruct (dincl_dguard with "Inκκ'D") as "#Inκκ'd".
+    iDestruct (dincl_dguard with "InκrestD") as "#Inκrestd".
+    iDestruct (dincl_sem with "Inκκ'D") as "#Inκκ'".
+    iDestruct (dincl_sem with "InκrestD") as "#Inκrest".
     iAssert (frac_tok γ (1/2) &&{Wguard}&&> @[κ'])%I as "#Gκ'".
     { iApply (guard_trans with "Gκ Inκκ'"). }
     iDestruct "Pers" as "[Dead|#Pers]".
@@ -748,7 +749,7 @@ Section borrow.
     iIntros "H W". iDestruct (frac_idx_src_sem_1 with "H") as "[f1 _]".
     (* Merge the frozen observer with the inner borrow and open it. *)
     iDestruct (llftl_bor_shorten (κ' ⊓ κ) κ with "[] BorInner") as "BorInner".
-    { iApply llftl_incl_glb; [iApply "Inκκ'"|iApply lft_incl_refl]. }
+    { iApply dincl_glb; [iApply "Inκκ'D"|iApply dincl_refl]. }
     iDestruct (llftl_sep_join ⊤ Mid (uniq_body_fml ty x1 ωi tid l1) κ
       with "LFT BorMid BorInner") as "F".
     iDestruct (fupdw_incl (W:=alerus_wsat) with "F") as "F'".
@@ -814,11 +815,11 @@ Section borrow.
       - rewrite /uniq_bor_future /= Hb //. }
     rewrite /ty_own (uniq_bor_gho κ ty l1 x1 ζi d1 g0 ζidx d d tid).
     iSplit; [|done].
-    iSplitR; [iApply "Inκrestd"|]. iSplitR; [iPureIntro; lia|].
+    iSplitR; [iApply "InκrestD"|]. iSplitR; [iPureIntro; lia|].
     iFrame "ζVo ζTok ζBor". iSplitR.
     { iApply (dguard_trans with "Inκκ'd PtBase2"). }
     iDestruct "Pers2" as "[Dead|#P2]".
-    { iLeft. iApply (basically_dead_incl with "Inκκ'd Dead"). }
+    { iLeft. iApply (basically_dead_incl with "Inκκ'D Dead"). }
     iRight.
     iApply (ty_gho_pers_depth_mono ty d1 g1 d1 g0 x1 tid with "P2"); lia.
   Qed.
@@ -904,7 +905,8 @@ Section borrow.
     iDestruct (dguard_rhs_sep_r with "Ggho3") as "#Ggho4".
     iDestruct (dguard_rhs_sep_l with "Ggho4") as "#GUB".
     iDestruct (dguard_inner_from_guard_uniq_body ty x1 ξi d1 g1 ξidx κ' tid l1
-      (alive_fml κ) with "UBPers GUB Incl") as "#Gghopt".
+      (alive_fml κ) with "UBPers GUB [Incl]") as "#Gghopt";
+      [by iApply dincl_dguard|].
     iDestruct (dguard_rhs_sep_l with "Gghopt") as "#Ggho5".
     iDestruct (dguard_rhs_sep_r with "Gghopt") as "#Gpt1".
     iModIntro. iFrame "W". iExists (l1, x1). iFrame "L". iSplit; last first.
@@ -912,7 +914,7 @@ Section borrow.
     rewrite /ty_own shr_bor_gho /=. iSplit; [|done].
     iSplit.
     { iApply dguard_cloc_combine_fancy; [|iApply "Gpt1"].
-      iApply (dguard_trans with "Incl InnerPtBase"). }
+      iApply (dguard_trans with "[] InnerPtBase"). by iApply dincl_dguard. }
     iSplit.
     { iApply (dguard_depth_mono ty d1 g1 (S d') (S (S d')) x1 tid
         with "Ggho5"); lia. }

@@ -206,8 +206,7 @@ Section typing.
       have ? := ty_gho_pers_pers_at ty sem Hsem.
       rewrite /= !(sep_sem_at Hsem).
       iAssert (sem (guard_fml (alive_fml κ') (alive_fml κ))) as "#Incl0".
-      { iApply (dguard_of_all_at Hsem). iIntros (sem' Hs Hi).
-        iApply (guard_fml_sem_into alt_here Hs (alt_sem_into Hs) with "Incl"). }
+      { iApply (dincl_at Hsem with "Incl"). }
       iIntros "#(Hphys & Hgho & Hpers)". iSplit.
       { rewrite Phys. iApply (dguard_trans_at Hsem with "Incl0 Hphys"). }
       iSplit.
