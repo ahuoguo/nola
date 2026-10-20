@@ -436,3 +436,82 @@ harder obligation than the stratified definition and still leaves the
 paradox of § 3.4.1 unaddressed.  `rust_halt` keeps its typing judgment at
 the ambient interpretation (`type_def` uses `WP[rust_halt_wsat]` with
 `⟦⟧ᶜ = ⟦⟧ᶜ(der)`, `type.v:910-932`) precisely because it never stores one.
+
+## The last obstacle in the model: a full borrow is not storable
+
+Building the `AltSem` instance turns every field into one of two shapes.
+
+*Elimination at a candidate* - `guard_fml_sem_into`, and the merged form
+`idxbor_fml_guard_at` should take - is `dinto der δ'`, which `Deriv_factor'`
+hands out: a judgment held at the ambient interpretation can be read as its
+*semantics* at any candidate the ambient one maps into.  Every `dguard_*_at`
+lemma in `ctx.v` is of this shape, and all of them are fine.
+
+*Introduction at every candidate* - the families `dguard_all`, `dincl`,
+`dincl_eternalize_all`, `guard_fml_borrow_shared` - needs the ingredient to
+be interpretation-independent.  `sinv_tok`, `eternal_tok` and `OwnBorState`
+are plain ghost state, so those four are fine too.
+
+Two fields are neither: `idxbor_fml_of_bor` and `guard_fml_of_bor` start
+from a `full_bor κ Px`, and
+
+```coq
+full_bor_def κ Px := ∃ sn κ',
+  κ ⊑ κ' ∗ (∃ Px', □ (bor_sem Px' ↔ bor_sem Px) ∗ sinv_tok sn Px')
+  ∗ OwnBorState …
+```
+
+mentions the interpretation **twice** in a way that does not transport:
+`κ ⊑ κ'` is `llft_incl`, a Leaf guard over `llft_wsatG`, which contains
+`box_wsat bor_sem`; and the `□ (bor_sem Px' ↔ bor_sem Px)` is the borrow's
+semantic alteration.  Neither is a judgment held at `der`, so `dinto der δ'`
+does not move them, and neither is ghost state, so they do not hold at every
+candidate either.  A full borrow is therefore *not storable*: no amount of
+rephrasing on the `typing/` side can store one in a formula.
+
+This is exactly the point where Nola's own lifetime logic differs.  In
+`nola/iris/lft.v` lifetime inclusion is **pure** (`lft_incl`, inclusion of
+multisets) or a **persistent token** (`⊑□`), and `bor_tok` is ghost state;
+that is why `rust_halt` can write `cif_bor κ Px` as a leaf and why
+`bor_tok_bor` holds at every `δ`.  Leaf's inclusion is a guard, and that is
+the one place where keeping Leaf's guarding logic costs something.
+
+### The fix: a storable inclusion and a storable alteration
+
+Both occurrences are *parameters* of the lifetime logic, not things it
+inspects: `lifetime_full.v` only ever uses `κ ⊑ κ'` through `guard_trans` /
+`llftl_incl_glb` and the iff through `□ (bor_sem Px' ↔ bor_sem Px)`.  So
+abstract them.  A class `StBor` supplies
+
+```coq
+st_incl : lft → lft → iProp Σ      st_iff : FML $oi Σ → FML $oi Σ → iProp Σ
+```
+
+with the closure properties the 18 `unseal_bor` sites use (`refl`, `trans`,
+`glb`, the `bor_sep` congruence for `st_iff`) and, at each `BorSem`, the two
+elimination rules `st_incl κ κ' ⊢ κ ⊑ κ'` and
+`st_iff Px Qx ⊢ □ (bor_sem Px ↔ bor_sem Qx)`.  `idx_bor_def` and
+`full_bor_def` use `st_incl`/`st_iff` in place of the two occurrences above.
+
+In the model both are the *plain-`iProp` family*, which is available because
+`idx_bor` is an `iProp` and not a formula - so no judgment, and hence no
+family rule, is involved:
+
+```coq
+st_incl κ κ' := □ ∀ δ' (_ : Deriv (λ _, True) δ'),
+                  @[κ] &&{alerus_WGuard_at δ'}&&> @[κ']
+st_iff Px Qx := □ ∀ δ' (_ : Deriv (λ _, True) δ'),
+                  ⟦ Px ⟧ᶜ(δ') ∗-∗ ⟦ Qx ⟧ᶜ(δ')
+```
+
+Each eliminates at *every* good `δ`, so a full borrow becomes
+interpretation-independent and `idxbor_fml_of_bor` goes through by
+`Deriv_factor'`.  `st_iff` is the shape `AltSem`'s `idxbor_fml_iff_at`
+already asks for, and `st_incl` is `dincl`'s content with the stored guard
+replaced by the guard itself - note it is *not* `dincl`: a formula-level
+inclusion stays a `guard_fml` judgment, eliminated at candidates by
+`dinto der δ'` as before.
+
+`llftl_bor_shorten` and `llftl_idx_shorten` take an `st_incl` after this
+change; the one call site outside the lifetime logic (`borrow.v`) passes a
+closed inclusion, which is storable.

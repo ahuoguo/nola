@@ -264,6 +264,37 @@ Section sem_at.
     by rewrite cif_ccancel_sem.
   Qed.
 
+  (** The leaf equations at an arbitrary candidate.  Each is [sem_cif_in] on
+    the token semantics, which does not mention [δ]. *)
+  Lemma cif_alive_sem_at {δ κ} : ⟦ cif_alive κ : cif CON Σ ⟧ᶜ(δ) ⊣⊢ @[κ].
+  Proof. by rewrite /cif_alive sem_cif_in. Qed.
+  Lemma cif_dead_sem_at {δ κ} : ⟦ cif_dead κ : cif CON Σ ⟧ᶜ(δ) ⊣⊢ [†κ].
+  Proof. by rewrite /cif_dead sem_cif_in. Qed.
+  Lemma cif_cells_sem_at {δ l cs fv} :
+    ⟦ cif_cells l cs fv : cif CON Σ ⟧ᶜ(δ) ⊣⊢ l ↦[^ cs ]!∗ fv.
+  Proof. by rewrite /cif_cells sem_cif_in. Qed.
+  Lemma cif_ccells_sem_at {δ l fv} :
+    ⟦ cif_ccells l fv : cif CON Σ ⟧ᶜ(δ) ⊣⊢ l #↦!∗ fv.
+  Proof. by rewrite /cif_ccells sem_cif_in. Qed.
+  Lemma cif_cmapstoany_sem_at {δ l} :
+    ⟦ cif_cmapstoany l : cif CON Σ ⟧ᶜ(δ) ⊣⊢ l #↦∗_.
+  Proof. by rewrite /cif_cmapstoany sem_cif_in. Qed.
+  Lemma cif_freeable_sem_at {δ n sz l} :
+    ⟦ cif_freeable n sz l : cif CON Σ ⟧ᶜ(δ) ⊣⊢ freeable_sz n sz l.
+  Proof. by rewrite /cif_freeable sem_cif_in. Qed.
+  Lemma cif_vo_sem_at {δ ξ x d} :
+    ⟦ cif_vo ξ x d : cif CON Σ ⟧ᶜ(δ) ⊣⊢ .VO[ξ] x d.
+  Proof. by rewrite /cif_vo sem_cif_in. Qed.
+  Lemma cif_pc_sem_at {δ ξ x xp d} :
+    ⟦ cif_pc ξ x xp d : cif CON Σ ⟧ᶜ(δ) ⊣⊢ .PC[ξ] x xp d.
+  Proof. by rewrite /cif_pc sem_cif_in. Qed.
+  Lemma cif_gsrc_sem_at {δ s} :
+    ⟦ cif_gsrc s : cif CON Σ ⟧ᶜ(δ) ⊣⊢ gsrc_interp s.
+  Proof. by rewrite /cif_gsrc sem_cif_in. Qed.
+  Lemma cif_cellsvec_sem_at {δ cs fv} :
+    ⟦ cif_cellsvec cs fv : cif CON Σ ⟧ᶜ(δ) ⊣⊢ cs ^↦!∗ fv.
+  Proof. by rewrite /cif_cellsvec sem_cif_in. Qed.
+
   (** The borrow-state constructor means borrow-state ownership *)
   Program Definition BorStateFml_at δ
     : @BorStateFml Σ _ (cifOF CON) (BorSem_at δ) llft_name :=
@@ -409,7 +440,7 @@ Section judgC.
   Qed.
 
   Context {JUDG} `{guard_j0 : !guardJ (cifO CON Σ) JUDG,
-    idxbor_j0 : !idxborJ (cifO CON Σ) JUDG}.
+    idxbor_j0 : !idxborJ (cifO CON Σ) JUDG, !Jsem JUDG (iProp Σ)}.
   (** The judgments as elements of [JUDG] *)
   Definition guard_j (Px Qx : cif CON Σ) : JUDG :=
     guard_j0 (Tagged (Px, Qx)).
@@ -423,8 +454,21 @@ Section judgC.
   #[export] Program Instance guardCT_ecsem : Ecsem guardCT CON JUDG Σ :=
     ECSEM (λ _ δ _ _ Ψx _, □ δ (guard_j (Ψx true) (Ψx false)))%I _.
   Next Obligation. solve_proper. Qed.
+  (** An indexed borrow means the *family* [∀ δ', δ' (idxbor_j …)], not
+    [δ (idxbor_j …)] for the ambient [δ].
+
+    The difference matters.  [&shr{κ}]'s ghost assertion is built from
+    [&uniq{κ}]'s indexed borrow at a candidate interpretation
+    ([dguard_inner_from_guard_uniq_body]), and a thing stored at one
+    interpretation cannot be moved to another: that needs [δ J ⊢ δ' J],
+    while [Deriv_factor'] gives only [δ J ⊢ ⟦J⟧(δ')].  Reading it at the
+    member for [δ'] makes the move unnecessary - and since the semantics
+    then does not mention [δ] at all, [AltSem]'s [idxbor_fml_into] is
+    reflexivity.  Creating one is still possible, because the borrow token
+    it is made from mentions no interpretation: see [idxbor_fml_of_bor]. *)
   #[export] Program Instance idxborCT_ecsem : Ecsem idxborCT CON JUDG Σ :=
-    ECSEM (λ _ δ s _ Ψx _, □ δ (idxbor_j s.1 s.2 (Ψx ())))%I _.
+    ECSEM (λ _ _ s _ Ψx _,
+      □ ∀ δ', ⌜Deriv (λ _, True) δ'⌝ → δ' (idxbor_j s.1 s.2 (Ψx ())))%I _.
   Next Obligation. solve_proper. Qed.
 End judgC.
 
@@ -447,7 +491,8 @@ Class typingJ CON JUDG Σ : Type := TYPING_J {
   typingJ_idxbor :: idxborJ (cifO CON Σ) JUDG;
 }.
 Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
-  `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ} : Prop := TYPING_CS {
+  `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ)} : Prop :=
+  TYPING_CS {
   typingCS_alerus :: alerusCS CON JUDG Σ;
   typingCS_naInv :: naInvCS CON JUDG Σ;
   typingCS_guard :: guardCS CON JUDG Σ;
@@ -582,3 +627,34 @@ End model.
   [profix]/[Productive] - and dropping [fml_cofe] from [TypeFml] - is the
   next piece of work, and it is the last structural obstacle between here
   and [bor_sem := ⟦⟧ᶜ(der)]. *)
+
+(** ** The [AltSem] instance
+
+  A *candidate* is an interpretation [⟦⟧ᶜ(δ)] for a good derivability
+  predicate [δ].  Note what [alt_into] is defined as: in the model a
+  candidate is a bare function, and nothing recovers the [δ] behind it, so
+  [alt_into] cannot be [dinto δ δ'].  Both of its uses say "a guard stored
+  at [sem] can be read at [sem']", which *is* a function of the two
+  interpretations, so that is the definition - and [dinto δ δ'] discharges
+  it. *)
+Section altSem.
+  Context `{!typingC CON} {JUDG Σ} `{!alerusGS (cifOF CON) Σ,
+    !typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+    !typingCS CON JUDG Σ, !typingJS CON JUDG Σ}.
+  Implicit Type sem : cifOF CON $oi Σ → iProp Σ.
+
+  Definition alt_sem_cif sem : Prop :=
+    ∃ δ : JUDG -n> iProp Σ, Deriv (λ _, True) δ ∧ ∀ Px, sem Px = ⟦ Px ⟧ᶜ(δ).
+  Definition alt_into_cif sem sem' : Prop :=
+    ∀ Px Qx, sem (cif_guard Px Qx) ⊢
+      sem' Px &&{alerus_WGuard_of sem'}&&> sem' Qx.
+
+  (** The ambient interpretation is a candidate *)
+  Lemma alt_sem_cif_here : alt_sem_cif bor_sem.
+  Proof. exists der. split; [exact _|done]. Qed.
+
+  (** A candidate's interpretation, recovered *)
+  Lemma alt_sem_cif_eq {sem} (H : alt_sem_cif sem) :
+    ∃ δ : JUDG -n> iProp Σ, Deriv (λ _, True) δ ∧ ∀ Px, sem Px = ⟦ Px ⟧ᶜ(δ).
+  Proof. exact H. Qed.
+End altSem.
