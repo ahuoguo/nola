@@ -156,7 +156,7 @@ Section borrow.
     old value observer paired with the new prophecy controller.  The
     original's [⧖(S d' `max` g')] inside it goes with the time receipts. *)
   Definition reborrow_mid_fml {𝔄} (x0: ~~𝔄) (ξi ζi: positive) : FML $oi Σ :=
-    ex_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
+    exs_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
       (.VOx[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi] x' (d', g') ∗
        .PCx[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ζi] x' (vπ x') (d', g'))%FML))).
 
@@ -166,7 +166,7 @@ Section borrow.
         .VO[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi] x' (d', g') ∗
         .PC[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ζi] x' (vπ x') (d', g').
   Proof.
-    rewrite /reborrow_mid_fml ex_fml_sem. apply bi.exist_proper=> x'.
+    rewrite /reborrow_mid_fml exs_fml_sem. apply bi.exist_proper=> x'.
     rewrite ex_fml_sem. apply bi.exist_proper=> d'.
     rewrite ex_fml_sem. apply bi.exist_proper=> g'.
     by rewrite bor_sep_sem vo_fml_sem pc_fml_sem.
@@ -580,7 +580,7 @@ Section borrow.
   Definition deref_uniq_uniq_mid_fml {𝔄} (ty: type 𝔄) (x0: ~~ (uniq_borₛ 𝔄))
       (ξi ωi: positive) (ωidx: Idx) (κ': lft) (tid: thread_id) (l1: cloc)
       : FML $oi Σ :=
-    ex_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
+    exs_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
       (.VOx[PrVar (𝔄 ↾ prval_to_inh (vπ (uniq_bor_current x0))) ωi]
          x' (d', g') ∗
        .PCx[PrVar (uniq_borₛ 𝔄 ↾ prval_to_inh (vπ x0)) ξi]
@@ -600,7 +600,7 @@ Section borrow.
         dguard (alive_fml κ') (cmapstoany_fml l1) ∗
         (basically_dead κ' ∨ ty_gho_pers ty x' d' g' tid).
   Proof.
-    rewrite /deref_uniq_uniq_mid_fml ex_fml_sem. apply bi.exist_proper=> x'.
+    rewrite /deref_uniq_uniq_mid_fml exs_fml_sem. apply bi.exist_proper=> x'.
     rewrite ex_fml_sem. apply bi.exist_proper=> d'.
     rewrite ex_fml_sem. apply bi.exist_proper=> g'.
     rewrite !bor_sep_sem vo_fml_sem pc_fml_sem or_fml_sem

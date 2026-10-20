@@ -664,6 +664,16 @@ Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ, !AlerusSem FML Σ} := {
     bor_sem (ex_fml Φ) ⊣⊢ ∃ a : A, bor_sem (Φ a);
   ex_fml_ne {A} n (Φ Ψ : A → FML $oi Σ) :
     (∀ a, Φ a ≡{n}≡ Ψ a) → ex_fml Φ ≡{n}≡ ex_fml Ψ;
+  (** An existential over a *syntactic* type's values.
+
+    Separate from [ex_fml] because [~~𝔄] lives in a universe strictly above
+    the one [cif]'s own existential can quantify over, so the model has to
+    give it its own constructor; see [model.v]'s [exCT]. *)
+  exs_fml {𝔄 : syn_type} : ((~~𝔄) → FML $oi Σ) → FML $oi Σ;
+  exs_fml_sem {𝔄} (Φ : (~~𝔄) → FML $oi Σ) :
+    bor_sem (exs_fml Φ) ⊣⊢ ∃ a : ~~𝔄, bor_sem (Φ a);
+  exs_fml_ne {𝔄} n (Φ Ψ : (~~𝔄) → FML $oi Σ) :
+    (∀ a, Φ a ≡{n}≡ Ψ a) → exs_fml Φ ≡{n}≡ exs_fml Ψ;
   (** A guard over the guarding world satisfaction, for [&shr{κ}] *)
   guard_fml : FML $oi Σ → FML $oi Σ → FML $oi Σ;
   guard_fml_ne :: NonExpansive2 guard_fml;
@@ -728,6 +738,12 @@ Section type_fml.
     cells_fml l (repeat [] (length fv)) fv.
   Lemma mapsto_fml_sem {l fv} : bor_sem (mapsto_fml l fv) ⊣⊢ l ↦!∗ fv.
   Proof. by rewrite /mapsto_fml cells_fml_sem. Qed.
+
+  (** [exs_fml] is proper *)
+  #[export] Instance exs_fml_ne' {𝔄} n :
+    Proper (pointwise_relation (~~𝔄) (dist n) ==> dist n)
+      (@exs_fml _ _ _ _ _ 𝔄).
+  Proof. move=> ???. by apply exs_fml_ne. Qed.
 
   (** [ex_fml] is proper *)
   #[export] Instance ex_fml_ne' {A} n :
@@ -852,6 +868,8 @@ Class AltSem (FML : oFunctor) Σ
   pure_sem_at {sem} : alt_sem sem → ∀ φ, sem (pure_fml φ) ⊣⊢ ⌜φ⌝;
   ex_sem_at {sem} : alt_sem sem → ∀ A (Φ : A → FML $oi Σ),
     sem (ex_fml Φ) ⊣⊢ ∃ a : A, sem (Φ a);
+  exs_sem_at {sem} : alt_sem sem → ∀ 𝔄 (Φ : (~~𝔄) → FML $oi Σ),
+    sem (exs_fml Φ) ⊣⊢ ∃ a : ~~𝔄, sem (Φ a);
   or_sem_at {sem} : alt_sem sem → ∀ Px Qx,
     sem (or_fml Px Qx) ⊣⊢ sem Px ∨ sem Qx;
   alive_sem_at {sem} : alt_sem sem → ∀ κ, sem (alive_fml κ) ⊣⊢ @[κ];

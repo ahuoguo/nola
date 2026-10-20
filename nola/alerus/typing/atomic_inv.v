@@ -169,7 +169,7 @@ Section atomic_invariants.
   Definition atomic_inv_body {𝔄 ℭ} (ty: type 𝔄)
       (pred: abstracted_syn_type 𝔄 → ~~ℭ → proph_asn → Prop) (c: ~~ℭ)
       (tid: thread_id) : FML $oi Σ :=
-    ex_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
+    exs_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
       ex_fml (λ tid' : thread_id,
         (ty.(ty_ghox) x' d' g' tid' ∗
          obs_fml (λ π, pred (syn_abstract x') c π) ∗
@@ -182,7 +182,7 @@ Section atomic_invariants.
         ty_gho ty x' d' g' tid' ∗ ⟨π, pred (syn_abstract x') c π⟩ ∗
         ⌜(Send ty ∧ tid' = null_tid) ∨ (¬ Send ty ∧ tid = tid')⌝.
   Proof.
-    rewrite /atomic_inv_body ex_fml_sem. apply bi.exist_proper=> x'.
+    rewrite /atomic_inv_body exs_fml_sem. apply bi.exist_proper=> x'.
     rewrite ex_fml_sem. apply bi.exist_proper=> d'.
     rewrite ex_fml_sem. apply bi.exist_proper=> g'.
     rewrite ex_fml_sem. apply bi.exist_proper=> tid'.

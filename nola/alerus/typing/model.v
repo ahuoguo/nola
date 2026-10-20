@@ -69,6 +69,36 @@ Definition alerusCT : cifcon :=
 
 Notation alerusC := (inC alerusCT).
 
+(** ** An existential over a syntactic type's values
+
+  [cif]'s own existential [cif_ex] stores the index *type* in the formula's
+  selector, which caps it at [cif_sel]'s universe - strictly below the one
+  [indep_interp_of_syn_type] lives in, so [cif_ex] cannot quantify over
+  [~~𝔄].  This constructor stores the *syntactic* type instead and takes its
+  interpretation as the inductive domain, which is not capped. *)
+Variant exsCT_id := .
+Definition exsCT : cifcon :=
+  Cifcon exsCT_id syn_type indep_interp_of_syn_type (λ _, Empty_set)
+    (λ _, unitO) _.
+
+Notation exsC := (inC exsCT).
+
+Section exsC.
+  Context `{!exsC CON} {Σ}.
+  Definition cif_exs {𝔄} (Φx : (~~𝔄) → cif CON Σ) : cif CON Σ :=
+    cif_in exsCT 𝔄 Φx nullary ().
+
+  #[export] Instance cif_exs_ne {𝔄} n :
+    Proper (pointwise_relation (~~𝔄) (dist n) ==> dist n) (@cif_exs 𝔄).
+  Proof. move=> ???. rewrite /cif_exs. solve_proper. Qed.
+
+  #[export] Program Instance exsCT_ecsem {JUDG} : Ecsem exsCT CON JUDG Σ :=
+    ECSEM (λ _ _ _ Φx _ _, ∃ a, Φx a)%I _.
+  Next Obligation. solve_proper. Qed.
+End exsC.
+
+Notation exsCS := (inCS exsCT).
+
 Section alerusC.
   Context `{!alerusC CON} {Σ}.
   (** Each leaf as a formula *)
@@ -229,9 +259,9 @@ Notation naInvCS := (inCS naInvCT).
   the guarding world satisfaction at a candidate.  This is Nola's
   [inv_wsat ⟦⟧(δ)] ([nola/iris/inv_deriv.v]) one level up. *)
 Section sem_at.
-  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+  Context `{!alerusC CON, !naInvC CON, !exsC CON} {JUDG Σ}
     `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
-      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ, !exsCS CON JUDG Σ}.
   Implicit Type δ : JUDG -n> iProp Σ.
 
   (** The semantics of the separating conjunction *)
@@ -291,6 +321,9 @@ Section sem_at.
   Lemma cif_gsrc_sem_at {δ s} :
     ⟦ cif_gsrc s : cif CON Σ ⟧ᶜ(δ) ⊣⊢ gsrc_interp s.
   Proof. by rewrite /cif_gsrc sem_cif_in. Qed.
+  Lemma cif_exs_sem_at {δ 𝔄} {Φ : (~~𝔄) → cif CON Σ} :
+    ⟦ cif_exs Φ ⟧ᶜ(δ) ⊣⊢ ∃ a : ~~𝔄, ⟦ Φ a ⟧ᶜ(δ).
+  Proof. by rewrite /cif_exs sem_cif_in. Qed.
   Lemma cif_cellsvec_sem_at {δ cs fv} :
     ⟦ cif_cellsvec cs fv : cif CON Σ ⟧ᶜ(δ) ⊣⊢ cs ^↦!∗ fv.
   Proof. by rewrite /cif_cellsvec sem_cif_in. Qed.
@@ -348,9 +381,9 @@ End sem_at.
   no family rule, is involved: each eliminates at *every* good [δ], which is
   exactly what makes a full borrow storable. *)
 Section stbor_at.
-  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+  Context `{!alerusC CON, !naInvC CON, !exsC CON} {JUDG Σ}
     `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
-      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ, !exsCS CON JUDG Σ}.
   Context (δ : JUDG -n> iProp Σ).
   Local Instance AlerusSem_δ0 : AlerusSem (cifOF CON) Σ := AlerusSem_at δ.
 
@@ -380,9 +413,9 @@ Section stbor_at.
 End stbor_at.
 
 Section stbor.
-  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+  Context `{!alerusC CON, !naInvC CON, !exsC CON} {JUDG Σ}
     `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
-      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ, !exsCS CON JUDG Σ}.
   Implicit Type δ : JUDG -n> iProp Σ.
 
   Definition st_incl_cif (κ κ' : lft) : iProp Σ :=
@@ -453,9 +486,9 @@ End stbor.
 (** The two elimination rules, at a good interpretation: each is the family
   instantiated at that interpretation. *)
 Section stbor_sem.
-  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+  Context `{!alerusC CON, !naInvC CON, !exsC CON} {JUDG Σ}
     `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
-      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ, !exsCS CON JUDG Σ}.
   Context (δ : JUDG -n> iProp Σ).
   Local Instance AlerusSem_δ1 : AlerusSem (cifOF CON) Σ := AlerusSem_at δ.
   Local Instance stBor_δ : StBor (cifOF CON) Σ := stBor_cif (JUDG:=JUDG).
@@ -519,9 +552,9 @@ Definition idxborJT (FM : ofe) : ofe :=
 Notation idxborJ FM := (inJ (idxborJT FM)).
 
 Section judg.
-  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+  Context `{!alerusC CON, !naInvC CON, !exsC CON} {JUDG Σ}
     `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
-      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ, !exsCS CON JUDG Σ}.
   Implicit Type δ : JUDG -n> iProp Σ.
 
   (** Semantics of the guard judgment: the guard at the candidate's own
@@ -540,9 +573,9 @@ End judg.
   parameters come with it - so the candidate's interpretation is installed
   as the ambient one for the length of this section. *)
 Section idxbor_judg.
-  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+  Context `{!alerusC CON, !naInvC CON, !exsC CON} {JUDG Σ}
     `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
-      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ, !exsCS CON JUDG Σ}.
   Context (δ : JUDG -n> iProp Σ).
   Local Instance AlerusSem_δ : AlerusSem (cifOF CON) Σ := AlerusSem_at δ.
   Local Instance stBor_δ' : StBor (cifOF CON) Σ := stBor_cif (JUDG:=JUDG).
@@ -554,9 +587,9 @@ Section idxbor_judg.
 End idxbor_judg.
 
 Section incl_judg.
-  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+  Context `{!alerusC CON, !naInvC CON, !exsC CON} {JUDG Σ}
     `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
-      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ, !exsCS CON JUDG Σ}.
 
   Definition inclJT_sem (J : inclJT) : iProp Σ :=
     st_incl_cif (CON:=CON) (JUDG:=JUDG) J.(untag).1 J.(untag).2.
@@ -567,9 +600,9 @@ Section incl_judg.
 End incl_judg.
 
 Section judg2.
-  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+  Context `{!alerusC CON, !naInvC CON, !exsC CON} {JUDG Σ}
     `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
-      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ, !exsCS CON JUDG Σ}.
   (** [idx_bor] no longer mentions the interpretation at all: with [st_incl]
     and [st_iff] abstracted, an indexed borrow is [st_incl κ κ'], a family of
     alterations and a [sinv_tok], none of which is interpreted.  So the
@@ -685,6 +718,7 @@ Class typingC CON : Type := TYPING_C {
   typingC_guard :: guardC CON;
   typingC_idxbor :: idxborC CON;
   typingC_incl :: inclC CON;
+  typingC_exs :: exsC CON;
 }.
 Class typingJ CON JUDG Σ : Type := TYPING_J {
   typingJ_guard :: guardJ (cifO CON Σ) JUDG;
@@ -699,6 +733,7 @@ Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   typingCS_guard :: guardCS CON JUDG Σ;
   typingCS_idxbor :: idxborCS CON JUDG Σ;
   typingCS_incl :: inclCS CON JUDG Σ;
+  typingCS_exs :: exsCS CON JUDG Σ;
 }.
 Class typingJS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
@@ -750,6 +785,9 @@ Section model.
   Lemma cif_gsrc_sem {s} :
     bor_sem (cif_gsrc s : cifOF CON $oi Σ) ⊣⊢ gsrc_interp s.
   Proof. by rewrite /bor_sem /= /cif_gsrc sem_cif_in. Qed.
+  Lemma cif_exs_sem {𝔄} {Φ : (~~𝔄) → cif CON Σ} :
+    bor_sem (cif_exs Φ) ⊣⊢ ∃ a : ~~𝔄, bor_sem (Φ a).
+  Proof. exact cif_exs_sem_at. Qed.
   Lemma cif_cellsvec_sem {cs fv} :
     bor_sem (cif_cellsvec cs fv : cifOF CON $oi Σ) ⊣⊢ cs ^↦!∗ fv.
   Proof. by rewrite /bor_sem /= /cif_cellsvec sem_cif_in. Qed.
@@ -763,11 +801,38 @@ Section model.
     bor_sem (cif_ex Φ) ⊣⊢ ∃ a, bor_sem (Φ a).
   Proof. done. Qed.
 
+  Lemma cif_active_sem {γ} :
+    bor_sem (cif_active γ : cifOF CON $oi Σ) ⊣⊢ own γ (Excl ()).
+  Proof. by rewrite /bor_sem /= /cif_active sem_cif_in. Qed.
+  Lemma cif_cna_active_sem {γ} :
+    bor_sem (cif_cna_active γ : cifOF CON $oi Σ) ⊣⊢ cna_active γ.
+  Proof. by rewrite /bor_sem /= /cif_cna_active sem_cif_in. Qed.
+  Lemma cif_obs_sem {φ} :
+    bor_sem (cif_obs φ : cifOF CON $oi Σ) ⊣⊢ ⟨π, φ π⟩.
+  Proof. by rewrite /bor_sem /= /cif_obs sem_cif_in. Qed.
+  Lemma cif_handle_sem {c} :
+    bor_sem (cif_handle c : cifOF CON $oi Σ) ⊣⊢
+      atomic_lock_handle atomic_lock_ctr_name c.
+  Proof. by rewrite /bor_sem /= /cif_handle sem_cif_in. Qed.
+  Lemma cif_na_inv_sem {N} {Px : cif CON Σ} :
+    bor_sem (cif_na_inv N Px) ⊣⊢ na_inv_tok atomic_threadpool N Px.
+  Proof. by rewrite /bor_sem /= /cif_na_inv sem_cif_in. Qed.
+  Lemma cif_na_otok_sem {N} {Px : cif CON Σ} :
+    bor_sem (cif_na_otok N Px) ⊣⊢ na_otok atomic_threadpool N Px.
+  Proof. by rewrite /bor_sem /= /cif_na_otok sem_cif_in. Qed.
+  Lemma cif_cna_inv_sem {γ p N} {Px : cif CON Σ} :
+    bor_sem (cif_cna_inv γ p N Px) ⊣⊢ cna_inv γ p N Px.
+  Proof. by rewrite /bor_sem /= /cif_cna_inv sem_cif_in. Qed.
+  Lemma cif_cna_otok_sem {γ p N κ} {Px : cif CON Σ} :
+    bor_sem (cif_cna_otok γ p N κ Px) ⊣⊢ cna_otok γ p N κ Px.
+  Proof. by rewrite /bor_sem /= /cif_cna_otok sem_cif_in. Qed.
+
   (** Hence the formula language of [typing/ctx.v] *)
   #[export] Program Instance typeFml_cif : TypeFml (cifOF CON) Σ := {|
     false_fml := cif_pure False;
     pure_fml := (λ φ, cif_pure φ);
     ex_fml := (λ A Φ, cif_ex Φ);
+    exs_fml := (λ 𝔄 Φ, cif_exs Φ);
     guard_fml := cif_guard;
     alive_fml := cif_alive;
     cells_fml := cif_cells;
@@ -785,6 +850,8 @@ Section model.
   Next Obligation. move=> ?. exact cif_pure_sem. Qed.
   Next Obligation. move=> *. exact cif_ex_sem. Qed.
   Next Obligation. move=> ?????. by apply cif_ex_ne. Qed.
+  Next Obligation. move=> *. exact cif_exs_sem. Qed.
+  Next Obligation. move=> ?????. by apply cif_exs_ne. Qed.
   Next Obligation. move=> ?. exact cif_alive_sem. Qed.
   Next Obligation. move=> *. exact cif_cells_sem. Qed.
   Next Obligation. move=> *. exact cif_ccells_sem. Qed.
@@ -918,6 +985,9 @@ Section altSem.
   Lemma ex_sem_cif {S} (H : alt_sem_cif S) A (Φ : A → cifOF CON $oi Σ) :
     S (cif_ex Φ) ⊣⊢ ∃ a, S (Φ a).
   Proof. alt_at H. done. Qed.
+  Lemma exs_sem_cif {S} (H : alt_sem_cif S) 𝔄 (Φ : (~~𝔄) → cifOF CON $oi Σ) :
+    S (cif_exs Φ) ⊣⊢ ∃ a : ~~𝔄, S (Φ a).
+  Proof. alt_at H. exact cif_exs_sem_at. Qed.
   Lemma or_sem_cif {S} (H : alt_sem_cif S) Px Qx :
     S (cif_or Px Qx) ⊣⊢ S Px ∨ S Qx.
   Proof. alt_at H. done. Qed.
@@ -943,6 +1013,9 @@ Section altSem.
   Lemma pc_sem_cif {S} (H : alt_sem_cif S) ξ x vπ d :
     S (cif_pc ξ x vπ d) ⊣⊢ .PC[ξ] x vπ d.
   Proof. alt_at H. exact cif_pc_sem_at. Qed.
+  Lemma cellsvec_sem_cif {S} (H : alt_sem_cif S) cs fv :
+    S (cif_cellsvec cs fv) ⊣⊢ cs ^↦!∗ fv.
+  Proof. alt_at H. exact cif_cellsvec_sem_at. Qed.
   Lemma gsrc_sem_cif {S} (H : alt_sem_cif S) s :
     S (cif_gsrc s) ⊣⊢ gsrc_interp s.
   Proof. alt_at H. exact cif_gsrc_sem_at. Qed.
@@ -1132,6 +1205,7 @@ Section altSem.
     empty_sem_at := @empty_sem_cif;
     pure_sem_at := @pure_sem_cif;
     ex_sem_at := @ex_sem_cif;
+    exs_sem_at := @exs_sem_cif;
     or_sem_at := @or_sem_cif;
     alive_sem_at := @alive_sem_cif;
     dead_sem_at := @dead_sem_cif;
@@ -1163,3 +1237,4 @@ Section altSem.
     guard_fml_of_bor := @guard_fml_of_bor_cif;
   |}.
 End altSem.
+

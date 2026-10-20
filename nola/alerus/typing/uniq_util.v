@@ -62,7 +62,7 @@ Section uniq_util.
   (** The borrowed contents of a unique reference, as a formula *)
   Definition uniq_body_fml {𝔄} (ty: type 𝔄) (x: ~~𝔄) (ξi: positive)
     (tid: thread_id) (l: cloc) : FML $oi Σ :=
-    ex_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
+    exs_fml (λ x' : ~~𝔄, ex_fml (λ d' : nat, ex_fml (λ g' : nat,
       uniq_body_at_fml ty x ξi x' d' g' tid l))).
 
   Lemma uniq_body_fml_sem {𝔄} (ty: type 𝔄) x ξi tid l :
@@ -71,7 +71,7 @@ Section uniq_util.
         .PC[PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi] x' (vπ x') (d', g') ∗
         ty_gho ty x' d' g' tid ∗ l #↦!∗ ty_phys ty x' tid.
   Proof.
-    rewrite /uniq_body_fml ex_fml_sem. apply bi.exist_proper=> x'.
+    rewrite /uniq_body_fml exs_fml_sem. apply bi.exist_proper=> x'.
     rewrite ex_fml_sem. apply bi.exist_proper=> d'.
     rewrite ex_fml_sem. apply bi.exist_proper=> g'.
     apply uniq_body_at_fml_sem.
@@ -323,7 +323,7 @@ Section uniq_util.
     iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor".
     iDestruct (llftl_bor_freeze F κ
       (λ y, ex_fml (λ e, ex_fml (λ h, uniq_body_at_fml ty x ξi y e h tid l)))
-      (uniq_body_fml ty x ξi tid l) (ex_fml_sem _) with "LFT Bor") as "Fr".
+      (uniq_body_fml ty x ξi tid l) (exs_fml_sem _) with "LFT Bor") as "Fr".
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Fr") as "Fr'";
       [done|].
     iMod ("Fr'" with "W") as "[W (%x1 & Bor)]".
@@ -452,7 +452,7 @@ Section uniq_util.
         .PC[PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi] y (vπ y) (e, h) ∗
         sem (ty.(ty_ghox) y e h tid) ∗ l #↦!∗ ty_phys ty y tid.
   Proof.
-    rewrite /uniq_body_fml (ex_sem_at H). apply bi.exist_proper=> y.
+    rewrite /uniq_body_fml (exs_sem_at H). apply bi.exist_proper=> y.
     rewrite (ex_sem_at H). apply bi.exist_proper=> e.
     rewrite (ex_sem_at H). apply bi.exist_proper=> h.
     rewrite /uniq_body_at_fml !(sep_sem_at H) (pc_sem_at H)
@@ -643,7 +643,7 @@ Section uniq_util.
     sem (uniq_body_fml ty x ξi tid l) ⊣⊢
       sem (uniq_body_fml ty x ξi tid' l).
   Proof.
-    move=> Hg Hp. rewrite /uniq_body_fml !(ex_sem_at H).
+    move=> Hg Hp. rewrite /uniq_body_fml !(exs_sem_at H).
     apply bi.exist_proper=> x'. rewrite !(ex_sem_at H).
     apply bi.exist_proper=> d'. rewrite !(ex_sem_at H).
     apply bi.exist_proper=> g'.
@@ -661,7 +661,7 @@ Section uniq_util.
   Proof.
     move=> Hp. iIntros "#Eq !>" (sem' Hs). rewrite /uniq_body_fml.
     iSplit; iIntros "B";
-      rewrite ?(ex_sem_at Hs); iDestruct "B" as (y) "B"; iExists y;
+      rewrite ?(exs_sem_at Hs); iDestruct "B" as (y) "B"; iExists y;
       rewrite ?(ex_sem_at Hs); iDestruct "B" as (e) "B"; iExists e;
       rewrite ?(ex_sem_at Hs); iDestruct "B" as (h) "B"; iExists h;
       rewrite /uniq_body_at_fml !(sep_sem_at Hs) (Hp y);
