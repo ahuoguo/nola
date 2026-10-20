@@ -492,7 +492,7 @@ Section type_sum.
     iDestruct "Pers" as "[Dead|#Pers]".
     { (* [κ] is already dead, so the lifetime context is contradictory *)
       iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
-      iDestruct (dincl_sem with "Incl0") as "#Incl'".
+      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 f Wg") as "[Alive _]".
@@ -569,7 +569,8 @@ Section type_sum.
     iExists _, d. iSplit; [by rewrite /= Ev|].
     rewrite /ty_own uniq_bor_gho. iSplit; [|done].
     iSplitR.
-    { iApply (dincl_trans with "Incl").
+    { iApply (dguard_trans with "Incl").
+      iApply dincl_dguard.
       iApply (dincl_of (lft_intersect_tyl_lfts_lookup_incl tyl i)). }
     iSplitR; [iPureIntro; lia|]. iFrame "ζVo ζTok ζBor".
     iFrame "PtBase2". by iRight.

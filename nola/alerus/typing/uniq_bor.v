@@ -108,7 +108,7 @@ Section uniq_bor.
     iDestruct "Pers" as "[bd|InnerPers]".
     { (* The lifetime is already dead, so [@[κ0]] is absurd. *)
       iDestruct "bd" as (κ') "[#Incl0 #†κ']".
-      iDestruct (dincl_sem with "Incl0") as "#Incl'". iApply guard_false.
+      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'". iApply guard_false.
       iApply (guard_trans with "Rk []").
       iApply (guard_trans with "[] []");
         [iApply (guard_trans with "Inκ Incl'")|].
@@ -171,7 +171,7 @@ Section uniq_bor_sem.
   (** Unfolding [&uniq{κ}]'s ghost assertion *)
   Lemma uniq_bor_gho {𝔄} κ (ty: type 𝔄) l x0 ξi d' g' idx d g tid :
     ty_gho (uniq_bor κ ty) (l, x0, ξi, d', g', idx) d g tid ⊣⊢
-      dincl κ (ty_lft ty) ∗ ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗
+      dguard (alive_fml κ) (alive_fml (ty_lft ty)) ∗ ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗
       uniq_body ty x0 ξi d' g' idx κ tid l ∗
       dguard (alive_fml κ) (cmapstoany_fml l) ∗
       (basically_dead κ ∨ ty_gho_pers ty x0 d' g' tid).
@@ -251,7 +251,7 @@ Section uniq_bor_sem.
     move=> Alv γ q F [[[[[l x0] ξi] d'] g'] idx] d g tid ?.
     iIntros "#LFT #PROPH #UNIQ #E tok gho". rewrite uniq_bor_gho.
     iDestruct "gho" as "(#In0 & %Hle & uniq & _ & _)".
-    iDestruct (dincl_sem with "In0") as "#In". iIntros "W".
+    iDestruct (dguard_alive_incl with "In0") as "#In". iIntros "W".
     iMod (resolve_uniq_body with "LFT PROPH UNIQ In E tok uniq W")
       as "[$ (#Obs & $ & _)]"; [done|done|].
     iModIntro. iApply proph_obs_eq; [|done]=> ? /=. by f_equal.
@@ -292,7 +292,7 @@ Section uniq_bor_sem.
       have ? := ty_gho_pers_pers_at ty' sem Hsem.
       have ? := basically_dead_pers_at Hsem.
       have ? := or_pers_at Hsem.
-      iDestruct (dguard_at Hsem with "In") as "#In0".
+      iDestruct (dincl_at Hsem with "In") as "#In0".
       rewrite /= /uniq_body_fmlx !(sep_sem_at Hsem) !(pure_sem_at Hsem)
         !(or_sem_at Hsem).
       iIntros "(#Incl & %Hle & (Vo & Tok & #Bor) & #PtBase & #Pers)".
@@ -308,7 +308,7 @@ Section uniq_bor_sem.
         iApply (incl_uniq_body_pers_component_at Hsem ty ty' x0 ξi idx κ κ'
           tid l (λ y, HPhys y tid) with "HGho' In0 Bor"). }
       iDestruct (dguard_trans_at Hsem with "In0 Incl") as "#Incl1".
-      iDestruct (dguard_at Hsem with "Lfts1") as "#Lfts1'".
+      iDestruct (dincl_at Hsem with "Lfts1") as "#Lfts1'".
       iDestruct (dguard_trans_at Hsem with "Incl1 Lfts1'") as "#Incl2".
       iAssert (sem (guard_fml (alive_fml κ') (cmapstoany_fml l))) as "#PtBase'".
       { iApply (dguard_trans_at Hsem with "In0 PtBase"). }
@@ -323,7 +323,7 @@ Section uniq_bor_sem.
       have ? := ty_gho_pers_pers_at ty' sem Hsem.
       have ? := basically_dead_pers_at Hsem.
       have ? := or_pers_at Hsem.
-      iDestruct (dguard_at Hsem with "In") as "#In0".
+      iDestruct (dincl_at Hsem with "In") as "#In0".
       rewrite /= !(sep_sem_at Hsem) !(pure_sem_at Hsem) !(or_sem_at Hsem).
       iIntros "(%Hle & #Pers & #Bor)".
       iSplit; [iPureIntro; lia|]. iSplit.
@@ -659,7 +659,7 @@ Section uniq_bor_typing.
     iFrame "tok T". iSplitL "UniqBody".
     { iExists v, d. iSplit; [done|]. rewrite /ty_own uniq_bor_gho.
       iSplitL; [|by rewrite /= -Hphys].
-      iSplitR; [iApply (dguard_trans with "Incl Hl1")|].
+      iSplitR; [iApply (dguard_trans with "Incl []"); by iApply dincl_dguard|].
       iSplitR; [iPureIntro; lia|]. iFrame "UniqBody".
       iSplitR; [iApply "PtBase"|].
       iDestruct "Pers" as "[Dead|P]"; [by iLeft|iRight].

@@ -226,16 +226,23 @@ Section uniq_util.
 
   (** Similar to [†κ], but the inclusion rule applies immediately instead of
     through an update. *)
-  Definition basically_dead (κ: lft) : iProp Σ := ∃ κ', dincl κ κ' ∗ [†κ'].
+  (** Note the [dguard], not [dincl]: this is the semantic counterpart of
+    [basically_dead_fml], which holds a [guard_fml]. *)
+  Definition basically_dead (κ: lft) : iProp Σ :=
+    ∃ κ', dguard (alive_fml κ) (alive_fml κ') ∗ [†κ'].
 
   #[export] Instance basically_dead_persistent κ : Persistent (basically_dead κ).
   Proof. exact _. Qed.
 
+  (** Weakening by an inclusion held at the ambient interpretation; a
+    [dincl] can be turned into one with [dincl_dguard]. *)
   Lemma basically_dead_incl κ κ' :
-    dincl κ' κ -∗ basically_dead κ -∗ basically_dead κ'.
+    dguard (alive_fml κ') (alive_fml κ) -∗
+    basically_dead κ -∗ basically_dead κ'.
   Proof.
+    have ? := guard_fml_pers_at alt_here.
     iIntros "#Incl (%κ'' & #Incl2 & #Dead)". iExists κ''. iFrame "Dead".
-    iApply (dincl_trans with "Incl Incl2").
+    iApply (dguard_trans with "Incl Incl2").
   Qed.
 
   (** Bumping the depth indices of a unique borrow.

@@ -190,14 +190,14 @@ Section lft_contexts.
     every candidate, so [type_call] asks for this stronger form.  See
     [AltSem] in [typing/ctx.v]. *)
   Definition lctx_lft_alive_all (κ : lft) : Prop :=
-    ∀ sem, alt_sem sem → alt_into bor_sem sem →
+    ∀ sem, alt_sem sem →
       llctx_interp L ⊢ elctx_interp E -∗
         (llctx_interp L &&{alt_WGuard sem}&&> @[κ]).
 
   Lemma lctx_lft_alive_all_now κ : lctx_lft_alive_all κ → lctx_lft_alive κ.
   Proof.
     move=> Alv. rewrite /lctx_lft_alive -alt_WGuard_here.
-    exact: (Alv _ alt_here alt_into_here).
+    exact: (Alv _ alt_here).
   Qed.
 
   Lemma lctx_lft_alive_static : lctx_lft_alive static.
@@ -245,16 +245,16 @@ Section lft_contexts.
 
   Lemma lctx_lft_alive_all_static : lctx_lft_alive_all static.
   Proof.
-    move=> sem ??. iIntros "**". rewrite -llftl_tok_unit_equiv.
+    move=> sem ?. iIntros "**". rewrite -llftl_tok_unit_equiv.
     iApply guard_true.
   Qed.
 
   Lemma lctx_lft_alive_all_intersect α β :
     lctx_lft_alive_all α → lctx_lft_alive_all β → lctx_lft_alive_all (α ⊓ β).
   Proof.
-    move=> alα alβ sem Hs Hi. iIntros "L #E".
-    iDestruct (alα sem Hs Hi with "L E") as "#gα".
-    iDestruct (alβ sem Hs Hi with "L E") as "#gβ".
+    move=> alα alβ sem Hs. iIntros "L #E".
+    iDestruct (alα sem Hs with "L E") as "#gα".
+    iDestruct (alβ sem Hs with "L E") as "#gβ".
     iApply (guard_and (point_prop0 := point_prop_llft_alive _) with "gα gβ").
     by rewrite llftl_tok_inter_and.
   Qed.
@@ -270,8 +270,8 @@ Section lft_contexts.
   Lemma lctx_lft_alive_all_local κ κs :
     κ ⊑ₗ κs ∈ L → Forall lctx_lft_alive_all κs → lctx_lft_alive_all κ.
   Proof.
-    move=> Hin Hf sem Hs Hi.
-    have H2 := lctx_lft_alive_all_tok_list _ Hf sem Hs Hi.
+    move=> Hin Hf sem Hs.
+    have H2 := lctx_lft_alive_all_tok_list _ Hf sem Hs.
     iIntros "HL #HE". iDestruct (H2 with "HL HE") as "#Alv".
     iAssert (llctx_interp L &&{alt_WGuard sem}&&>
       llctx_elt_interp (κ ⊑ₗ κs))%I with "[HL]" as "#HL1".
@@ -294,10 +294,9 @@ Section lft_contexts.
     before the local lifetime context is consumed *)
   Lemma lctx_lft_alive_all_guards κ : lctx_lft_alive_all κ →
     llctx_interp L -∗ elctx_interp E -∗
-      ∀ sem, ⌜alt_sem sem⌝ → ⌜alt_into bor_sem sem⌝ →
-        llctx_interp L &&{alt_WGuard sem}&&> @[κ].
+      ∀ sem, ⌜alt_sem sem⌝ → llctx_interp L &&{alt_WGuard sem}&&> @[κ].
   Proof.
-    move=> Alv. iIntros "L #E" (sem Hs Hi). iApply (Alv sem Hs Hi with "L E").
+    move=> Alv. iIntros "L #E" (sem Hs). iApply (Alv sem Hs with "L E").
   Qed.
 
   Lemma lctx_lft_alive_incl κ κ':

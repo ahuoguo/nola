@@ -334,7 +334,7 @@ Section typing.
     { iApply (guard_trans with "Gfrac Alv"). }
     iDestruct "Pers" as "[Dead|#Pers]".
     { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
-      iDestruct (dincl_sem with "Incl0") as "#Incl'".
+      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 f Wg") as "[Alive _]".

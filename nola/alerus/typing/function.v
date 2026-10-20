@@ -488,7 +488,7 @@ Section typing.
     lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
     (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) κl ++ E) L (fp_E (fp x) ϝ)) →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
-    dguard (gsrc_fml (GFrac γ q)) (alive_fml (lft_intersect_list κl)) -∗
+    dguard_all (gsrc_fml (GFrac γ q)) (alive_fml (lft_intersect_list κl)) -∗
     Ltok γ L q -∗
     invctx_interp tid mask iκs (InvCtx Il ϝ' (fp_atomic_state (fp x))) -∗
     tctx_elt_interp tid (p ◁ fn fp spec) efun -∗
@@ -522,9 +522,10 @@ Section typing.
     iDestruct (bupdw_incl (W:=alerus_wsat) with "Sh") as "Sh'".
     iMod ("Sh'" with "W") as "[W [#fGuardsG0 ToG]]".
     iAssert (@[ϝ] &&{Wguard}&&> frac_tok γ q)%I as "#fGuardsG".
-    { iDestruct (dguard_alive_sem with "fGuardsG0") as "#G".
+    { iDestruct (dguard_all_dguard with "fGuardsG0") as "#G0".
+      iDestruct (dguard_alive_sem with "G0") as "#G".
       iApply (guard_rhs_iff (gsrc_fml_sem (GFrac γ q))). iApply "G". }
-    iDestruct (dguard_trans with "fGuardsG0 Gguardsκl") as "#Borκl".
+    iDestruct (dguard_all_trans with "fGuardsG0 Gguardsκl") as "#Borκl".
     iDestruct (guard_trans with "fGuardsG [] ") as "fGuardsL";
       [iApply (Ltok_guard_frac with "key")|].
     iDestruct ("EfpPre" with "[$E]") as "#Efp".
@@ -573,7 +574,7 @@ Section typing.
     AsVal k → IntoPlistc ql ql' →
     (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) κl ++ E) [] (fp_E (fp x) ϝ)) →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
-    dguard (gsrc_fml (GFrac γ q)) (alive_fml (lft_intersect_list κl)) -∗
+    dguard_all (gsrc_fml (GFrac γ q)) (alive_fml (lft_intersect_list κl)) -∗
     Ltok γ [] q -∗
     invctx_interp tid mask [] (InvCtx [] static (fp_atomic_state (fp x))) -∗
     tctx_elt_interp tid (p ◁ fn fp spec) efun -∗
@@ -623,11 +624,12 @@ Section typing.
     iDestruct "tok" as "[#key tok]".
     iApply (type_call_iris' with
       "LFT PROPH UNIQ E [] [$key $tok] I p ql [Obs]"); [done|done|..].
-    { iApply dguard_of_all. iIntros (sem Hs Hi).
-      rewrite (gsrc_sem_at Hs) (alive_sem_at Hs).
+    { iApply dguard_all_of_all. iIntros "!>" (sem Hs).
+      iApply (dguard_of_all_at Hs). iIntros (sem' Hs' ?).
+      rewrite (gsrc_sem_at Hs') (alive_sem_at Hs').
       iApply (guard_trans with "[] []").
-      - iApply (Ltok_guard_frac_at Hs with "key").
-      - iApply ("AlvAll" $! sem with "[//] [//]"). }
+      - iApply (Ltok_guard_frac_at Hs' with "key").
+      - iApply ("AlvAll" $! sem' with "[//]"). }
     { iApply proph_obs_eq; [|done]=>/= ?. by rewrite papp_sepl papp_sepr. }
     iIntros (ret mask' ?) "tok I ret Obs".
     iApply fupdw_twpw_cont. iIntros "W".

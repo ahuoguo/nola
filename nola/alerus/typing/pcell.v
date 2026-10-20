@@ -436,7 +436,7 @@ Section typing.
     rewrite /= length_pad in Hlen'.
     iDestruct "Pers" as "[Dead|#Pers]".
     { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
-      iDestruct (dincl_sem with "Incl0") as "#Incl'".
+      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg' Wr']".
       iDestruct (guard_acc with "G3 f Wg'") as "[Alive _]".
@@ -652,10 +652,10 @@ Section typing.
     iAssert (bor_sem (gsrc_fml (GFrac γl (1/2))) &&{Wguard}&&> @[κ])%I
       as "#Gκ'".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γl (1/2)))). iApply "Gκ". }
-    iDestruct (dincl_sem with "Incl") as "#Incls".
+    iDestruct (dguard_alive_incl with "Incl") as "#Incls".
     iDestruct "Pers" as "[Dead|#Pers]".
     { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
-      iDestruct (dincl_sem with "Incl0") as "#Incl'".
+      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 fb Wg") as "[Alive _]".
@@ -789,10 +789,10 @@ Section typing.
     iAssert (bor_sem (gsrc_fml (GFrac γl (1/2))) &&{Wguard}&&> @[κ])%I
       as "#Gκ'".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γl (1/2)))). iApply "Gκ". }
-    iDestruct (dincl_sem with "Incl") as "#Incls".
+    iDestruct (dguard_alive_incl with "Incl") as "#Incls".
     iDestruct "Pers" as "[Dead|#Pers]".
     { iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
-      iDestruct (dincl_sem with "Incl0") as "#Incl'".
+      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 fb Wg") as "[Alive _]".
