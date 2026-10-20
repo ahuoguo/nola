@@ -445,8 +445,17 @@ Section stbor.
 
   Definition st_incl_cif (κ κ' : lft) : iProp Σ :=
     ∃ S : gset lft, ⌜covers κ S κ'⌝ ∧ eternal_lfts S.
+  (** The storable alteration: the equivalence at *every* interpretation,
+    good or not.
+
+    Dropping [⌜Deriv (λ _, True) δ⌝] is what takes [Deriv] - and with it
+    [Jsem] - out of [idx_bor], which is [idxborJT_sem].  Nothing is lost on
+    the elimination side, since a borrow is only ever opened at an
+    interpretation that is a candidate anyway.  What it costs is that
+    [AltSem]'s [idxbor_fml_iff_at] now asks for the alteration off the
+    candidates too; see [typing/inst.v]. *)
   Definition st_iff_cif (Px Qx : cifOF CON $oi Σ) : iProp Σ :=
-    □ ∀ δ (_ : Deriv (λ _, True) δ), ⟦ Px ⟧ᶜ(δ) ↔ ⟦ Qx ⟧ᶜ(δ).
+    □ ∀ δ, ⟦ Px ⟧ᶜ(δ) ↔ ⟦ Qx ⟧ᶜ(δ).
 
   #[export] Instance st_iff_cif_ne : NonExpansive2 st_iff_cif.
   Proof. solve_proper. Qed.
@@ -572,27 +581,26 @@ Section stbor.
     iIntros "!>" (κ0 Hκ0). move: Hκ0=> /elem_of_singleton->. iApply "tok".
   Qed.
   Lemma st_iff_cif_refl {Px} : ⊢ st_iff_cif Px Px.
-  Proof. iIntros "!>" (δ ?). by iSplit; iIntros "$". Qed.
+  Proof. iIntros "!>" (δ). by iSplit; iIntros "$". Qed.
   Lemma st_iff_cif_sym {Px Qx} : st_iff_cif Px Qx -∗ st_iff_cif Qx Px.
   Proof.
-    iIntros "#g !>" (δ ?). iSplit; iIntros "P".
-    - by iApply ("g" with "[//]"). - by iApply ("g" with "[//]").
+    iIntros "#g !>" (δ). iSplit; iIntros "P".
+    - by iApply "g". - by iApply "g".
   Qed.
   Lemma st_iff_cif_trans {Px Qx Rx} :
     st_iff_cif Px Qx -∗ st_iff_cif Qx Rx -∗ st_iff_cif Px Rx.
   Proof.
-    iIntros "#g #g' !>" (δ ?). iSplit; iIntros "P".
-    - iApply ("g'" with "[//]"). by iApply ("g" with "[//]").
-    - iApply ("g" with "[//]"). by iApply ("g'" with "[//]").
+    iIntros "#g #g' !>" (δ). iSplit; iIntros "P".
+    - iApply "g'". by iApply "g". - iApply "g". by iApply "g'".
   Qed.
 
   Lemma st_iff_cif_sep {Px Px' Qx Qx'} :
     st_iff_cif Px Px' -∗ st_iff_cif Qx Qx' -∗
       st_iff_cif (cif_sep Px Qx) (cif_sep Px' Qx').
   Proof.
-    iIntros "#g #g' !>" (δ ?). iSplit; iIntros "[P Q]".
-    - iSplitL "P"; [by iApply ("g" with "[//]")|by iApply ("g'" with "[//]")].
-    - iSplitL "P"; [by iApply ("g" with "[//]")|by iApply ("g'" with "[//]")].
+    iIntros "#g #g' !>" (δ). iSplit; iIntros "[P Q]".
+    - iSplitL "P"; [by iApply "g"|by iApply "g'"].
+    - iSplitL "P"; [by iApply "g"|by iApply "g'"].
   Qed.
 
   Definition stBor_cif : StBor (cifOF CON) Σ := {|
@@ -624,7 +632,7 @@ Section stbor_sem.
   Proof.
     split.
     - iIntros (κ κ') "#g". iApply (st_incl_cif_at δ with "g").
-    - iIntros (Px Qx) "#g !>". iApply ("g" $! δ Hδ).
+    - iIntros (Px Qx) "#g !>". iApply ("g" $! δ).
     - iIntros (Px Px' Qx Qx') "g g'". iApply (st_iff_cif_sep with "g g'").
   Qed.
 
@@ -1040,6 +1048,15 @@ Section altSem.
   (** A candidate is an interpretation at a good derivability predicate *)
   Definition alt_sem_cif S : Prop :=
     ∃ δ : JUDG -n> iProp Σ, Deriv (λ _, True) δ ∧ cand_asem S = AlerusSem_at δ.
+  (** An *interpretation*, good or not.  This is [alt_sem_cif] with the
+    [Deriv] dropped, and it is what [st_iff] now quantifies over. *)
+  Definition alt_any_cif S : Prop :=
+    ∃ δ : JUDG -n> iProp Σ, cand_asem S = AlerusSem_at δ.
+  Lemma alt_sem_any_cif {S} : alt_sem_cif S → alt_any_cif S.
+  Proof. move=> [δ[_ ?]]. by exists δ. Qed.
+  Lemma alt_any_cif_ne {S} : alt_any_cif S → NonExpansive S.
+  Proof. move=> [δ Heq]. rewrite /cand_fun Heq. exact _. Qed.
+
   (** [alt_into] is defined by its three uses: in the model a candidate is a
     bare record and nothing recovers the [δ] behind it, but each use is a
     function of the two interpretations, and [dinto δ δ'] discharges all
@@ -1119,60 +1136,62 @@ Section altSem.
   Local Ltac alt_at H :=
     let d := fresh "δ" in let Hd := fresh "Hδ" in let Heq := fresh "Heq" in
     destruct H as (d & Hd & Heq); rewrite /cand_fun /alt_WGuard /= ?Heq.
+  Local Tactic Notation "alt_any_at" hyp(H) :=
+    destruct H as (dd & Heqq); rewrite /cand_fun /alt_WGuard /= ?Heqq.
 
   (** *** The non-judgment constructors mean the same at every candidate *)
-  Lemma sep_sem_cif {S} (H : alt_sem_cif S) Px Qx :
+  Lemma sep_sem_cif {S} (H : alt_any_cif S) Px Qx :
     S (cif_sep Px Qx) ⊣⊢ S Px ∗ S Qx.
-  Proof. alt_at H. exact cif_sem_sep. Qed.
-  Lemma false_sem_cif {S} (H : alt_sem_cif S) :
+  Proof. alt_any_at H. exact cif_sem_sep. Qed.
+  Lemma false_sem_cif {S} (H : alt_any_cif S) :
     S (cif_pure False : cifOF CON $oi Σ) ⊣⊢ False.
-  Proof. alt_at H. done. Qed.
-  Lemma empty_sem_cif {S} (H : alt_sem_cif S) :
+  Proof. alt_any_at H. done. Qed.
+  Lemma empty_sem_cif {S} (H : alt_any_cif S) :
     S (cif_pure True : cifOF CON $oi Σ) ⊣⊢ True.
-  Proof. alt_at H. done. Qed.
-  Lemma pure_sem_cif {S} (H : alt_sem_cif S) φ :
+  Proof. alt_any_at H. done. Qed.
+  Lemma pure_sem_cif {S} (H : alt_any_cif S) φ :
     S (cif_pure φ : cifOF CON $oi Σ) ⊣⊢ ⌜φ⌝.
-  Proof. alt_at H. done. Qed.
-  Lemma ex_sem_cif {S} (H : alt_sem_cif S) A (Φ : A → cifOF CON $oi Σ) :
+  Proof. alt_any_at H. done. Qed.
+  Lemma ex_sem_cif {S} (H : alt_any_cif S) A (Φ : A → cifOF CON $oi Σ) :
     S (cif_ex Φ) ⊣⊢ ∃ a, S (Φ a).
-  Proof. alt_at H. done. Qed.
-  Lemma exs_sem_cif {S} (H : alt_sem_cif S) 𝔄 (Φ : (~~𝔄) → cifOF CON $oi Σ) :
+  Proof. alt_any_at H. done. Qed.
+  Lemma exs_sem_cif {S} (H : alt_any_cif S) 𝔄 (Φ : (~~𝔄) → cifOF CON $oi Σ) :
     S (cif_exs Φ) ⊣⊢ ∃ a : ~~𝔄, S (Φ a).
-  Proof. alt_at H. exact cif_exs_sem_at. Qed.
-  Lemma or_sem_cif {S} (H : alt_sem_cif S) Px Qx :
+  Proof. alt_any_at H. exact cif_exs_sem_at. Qed.
+  Lemma or_sem_cif {S} (H : alt_any_cif S) Px Qx :
     S (cif_or Px Qx) ⊣⊢ S Px ∨ S Qx.
-  Proof. alt_at H. done. Qed.
-  Lemma alive_sem_cif {S} (H : alt_sem_cif S) κ : S (cif_alive κ) ⊣⊢ @[κ].
-  Proof. alt_at H. exact cif_alive_sem_at. Qed.
-  Lemma dead_sem_cif {S} (H : alt_sem_cif S) κ : S (cif_dead κ) ⊣⊢ [†κ].
-  Proof. alt_at H. exact cif_dead_sem_at. Qed.
-  Lemma cells_sem_cif {S} (H : alt_sem_cif S) l cs fv :
+  Proof. alt_any_at H. done. Qed.
+  Lemma alive_sem_cif {S} (H : alt_any_cif S) κ : S (cif_alive κ) ⊣⊢ @[κ].
+  Proof. alt_any_at H. exact cif_alive_sem_at. Qed.
+  Lemma dead_sem_cif {S} (H : alt_any_cif S) κ : S (cif_dead κ) ⊣⊢ [†κ].
+  Proof. alt_any_at H. exact cif_dead_sem_at. Qed.
+  Lemma cells_sem_cif {S} (H : alt_any_cif S) l cs fv :
     S (cif_cells l cs fv) ⊣⊢ l ↦[^ cs ]!∗ fv.
-  Proof. alt_at H. exact cif_cells_sem_at. Qed.
-  Lemma ccells_sem_cif {S} (H : alt_sem_cif S) l fv :
+  Proof. alt_any_at H. exact cif_cells_sem_at. Qed.
+  Lemma ccells_sem_cif {S} (H : alt_any_cif S) l fv :
     S (cif_ccells l fv) ⊣⊢ l #↦!∗ fv.
-  Proof. alt_at H. exact cif_ccells_sem_at. Qed.
-  Lemma cmapstoany_sem_cif {S} (H : alt_sem_cif S) l :
+  Proof. alt_any_at H. exact cif_ccells_sem_at. Qed.
+  Lemma cmapstoany_sem_cif {S} (H : alt_any_cif S) l :
     S (cif_cmapstoany l) ⊣⊢ l #↦∗_.
-  Proof. alt_at H. exact cif_cmapstoany_sem_at. Qed.
-  Lemma freeable_sem_cif {S} (H : alt_sem_cif S) n sz l :
+  Proof. alt_any_at H. exact cif_cmapstoany_sem_at. Qed.
+  Lemma freeable_sem_cif {S} (H : alt_any_cif S) n sz l :
     S (cif_freeable n sz l) ⊣⊢ freeable_sz n sz l.
-  Proof. alt_at H. exact cif_freeable_sem_at. Qed.
-  Lemma vo_sem_cif {S} (H : alt_sem_cif S) ξ x d :
+  Proof. alt_any_at H. exact cif_freeable_sem_at. Qed.
+  Lemma vo_sem_cif {S} (H : alt_any_cif S) ξ x d :
     S (cif_vo ξ x d) ⊣⊢ .VO[ξ] x d.
-  Proof. alt_at H. exact cif_vo_sem_at. Qed.
-  Lemma pc_sem_cif {S} (H : alt_sem_cif S) ξ x vπ d :
+  Proof. alt_any_at H. exact cif_vo_sem_at. Qed.
+  Lemma pc_sem_cif {S} (H : alt_any_cif S) ξ x vπ d :
     S (cif_pc ξ x vπ d) ⊣⊢ .PC[ξ] x vπ d.
-  Proof. alt_at H. exact cif_pc_sem_at. Qed.
+  Proof. alt_any_at H. exact cif_pc_sem_at. Qed.
   Lemma cellsvec_sem_cif {S} (H : alt_sem_cif S) cs fv :
     S (cif_cellsvec cs fv) ⊣⊢ cs ^↦!∗ fv.
   Proof. alt_at H. exact cif_cellsvec_sem_at. Qed.
-  Lemma gsrc_sem_cif {S} (H : alt_sem_cif S) s :
+  Lemma gsrc_sem_cif {S} (H : alt_any_cif S) s :
     S (cif_gsrc s) ⊣⊢ gsrc_interp s.
-  Proof. alt_at H. exact cif_gsrc_sem_at. Qed.
-  Lemma bor_state_sem_cif {S} (H : alt_sem_cif S) sn bs :
+  Proof. alt_any_at H. exact cif_gsrc_sem_at. Qed.
+  Lemma bor_state_sem_cif {S} (H : alt_any_cif S) sn bs :
     S (cif_bor_state sn bs) ⊣⊢ bor_sem (cif_bor_state sn bs).
-  Proof. alt_at H. rewrite /bor_sem /= !cif_bor_state_sem //. Qed.
+  Proof. alt_any_at H. rewrite /bor_sem /= !cif_bor_state_sem //. Qed.
 
   (** *** Storing a guard: [Deriv_factor'] at the candidate
 
@@ -1201,24 +1220,24 @@ Section altSem.
   Qed.
 
   (** *** Persistence *)
-  Lemma guard_fml_pers_cif {S} (H : alt_sem_cif S) Px Qx :
+  Lemma guard_fml_pers_cif {S} (H : alt_any_cif S) Px Qx :
     Persistent (S (cif_guard Px Qx)).
   Proof.
-    move: H=> [δ[? Heq]].
+    move: H=> [δ Heq].
     rewrite /cand_fun /= Heq /= /cif_guard sem_cif_in /=. exact _.
   Qed.
-  Lemma idxbor_fml_pers_cif {S} (H : alt_sem_cif S) κ idx Px :
+  Lemma idxbor_fml_pers_cif {S} (H : alt_any_cif S) κ idx Px :
     Persistent (S (cif_idxbor κ idx Px)).
   Proof.
-    move: H=> [δ[? Heq]]. rewrite /cand_fun /= Heq /= cif_idxbor_sem.
+    move: H=> [δ Heq]. rewrite /cand_fun /= Heq /= cif_idxbor_sem.
     exact _.
   Qed.
 
   (** *** The indexed borrow *)
-  Lemma incl_fml_pers_cif {S} (H : alt_sem_cif S) κ κ' :
+  Lemma incl_fml_pers_cif {S} (H : alt_any_cif S) κ κ' :
     Persistent (S (cif_incl κ κ')).
   Proof.
-    move: H=> [δ[? Heq]]. rewrite /cand_fun /= Heq /= cif_incl_sem. exact _.
+    move: H=> [δ Heq]. rewrite /cand_fun /= Heq /= cif_incl_sem. exact _.
   Qed.
 
   (** *** The indexed borrow *)
@@ -1237,14 +1256,14 @@ Section altSem.
   Proof. apply Hi. Qed.
   Lemma idxbor_fml_iff_at_cif {S} (H : alt_sem_cif S) κ idx
     (Px Qx : cif CON Σ) :
-    □ (∀ S' (_ : alt_sem_cif S'), S' Px ∗-∗ S' Qx) -∗
+    □ (∀ S' (_ : alt_any_cif S'), S' Px ∗-∗ S' Qx) -∗
     S (cif_idxbor κ idx Px) -∗ S (cif_idxbor κ idx Qx).
   Proof.
     move: (H)=> [δ[Hδ Heq]]. have ? : Deriv (λ _, True) δ := Hδ.
     rewrite /cand_fun /= Heq /= !cif_idxbor_sem.
     iIntros "#eq #g !>". iApply (Deriv_map with "[] g").
     iIntros (δ' ? _ _). rewrite !idxborJ_sem.
-    iApply llftl_idx_bor_iff. iIntros "!>" (δ'' ?).
+    iApply llftl_idx_bor_iff. iIntros "!>" (δ'').
     iDestruct ("eq" $! (MkCand (AlerusSem_at δ'')) with "[%]") as "[F B]".
     { by exists δ''. }
     iSplit; iIntros "P"; [by iApply "F"|by iApply "B"].
@@ -1385,39 +1404,41 @@ Section altSem.
   #[export] Instance altSem_cif : AltSem (cifOF CON) Σ := {|
     alt_sem := alt_sem_cif;
     alt_into := alt_into_cif;
+    alt_any := alt_any_cif;
+    alt_sem_any := @alt_sem_any_cif;
+    alt_any_ne := @alt_any_cif_ne;
     alt_here := alt_sem_cif_here;
     alt_into_here := alt_into_cif_here;
-    alt_sem_ne := (λ _ _, cand_ne);
-    sep_sem_at := @sep_sem_cif;
-    false_sem_at := @false_sem_cif;
-    empty_sem_at := @empty_sem_cif;
-    pure_sem_at := @pure_sem_cif;
-    ex_sem_at := @ex_sem_cif;
-    exs_sem_at := @exs_sem_cif;
-    or_sem_at := @or_sem_cif;
-    alive_sem_at := @alive_sem_cif;
-    dead_sem_at := @dead_sem_cif;
-    cells_sem_at := @cells_sem_cif;
-    ccells_sem_at := @ccells_sem_cif;
-    cmapstoany_sem_at := @cmapstoany_sem_cif;
-    freeable_sem_at := @freeable_sem_cif;
-    vo_sem_at := @vo_sem_cif;
-    pc_sem_at := @pc_sem_cif;
-    gsrc_sem_at := @gsrc_sem_cif;
+    sep_sem_at_any := @sep_sem_cif;
+    false_sem_at_any := @false_sem_cif;
+    empty_sem_at_any := @empty_sem_cif;
+    pure_sem_at_any := @pure_sem_cif;
+    ex_sem_at_any := @ex_sem_cif;
+    exs_sem_at_any := @exs_sem_cif;
+    or_sem_at_any := @or_sem_cif;
+    alive_sem_at_any := @alive_sem_cif;
+    dead_sem_at_any := @dead_sem_cif;
+    cells_sem_at_any := @cells_sem_cif;
+    ccells_sem_at_any := @ccells_sem_cif;
+    cmapstoany_sem_at_any := @cmapstoany_sem_cif;
+    freeable_sem_at_any := @freeable_sem_cif;
+    vo_sem_at_any := @vo_sem_cif;
+    pc_sem_at_any := @pc_sem_cif;
+    gsrc_sem_at_any := @gsrc_sem_cif;
     guard_fml_sem_into := (λ _ _ _ _ Hi, proj1 Hi);
     guard_fml_sem_2 := @guard_fml_sem_2_cif;
-    guard_fml_pers_at := @guard_fml_pers_cif;
-    idxbor_fml_pers_at := @idxbor_fml_pers_cif;
+    guard_fml_pers_at_any := @guard_fml_pers_cif;
+    idxbor_fml_pers_at_any := @idxbor_fml_pers_cif;
     idxbor_fml_sem_1 := @idxbor_fml_sem_1_cif;
     idxbor_fml_of_bor := @idxbor_fml_of_bor_cif;
     idxbor_fml_iff_at := @idxbor_fml_iff_at_cif;
-    bor_state_sem_at := @bor_state_sem_cif;
+    bor_state_sem_at_any := @bor_state_sem_cif;
     idxbor_fml_into := @idxbor_fml_into_cif;
     idxbor_fml_guard_into := @idxbor_fml_guard_into_cif;
     idxbor_fml_shorten_at := @idxbor_fml_shorten_at_cif;
     incl_fml_sem_1 := @incl_fml_sem_1_cif;
     incl_fml_of_incl := @incl_fml_of_incl_cif;
-    incl_fml_pers_at := @incl_fml_pers_cif;
+    incl_fml_pers_at_any := @incl_fml_pers_cif;
     incl_fml_mono_at := @incl_fml_mono_at_cif;
     st_incl_of_sub := @st_incl_of_sub_cif;
     st_incl_at := @st_incl_at_cif;

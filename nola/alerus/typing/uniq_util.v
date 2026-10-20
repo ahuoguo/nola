@@ -445,18 +445,18 @@ Section uniq_util.
   Qed.
 
   (** [uniq_body_fml_sem] at a candidate interpretation *)
-  Lemma uniq_body_fml_sem_at {sem} (H : alt_sem sem) {𝔄} (ty: type 𝔄)
+  Lemma uniq_body_fml_sem_at {sem} (H : alt_any sem) {𝔄} (ty: type 𝔄)
       x ξi tid l :
     sem (uniq_body_fml ty x ξi tid l) ⊣⊢
       ∃ (y: ~~𝔄) (e h: nat),
         .PC[PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi] y (vπ y) (e, h) ∗
         sem (ty.(ty_ghox) y e h tid) ∗ l #↦!∗ ty_phys ty y tid.
   Proof.
-    rewrite /uniq_body_fml (exs_sem_at H). apply bi.exist_proper=> y.
-    rewrite (ex_sem_at H). apply bi.exist_proper=> e.
-    rewrite (ex_sem_at H). apply bi.exist_proper=> h.
-    rewrite /uniq_body_at_fml !(sep_sem_at H) (pc_sem_at H)
-      (ccells_sem_at H) //.
+    rewrite /uniq_body_fml (exs_sem_at_any H). apply bi.exist_proper=> y.
+    rewrite (ex_sem_at_any H). apply bi.exist_proper=> e.
+    rewrite (ex_sem_at_any H). apply bi.exist_proper=> h.
+    rewrite /uniq_body_at_fml !(sep_sem_at_any H) (pc_sem_at_any H)
+      (ccells_sem_at_any H) //.
   Qed.
 
   (** A guard to the whole [uniq_body] gives one to its contents *)
@@ -594,7 +594,7 @@ Section uniq_util.
     iDestruct (idxbor_fml_guard_into Hs κ ξidx _ (sem' Gx)
       with "Bor Gκ Gtok") as "#Ginner".
     iDestruct (guard_rhs_sep_r with "Ginner") as "#Ginner2".
-    iDestruct (guard_rhs_iff (uniq_body_fml_sem_at Hs ty x ξi tid l)
+    iDestruct (guard_rhs_iff (uniq_body_fml_sem_at (alt_sem_any Hs) ty x ξi tid l)
       with "Ginner2") as "#Ginner3".
     iDestruct (guard_exist_eq x d g _ _ _
       (uniq_body_at_agree_at Hs ty x ξi d g tid l) with "Gvo Ginner3")
@@ -664,21 +664,26 @@ Section uniq_util.
     rewrite /uniq_body_at_fml Hp. f_equiv. f_equiv. by apply equiv_dist.
   Qed.
 
-  (** Changing the type of the borrowed body, at every candidate *)
+  (** Changing the type of the borrowed body, at every *interpretation*.
+
+    [idxbor_fml_iff_at] asks for the alteration off the candidates too, since
+    [st_iff] is no longer restricted to the good interpretations - see
+    [typing/inst.v].  Every step here is definitional, so the law holds
+    there. *)
   Lemma uniq_body_fml_iff_at {𝔄} (ty ty': type 𝔄) x ξi tid l :
     (∀ y, ty_phys ty y tid = ty_phys ty' y tid) →
-    □ (∀ sem' (_ : alt_sem sem'), ∀ y e h,
+    □ (∀ sem' (_ : alt_any sem'), ∀ y e h,
          sem' (ty.(ty_ghox) y e h tid) ∗-∗ sem' (ty'.(ty_ghox) y e h tid)) ⊢
-    □ (∀ sem' (_ : alt_sem sem'),
+    □ (∀ sem' (_ : alt_any sem'),
          sem' (uniq_body_fml ty x ξi tid l) ∗-∗
          sem' (uniq_body_fml ty' x ξi tid l)).
   Proof.
     move=> Hp. iIntros "#Eq !>" (sem' Hs). rewrite /uniq_body_fml.
     iSplit; iIntros "B";
-      rewrite ?(exs_sem_at Hs); iDestruct "B" as (y) "B"; iExists y;
-      rewrite ?(ex_sem_at Hs); iDestruct "B" as (e) "B"; iExists e;
-      rewrite ?(ex_sem_at Hs); iDestruct "B" as (h) "B"; iExists h;
-      rewrite /uniq_body_at_fml !(sep_sem_at Hs) (Hp y);
+      rewrite ?(exs_sem_at_any Hs); iDestruct "B" as (y) "B"; iExists y;
+      rewrite ?(ex_sem_at_any Hs); iDestruct "B" as (e) "B"; iExists e;
+      rewrite ?(ex_sem_at_any Hs); iDestruct "B" as (h) "B"; iExists h;
+      rewrite /uniq_body_at_fml !(sep_sem_at_any Hs) (Hp y);
       iDestruct "B" as "(A & G & P)"; iFrame "A P";
       iDestruct ("Eq" $! sem' Hs y e h) as "[F Bk]";
       [by iApply "F"|by iApply "Bk"].
@@ -688,7 +693,7 @@ Section uniq_util.
   Lemma incl_uniq_body_pers_component_at {sem} (H : alt_sem sem)
       {𝔄} (ty ty': type 𝔄) x ξi idx κ κ' tid l :
     (∀ y, ty_phys ty y tid = ty_phys ty' y tid) →
-    □ (∀ sem' (_ : alt_sem sem'), ∀ y e h,
+    □ (∀ sem' (_ : alt_any sem'), ∀ y e h,
          sem' (ty.(ty_ghox) y e h tid) ∗-∗ sem' (ty'.(ty_ghox) y e h tid)) -∗
     dincl κ' κ -∗
     sem (idxbor_fml κ idx (uniq_body_fml ty x ξi tid l)) -∗
