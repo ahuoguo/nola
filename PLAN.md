@@ -24,19 +24,18 @@ Leaf's later/`iLöb`/`pers` machinery disappears.  Nothing in the tree is
 waiting on a missing guarding lemma, so pull in `storage_protocol/` when
 starting `protocol.v`, not before.
 
+File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
+
 ## Next: finish the model (`nola/alerus/typing/model.v`)
 
 `typeG` has no instance yet, so the development is sound-but-vacuous.
 
 Done: `alerusCT` leaves, the three judgments (`guard`, `idxbor`, `incl`),
 `AlerusSem_at δ`, `alerus_WGuard_at δ`, `StBor`/`StBorSem_at δ`, `TypeFml`,
-`GsrcSem`, `HeapSem`, and most `AltSem` fields.
+`GsrcSem`, `HeapSem`, and **`AltSem`**.
 
-1. the rest of `AltSem`: `st_incl_eternalize`, `Ltok_guard_frac_at`,
-   `guard_fml_borrow_shared`, `guard_fml_of_bor`, `idxbor_fml_guard_at`,
-   `idxbor_fml_shorten_at`, `st_incl_of_sub`
-2. `PcellFml` / `AtomicInvFml` / `LocalInvFml` / `RaFml`, then `typeG`
-3. world-satisfaction allocation and `typing/soundness.v`
+1. `PcellFml` / `AtomicInvFml` / `LocalInvFml` / `RaFml`, then `typeG`
+2. world-satisfaction allocation and `typing/soundness.v`
 
 ## Separate work
 
