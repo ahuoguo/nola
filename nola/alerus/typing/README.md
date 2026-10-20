@@ -562,3 +562,38 @@ inclusion that is later strong enough to shorten a borrow.
 A general guard between two formulas cannot be treated this way: its
 endpoints are interpreted, so `guard_fml` stays a judgment at one
 interpretation, eliminated at candidates by `dinto der δ'`.
+
+## Done: the model, and soundness
+
+`model.v` gives the concrete interpretation (`FML := cifOF CON`,
+`bor_sem := ⟦⟧ᶜ(der)`), `model_inst.v` bundles it into a `typeG`, and
+`soundness.v` allocates the world satisfaction and proves that a closed,
+semantically well-typed program **terminates**.  What the rest of this file
+worked out along the way, in one list:
+
+* **The family rule.**  A judgment is *eliminated* at a candidate the
+  ambient interpretation maps into - `dinto der δ'`, which `Deriv_factor'`
+  hands out - and *introduced* at every candidate from interpretation-free
+  ghost state.  It is never *moved* from one interpretation to another.
+* **Raw families.**  Anything that has to be *used* at a candidate cannot be
+  a family of stored judgments: `fguardx` is the family of the guards
+  themselves, and `st_incl`/`st_iff` are its lifetime and alteration cases.
+  Abstracting those two out of `idx_bor` is what makes a borrow storable.
+* **Interpretation-independent formulas.**  A thing whose semantics ignores
+  the candidate has a `⊣⊢` at *every* candidate and can be a formula:
+  `cif_idxbor` and `cif_incl`.
+* **Candidates are records.**  The guarding world satisfaction is a function
+  of the whole `AlerusSem`, not of `bor_sem`, so a candidate carries one -
+  wrapped in `Cand`, because an unwrapped one would shadow the ambient
+  instance under every binder.
+* **Universes.**  `cif`'s own existential stores the index *type* in the
+  formula's selector and so is capped at `cif_sel`'s universe, strictly
+  below the one `~~𝔄` lives in; `exs_fml` and `exsCT` are the existential
+  over a syntactic type's values.
+* **Allocation order.**  The ghost state is allocated before the
+  interpretation, which is handed in afterwards; and an allocation lemma
+  hands out the ghost *name*, not the record, so that the program logic can
+  recognise the instance it was given.
+
+What is left is written in `PLAN.md`: `fn`'s stratification,
+`fixpoint.v`'s move to `profix`, and a worked example.

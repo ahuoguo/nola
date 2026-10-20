@@ -7,6 +7,23 @@ the guards with Nola's own borrows is *not* the route.
 
 Everything ported builds green (`make -f Makefile.coq -j4`).
 
+## Where it stands
+
+The model is **done**: `nola/alerus/typing/model.v` builds the `cif` model
+of `typing/ctx.v`'s interface (`FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`,
+three judgments for the guard, the indexed borrow and the stored
+inclusion), `model_inst.v` bundles it into a `typeG` with the remaining
+formula-language classes, and `soundness.v` allocates the world
+satisfaction and proves
+
+> a closed, semantically well-typed program **terminates**
+
+which the original cannot state: its weakest precondition is partial,
+because a guard there hands out a `▷` that only a later credit pays for.
+`Print Assumptions` reports only `Eq_rect_eq`.
+
+File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
+
 ## Not ported
 
 | upstream | lines | why |
@@ -15,36 +32,27 @@ Everything ported builds green (`make -f Makefile.coq -j4`).
 | `guarding/lib/rwlock.v` | 518 | client of the above |
 | `typing/protocol.v` | 1189 | needs `storage_protocol/` |
 | `typing/spawn.v` | 394 | `join` is an `iLöb` spin loop - no later-free version |
-| `typing/soundness.v` | 100 | needs the model |
 
-The rest of `guarding/` is here (`nola/bi/guard.v`, `nola/iris/guard.v`,
-`nola/alerus/{boxes,frac_guard,own_and,auth_frag,na_inv_fork}.v`,
-`nola/alerus/lifetime/`, `nola/alerus/util/`); the line counts shrink because
-Leaf's later/`iLöb`/`pers` machinery disappears.  Nothing in the tree is
-waiting on a missing guarding lemma, so pull in `storage_protocol/` when
-starting `protocol.v`, not before.
+The rest of `guarding/` is here; the line counts shrink because Leaf's
+later/`iLöb`/`pers` machinery disappears.  Nothing in the tree waits on a
+missing guarding lemma, so pull in `storage_protocol/` when starting
+`protocol.v`, not before.
 
-File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
+## Next
 
-## Next: finish the model (`nola/alerus/typing/model.v`)
-
-`typeG` has no instance yet, so the development is sound-but-vacuous.
-
-Done: `alerusCT` leaves, the three judgments (`guard`, `idxbor`, `incl`),
-`AlerusSem_at δ`, `alerus_WGuard_at δ`, `StBor`/`StBorSem_at δ`, `TypeFml`,
-`GsrcSem`, `HeapSem`, and **`AltSem`**.
-
-1. `PcellFml` / `AtomicInvFml` / `LocalInvFml` / `RaFml`, then `typeG`
-2. world-satisfaction allocation and `typing/soundness.v`
-
-## Separate work
-
-* `typing/fixpoint.v` uses a COFE limit; a `cif` is complete as a `prost`,
-  not an OFE, so it must move to `profix`/`Productive` (cf.
-  `rust_halt/rec.v`).  Until then it assumes `Cofe (FML $oi Σ)`, which the
-  model cannot discharge.
-* `fn` must be stratified by an execution level (thesis (5.4), § 3.4.1).
-  `fn_fml_sem_2` has no model and must not be discharged as it stands.
+1. **`fn` must be stratified by an execution level** (thesis (5.4),
+   § 3.4.1).  `FnFml`'s `fn_fml_sem_2` has no model and must not be
+   discharged as it stands, so `fn` is the one type former the model does
+   not interpret - which is why `soundness.v` is stated about a typing
+   judgment, as `rust_halt`'s adequacy is.  `FML`, `bor_sem` and
+   `alerus_wsat` become level-indexed up to a fixed maximum `L`, and a
+   `type` carries the level of its ghost assertion.
+2. **`typing/fixpoint.v`** builds a recursive type as a COFE limit; a `cif`
+   is complete as a `prost`, not an OFE, so it must move to
+   `profix`/`Productive` (cf. `rust_halt/rec.v`).  Until then it assumes
+   `Cofe (FML $oi Σ)`, which the model cannot discharge.
+3. **A worked example**, the way `rust_halt/verify/` has one: a concrete
+   `CON`/`JUDG` and a small typed program run through `type_soundness`.
 
 ## Rules this port had to learn
 
@@ -57,5 +65,15 @@ Written out in `nola/alerus/typing/README.md`:
   themselves, not of stored judgments (`fguardx`, `st_incl`, `st_iff`);
 * a thing whose semantics ignores the candidate can be a formula with a
   `⊣⊢` at every candidate (`cif_idxbor`, `cif_incl`);
+* a candidate is a *wrapped* `AlerusSem`: unwrapped it would shadow the
+  ambient instance under every binder;
+* `cif`'s own existential is capped at `cif_sel`'s universe, which is below
+  the one `~~𝔄` lives in - hence `exs_fml` and its own constructor;
 * seal anything that unfolds to `□ ∀ sem, …`, or typeclass search goes
-  under the binder and build times go from seconds to minutes.
+  under the binder and build times go from seconds to minutes;
+* ghost state is allocated before the interpretation and the interpretation
+  handed in afterwards, because `bor_sem` is `⟦⟧ᶜ(der)` and its `Csem`
+  mentions the ghost state;
+* an allocation lemma should hand out the ghost *name*, not the record: a
+  projection of an opaque record does not reduce, and the program logic has
+  to recognise the instance it was given.
