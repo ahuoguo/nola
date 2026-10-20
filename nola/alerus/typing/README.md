@@ -515,3 +515,50 @@ inclusion stays a `guard_fml` judgment, eliminated at candidates by
 `llftl_bor_shorten` and `llftl_idx_shorten` take an `st_incl` after this
 change; the one call site outside the lifetime logic (`borrow.v`) passes a
 closed inclusion, which is storable.
+
+### Done: the lifetime logic now carries both as parameters
+
+`lifetime_full.v` is split in two sections.  The first ends once
+`llft_wsatG`, the lifetime tokens and `llft_incl` are defined; between them
+sits `StBor`, with `st_incl` and `st_iff` and their closure properties, and
+the second section adds `StBorSem` - the two elimination rules at *this*
+interpretation - and uses them in
+
+```coq
+idx_bor_def κ (sn, κ') Px := st_incl κ κ' ∗ ∃ Px', st_iff Px' Px ∗ sinv_tok sn Px'
+```
+
+With both abstracted, **`idx_bor` and `full_bor` no longer mention the
+interpretation at all**; `idxborJT_sem` is constant in `δ`, and that is what
+makes an indexed borrow storable.  `llftl_bor_shorten`, `llftl_idx_shorten`,
+`llftl_reborrow`, `llftl_bor_iff` and `llftl_idx_bor_iff` take an `st_incl`
+or an `st_iff`; `llftl_reborrow_meet` is the inclusion-free reborrow, whose
+result lives at `κ ⊓ κ'`, for the one caller that has only an ambient
+inclusion.
+
+In the model `st_incl`/`st_iff` are the plain-`iProp` families over good
+`δ`, and `StBorSem_at δ` instantiates each at `δ`.
+
+### What this changed in the typing layer
+
+Three notions now exist where there used to be one, and the difference is
+exactly whether the thing can be *used* at a candidate or only *stored*:
+
+| | lives at | use at a candidate | store in a formula |
+|---|---|---|---|
+| `dguard Px Qx` | the ambient `δ` | via `dinto der δ'` | it *is* a formula |
+| `dguard_all Px Qx` | every `δ`, as judgments | no - reading gives a judgment | yes |
+| `fguardx Px Qx` | every `δ`, as guards | yes | via `fguardx_dguard_all` |
+
+`dincl κ κ'` is now `st_incl κ κ'`, i.e. the `fguardx` of two lifetime
+tokens, and `incl_fml κ κ'` (the notation `κ ⊑x κ'`) is the formula for it.
+`incl_fml` is a *third* judgment in the model (`inclJT`, `cif_incl`), with
+the same shape as the indexed borrow: its semantics does not mention `δ`, so
+`incl_fml_sem_at` is a `⊣⊢` at **every** candidate - reading it anywhere is
+reading it at `der`.  That is what lets `&uniq{κ}`'s ghost assertion store an
+inclusion that is later strong enough to shorten a borrow.
+`basically_dead` holds a `dincl` for the same reason.
+
+A general guard between two formulas cannot be treated this way: its
+endpoints are interpreted, so `guard_fml` stays a judgment at one
+interpretation, eliminated at candidates by `dinto der δ'`.

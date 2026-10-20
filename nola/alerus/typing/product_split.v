@@ -351,7 +351,7 @@ Section product_split.
     iDestruct "Pers" as "[Dead|#Pers]".
     { (* [κ] is already dead, so the lifetime context is contradictory *)
       iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
-      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 f1 Wg") as "[Alive _]".
@@ -444,12 +444,10 @@ Section product_split.
     have Hl2 : ⊢ llft_incl (foldr meet static (ty_lfts ty ++ ty_lfts ty'))
                  (ty_lft ty').
     { rewrite lft_intersect_list_app. iApply llftl_intersect_incl_r. }
-    iAssert (dguard (alive_fml κ) (alive_fml (ty_lft ty))) as "#Inκ1".
-    { iApply (dguard_trans with "Incl []"). iApply dincl_dguard.
-      by iApply (dincl_of Hl1). }
-    iAssert (dguard (alive_fml κ) (alive_fml (ty_lft ty'))) as "#Inκ2".
-    { iApply (dguard_trans with "Incl []"). iApply dincl_dguard.
-      by iApply (dincl_of Hl2). }
+    iAssert (dincl κ (ty_lft ty)) as "#Inκ1".
+    { iApply (dincl_trans with "Incl []"). by iApply (dincl_of Hl1). }
+    iAssert (dincl κ (ty_lft ty')) as "#Inκ2".
+    { iApply (dincl_trans with "Incl []"). by iApply (dincl_of Hl2). }
     rewrite prod_ty_gho_pers /=. iDestruct "Pers" as "#[Pers1 Pers2]".
     inversion Phys as [Eqv]. subst v. iModIntro. iFrame "W L I".
     iExists -[(cloc_take l ty.(ty_size), x0, ζi, d', g', ζidx);

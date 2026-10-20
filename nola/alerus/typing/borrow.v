@@ -67,7 +67,7 @@ Section borrow.
     iSplitL "UniqBody".
     { iExists v, (S (S d')). iSplit; [done|].
       rewrite /ty_own uniq_bor_gho. iSplitL; [|by rewrite /= -phys].
-      iSplitR; [by iApply dincl_dguard|]. iSplitR; [iPureIntro; lia|].
+      iSplitR; [done|]. iSplitR; [iPureIntro; lia|].
       iFrame "UniqBody". iSplitR.
       { iApply dguard_cmapstoany_nil. }
       by iRight. }
@@ -109,13 +109,13 @@ Section borrow.
     iDestruct "Pers" as "[Dead|#Pers2]".
     { (* [κ] is already dead, so the lifetime context is contradictory *)
       iDestruct "Dead" as (κ') "[#Incl0 #Dead']".
-      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Alv Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 L Wg") as "[Alive _]".
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
     iMod (Ltok_alloc with "L W") as "[W (%γ & tok)]".
-    iDestruct (dguard_alive_incl with "Incl") as "#Incl'".
+    iDestruct (dincl_sem with "Incl") as "#Incl'".
     iMod (resolve_uniq_body ty x0 ξi d' g' idx κ tid l E L γ 1 ⊤
       with "LFT PROPH UNIQ Incl' E tok UniqBody W")
       as "[W (#Obs2 & tok & #ShrGuard)]"; [done|done|].
@@ -203,13 +203,13 @@ Section borrow.
     set ξ := PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi.
     set ζ := PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ζi.
     iDestruct (dincl_dguard with "Inκ'κ") as "#Inκ'κd".
-    iDestruct (dguard_trans with "Inκ'κd Incl") as "#Inclκ'".
+    iDestruct (dincl_trans with "Inκ'κ Incl") as "#Inclκ'".
     iDestruct (dguard_trans with "Inκ'κd PtBase") as "#PtBase'".
     iDestruct (dincl_sem with "Inκ'κ") as "#Inκ'κs".
     iDestruct "Pers" as "[Dead|#Pers2]".
     { (* [κ] is already dead, so everything can be faked. *)
       iDestruct "Dead" as (κ3) "[#Incl3 #Dead3]".
-      iDestruct (dguard_alive_incl with "Incl3") as "#Incl3s".
+      iDestruct (dincl_sem with "Incl3") as "#Incl3s".
       iDestruct (llftl_incl_dead_implies_dead ⊤ κ κ3 with "LFT Incl3s Dead3")
         as "A".
       iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
@@ -233,7 +233,7 @@ Section borrow.
         rewrite /ty_own uniq_bor_gho. iSplit; [|by rewrite /= -phys].
         iSplitR; [by iApply "Inclκ'"|]. iSplitR; [iPureIntro; lia|].
         iFrame "ζVo FTok FBor". iSplitR; [by iApply "PtBase'"|].
-        iLeft. iExists κ. iFrame "†κ". by iApply dincl_dguard. }
+        iLeft. iExists κ. iFrame "†κ". iApply "Inκ'κ". }
       iSplit; [|done]. rewrite /tctx_elt_interp /=. iExists v.
       iSplit; [done|]. iIntros "_ W". iModIntro. iFrame "W".
       iExists (l, x0, ξi, d', g', idx), (S d).
@@ -244,11 +244,11 @@ Section borrow.
       rewrite /ty_own uniq_bor_gho. iSplit; [|by rewrite /= -phys].
       iSplitR; [iApply "Incl"|]. iSplitR; [iPureIntro; lia|].
       iFrame "ξVo ξTok ξBor". iSplitR; [iApply "PtBase"|].
-      iLeft. iExists κ. iFrame "†κ". iApply dguard_refl. }
+      iLeft. iExists κ. iFrame "†κ". iApply dincl_refl. }
     (* The main case. *)
     iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBor2".
     iDestruct (llftl_reborrow ⊤ κ κ' (uniq_body_fml ty x0 ξi tid l)
-      with "LFT Inκ'κs ξBor2") as "A".
+      with "LFT Inκ'κ ξBor2") as "A".
     iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
     iMod ("A'" with "W") as "[W [ξBor3 ToξBor]]".
     iDestruct (llftl_borrow κ' (reborrow_mid_fml x0 ξi ζi)
@@ -337,7 +337,7 @@ Section borrow.
       (uniq_body_fml_irrel ty x'' x0 ξi tid l Hirr) Hirr.
     iFrame "ξVo ξTok ξBor6". iSplitR; [iApply "PtBase"|].
     iDestruct "Pers''" as "[Pers''|Dead]"; [by iRight|].
-    iLeft. iExists κ. iFrame "Dead". iApply dguard_refl.
+    iLeft. iExists κ. iFrame "Dead". iApply dincl_refl.
   Qed.
 
   (** [type_deref_uniq_own_instr]'s guard source.  The original's is
@@ -380,7 +380,7 @@ Section borrow.
     iDestruct "Pers" as "[Dead|#Pers2]".
     { (* [κ] is already dead, so the lifetime context is contradictory *)
       iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
-      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Alv Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 L Wg") as "[Alive _]".
@@ -634,21 +634,21 @@ Section borrow.
     rewrite uniq_bor_gho.
     iDestruct "gho" as "(#Incl & %Ineqs & UniqBody & #PtBase & #Pers)".
     iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
-    iDestruct (dguard_alive_incl with "Incl") as "#Incls".
-    iDestruct (dguard_trans with "Incl []") as "#Inκκ'd";
-      [iApply dincl_dguard; iApply dincl_intersect_l|].
-    iDestruct (dguard_trans with "Incl []") as "#Inκrestd";
-      [iApply dincl_dguard; iApply dincl_intersect_r|].
-    iAssert (κ ⊑ κ')%I as "#Inκκ'".
-    { iApply (guard_trans with "Incls []"). iApply llftl_intersect_incl_l. }
-    iAssert (κ ⊑ ty_lft ty)%I as "#Inκrest".
-    { iApply (guard_trans with "Incls []"). iApply llftl_intersect_incl_r. }
+    iDestruct (dincl_sem with "Incl") as "#Incls".
+    iDestruct (dincl_trans with "Incl []") as "#Inκκ'D";
+      [iApply dincl_intersect_l|].
+    iDestruct (dincl_trans with "Incl []") as "#InκrestD";
+      [iApply dincl_intersect_r|].
+    iDestruct (dincl_dguard with "Inκκ'D") as "#Inκκ'd".
+    iDestruct (dincl_dguard with "InκrestD") as "#Inκrestd".
+    iDestruct (dincl_sem with "Inκκ'D") as "#Inκκ'".
+    iDestruct (dincl_sem with "InκrestD") as "#Inκrest".
     iAssert (frac_tok γ (1/2) &&{Wguard}&&> @[κ'])%I as "#Gκ'".
     { iApply (guard_trans with "Gκ Inκκ'"). }
     iDestruct "Pers" as "[Dead|#Pers]".
     { (* [κ] is already dead, so the lifetime context is contradictory *)
       iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
-      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Gκ Incl'") as "#G3".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G3 f1 Wg") as "[Alive _]".
@@ -749,7 +749,7 @@ Section borrow.
     iIntros "H W". iDestruct (frac_idx_src_sem_1 with "H") as "[f1 _]".
     (* Merge the frozen observer with the inner borrow and open it. *)
     iDestruct (llftl_bor_shorten (κ' ⊓ κ) κ with "[] BorInner") as "BorInner".
-    { iApply llftl_incl_glb; [iApply "Inκκ'"|iApply lft_incl_refl]. }
+    { iApply dincl_glb; [iApply "Inκκ'D"|iApply dincl_refl]. }
     iDestruct (llftl_sep_join ⊤ Mid (uniq_body_fml ty x1 ωi tid l1) κ
       with "LFT BorMid BorInner") as "F".
     iDestruct (fupdw_incl (W:=alerus_wsat) with "F") as "F'".
@@ -815,11 +815,11 @@ Section borrow.
       - rewrite /uniq_bor_future /= Hb //. }
     rewrite /ty_own (uniq_bor_gho κ ty l1 x1 ζi d1 g0 ζidx d d tid).
     iSplit; [|done].
-    iSplitR; [iApply "Inκrestd"|]. iSplitR; [iPureIntro; lia|].
+    iSplitR; [iApply "InκrestD"|]. iSplitR; [iPureIntro; lia|].
     iFrame "ζVo ζTok ζBor". iSplitR.
     { iApply (dguard_trans with "Inκκ'd PtBase2"). }
     iDestruct "Pers2" as "[Dead|#P2]".
-    { iLeft. iApply (basically_dead_incl with "Inκκ'd Dead"). }
+    { iLeft. iApply (basically_dead_incl with "Inκκ'D Dead"). }
     iRight.
     iApply (ty_gho_pers_depth_mono ty d1 g1 d1 g0 x1 tid with "P2"); lia.
   Qed.
@@ -896,7 +896,7 @@ Section borrow.
       iDestruct (dincl_sem with "Incl") as "#Incls".
       iDestruct (guard_trans with "Alv Incls") as "#Alv'".
       iDestruct "Dead" as (κ'') "[#Incl0 #Dead']".
-      iDestruct (dguard_alive_incl with "Incl0") as "#Incl'".
+      iDestruct (dincl_sem with "Incl0") as "#Incl'".
       iDestruct (guard_trans with "Alv' Incl'") as "#G2".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
       iDestruct (guard_acc with "G2 L Wg") as "[Alive _]".

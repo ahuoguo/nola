@@ -87,7 +87,10 @@ Class LlftWG (Σ : gFunctors) : Type := LlftWGS {
   llft_WG : iProp Σ;
 }.
 
-Section LlftLogic.
+Local Instance pers_dead2 `{!ra.llft_logicGS Σ} γlt k : Persistent (Dead γlt k).
+Proof. apply own_core_persistent. unfold CoreId. trivial. Qed.
+
+Section LlftWsat.
   #[local] Set Default Proof Using "All".
   Context {Σ: gFunctors} {FML : oFunctor}.
   Context `{!llft_logicGS Σ}.
@@ -142,6 +145,20 @@ Section LlftLogic.
   (** The world satisfaction that lifetime inclusion guards live at. *)
   Definition llft_wsatG : iProp Σ :=
     WG ∗ shr_wsat ∗ box_wsat bor_sem ∗ llft_inv_main.
+
+  (** Definitions of the lifetime tokens. *)
+
+  Definition llft_alive (κ : lft) : iProp Σ := llft_alive_def κ.
+  Definition llft_dead (κ : lft) : iProp Σ := llft_dead_def κ.
+
+  Local Notation "@[ κ ]" := (llft_alive κ) (format "@[ κ ]") : bi_scope.
+  Local Notation "[† κ ]" := (llft_dead κ) (format "[† κ ]") : bi_scope.
+
+  (** LeLiLo-Incl-Guard *)
+  Definition llft_incl (κ1 κ2 : lft) : iProp Σ :=
+      @[ κ1 ] &&{llft_wsatG}&&> @[ κ2 ].
+
+  Local Infix "⊑" := llft_incl (at level 70) : bi_scope.
 
   (** The rest of the lifetime invariant: Leaf's [↑NllftO].  Note that the
     stored inclusion guards are at [llft_wsatG], which does not contain this. *)
@@ -232,25 +249,10 @@ Section LlftLogic.
 
   (* end hide *)
 
-  (** Definitions of the lifetime tokens. *)
-
-  Definition llft_alive (κ : lft) : iProp Σ := llft_alive_def κ.
-  Definition llft_dead (κ : lft) : iProp Σ := llft_dead_def κ.
-
   Local Ltac unseal := rewrite /llft_alive /llft_alive_def
     /llft_dead /llft_dead_def /llft_ctx.
 
-  Local Instance pers_dead2 γlt k : Persistent (Dead γlt k).
-  Proof. apply own_core_persistent. unfold CoreId. trivial. Qed.
 
-  Notation "@[ κ ]" := (llft_alive κ) (format "@[ κ ]") : bi_scope.
-  Notation "[† κ ]" := (llft_dead κ) (format "[† κ ]") : bi_scope.
-
-  (** LeLiLo-Incl-Guard *)
-  Definition llft_incl (κ1 κ2 : lft) : iProp Σ :=
-      @[ κ1 ] &&{llft_wsatG}&&> @[ κ2 ].
-
-  Infix "⊑" := llft_incl (at level 70) : bi_scope.
 
   (** Lifetime tokens and their algebra *)
 
@@ -724,6 +726,95 @@ Section LlftLogic.
       Persistent (@[ κ ] &&{llft_wsatG}&&> bor_sem Px).
   Proof. typeclasses eauto. Qed.
 
+End LlftWsat.
+
+Notation "@[ κ ]" := (llft_alive κ) (format "@[ κ ]") : bi_scope.
+Notation "[† κ ]" := (llft_dead κ) (format "[† κ ]") : bi_scope.
+Infix "⊑" := llft_incl (at level 70) : bi_scope.
+
+(** ** A storable lifetime inclusion and a storable semantic alteration
+
+  A full borrow
+
+    [∃ sn κ', κ ⊑ κ' ∗ (∃ Px', □ (bor_sem Px' ↔ bor_sem Px) ∗ sinv_tok sn Px')
+       ∗ OwnBorState …]
+
+  mentions the interpretation twice, and in a way that does not transport to
+  another one: [κ ⊑ κ'] is a guard over [llft_wsatG], which contains
+  [box_wsat bor_sem], and the [↔] is the borrow's semantic alteration.  That
+  is why a full borrow cannot be stored in a formula - see
+  [nola/alerus/typing/README.md].
+
+  Neither is a thing the lifetime logic *inspects*: the inclusion is only ever
+  composed ([guard_trans], [llftl_incl_glb]) and eliminated into a guard, and
+  the alteration is only ever composed and eliminated into the [↔].  So both
+  become parameters.  The intended instance interprets each at *every* good
+  interpretation at once, which is what makes a borrow storable:
+
+    [st_incl κ κ' := □ ∀ δ good, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']]
+    [st_iff Px Qx := □ ∀ δ good, ⟦ Px ⟧ᶜ(δ) ∗-∗ ⟦ Qx ⟧ᶜ(δ)]
+
+  The closure properties live in [StBor], which does not mention the
+  interpretation; the two elimination rules live in [StBorSem], which does,
+  and which a model instantiates once per interpretation. *)
+Class StBor (FML : oFunctor) (Σ : gFunctors) : Type := STBOR {
+  st_incl : lft → lft → iProp Σ;
+  st_iff : FML $oi Σ → FML $oi Σ → iProp Σ;
+  #[global] st_incl_persistent :: ∀ κ κ', Persistent (st_incl κ κ');
+  #[global] st_iff_persistent :: ∀ Px Qx, Persistent (st_iff Px Qx);
+  #[global] st_iff_ne :: NonExpansive2 st_iff;
+  st_incl_refl {κ} : ⊢ st_incl κ κ;
+  st_incl_trans {κ κ' κ''} :
+    st_incl κ κ' -∗ st_incl κ' κ'' -∗ st_incl κ κ'';
+  st_incl_meet_l {κ κ'} : ⊢ st_incl (κ ⊓ κ') κ;
+  st_incl_meet_r {κ κ'} : ⊢ st_incl (κ' ⊓ κ) κ;
+  st_incl_glb {κ κ' κ''} :
+    st_incl κ κ' -∗ st_incl κ κ'' -∗ st_incl κ (κ' ⊓ κ'');
+  st_iff_refl {Px} : ⊢ st_iff Px Px;
+  st_iff_sym {Px Qx} : st_iff Px Qx -∗ st_iff Qx Px;
+  st_iff_trans {Px Qx Rx} : st_iff Px Qx -∗ st_iff Qx Rx -∗ st_iff Px Rx;
+}.
+
+Section LlftLogic.
+  #[local] Set Default Proof Using "All".
+  Context {Σ: gFunctors} {FML : oFunctor}.
+  Context `{!llft_logicGS Σ}.
+  Context `{!invGS_gen hlc Σ}.
+  Context `{!sinvGS FML Σ, !BorSem FML Σ}.
+  (** A second simple-invariant instance, holding the contents of shared
+    borrows.  The box uses the ambient [sinvGS]; this one is separate.  It is
+    introduced as a plain ghost name rather than a [Context] of class type, so
+    that it does not become a typeclass instance and get picked up by the box. *)
+  Context `{!LlftWG Σ}.
+  Local Notation shr_name := llft_shr_name.
+  Context `{!ShrBorSem FML Σ}.
+  (** [unnest] needs the formula language to express borrow-state ownership. *)
+  Context `{!BorStateFml llft_name}.
+  (** The user's guarding world satisfaction, Leaf's [↑NllftG] minus the
+    lifetime logic's own invariants. *)
+  Local Notation WG := llft_WG.
+
+  Context `{!StBor FML Σ}.
+
+  Local Notation "@[ κ ]" := (llft_alive κ) (format "@[ κ ]") : bi_scope.
+  Local Notation "[† κ ]" := (llft_dead κ) (format "[† κ ]") : bi_scope.
+  Local Infix "⊑" := llft_incl (at level 70) : bi_scope.
+
+  (** The two elimination rules, at this interpretation. *)
+  Class StBorSem : Prop := STBORSEM {
+    st_incl_incl {κ κ'} : st_incl κ κ' ⊢ κ ⊑ κ';
+    st_iff_iff {Px Qx} : st_iff Px Qx ⊢ □ (bor_sem Px ↔ bor_sem Qx);
+    st_iff_sep {Px Px' Qx Qx'} :
+      st_iff Px Px' -∗ st_iff Qx Qx' -∗
+        st_iff (bor_sep Px Qx) (bor_sep Px' Qx');
+  }.
+  Context `{!StBorSem}.
+
+  Local Ltac unseal := rewrite /llft_alive /llft_alive_def
+    /llft_dead /llft_dead_def /llft_ctx.
+
+  (*** Lifetime logic, continued ***)
+
   (** Indexed borrows and full borrows *)
 
   Definition Idx: Type := ra.slice_name * gset nat.
@@ -737,12 +828,12 @@ Section LlftLogic.
 
   Local Definition idx_bor_def (κ: lft) (idx: Idx) (Px: FML $oi Σ) : iProp Σ :=
       let (sn, κ') := idx in
-        κ ⊑ κ' ∗ (∃ Px', □ (bor_sem Px' ↔ bor_sem Px) ∗ sinv_tok sn Px').
+        st_incl κ κ' ∗ (∃ Px', st_iff Px' Px ∗ sinv_tok sn Px').
 
   Local Definition full_bor_def (κ: lft) (Px: FML $oi Σ) : iProp Σ :=
       ∃ sn κ' ,
-        κ ⊑ κ'
-          ∗ (∃ Px', □ (bor_sem Px' ↔ bor_sem Px) ∗ sinv_tok sn Px')
+        st_incl κ κ'
+          ∗ (∃ Px', st_iff Px' Px ∗ sinv_tok sn Px')
           ∗ OwnBorState llft_name sn
               (Borrow (set_map LtAtomSwell κ') {[default_dead]}).
   (* end hide *)
@@ -760,6 +851,15 @@ Section LlftLogic.
 
   Global Instance pers_idx_bor κ idx Px : Persistent (idx_bor κ idx Px).
   Proof. destruct idx. unseal_bor. typeclasses eauto. Qed.
+
+  (** The raw forms of the two abstract components, for the internal
+    accessors ([idx_bor_def']), which still speak of a guard and a [↔]. *)
+  Local Lemma st_slice_raw {sn} {Px : FML $oi Σ} :
+    (∃ Px', st_iff Px' Px ∗ sinv_tok sn Px') ⊢
+      ∃ Px', □ (bor_sem Px' ↔ bor_sem Px) ∗ sinv_tok sn Px'.
+  Proof.
+    iIntros "(%Px' & #Hi & S)". iExists Px'. iFrame "S". by iApply st_iff_iff.
+  Qed.
 
   Definition idx_bor_tok (idx: Idx) : iProp Σ :=
       let (sn, κ') := idx in
@@ -800,10 +900,10 @@ Section LlftLogic.
   Qed.
 
   Lemma llftl_idx_shorten κ κ' idx Px :
-      κ' ⊑ κ -∗ &{κ, idx} Px -∗ &{κ', idx} Px.
+      st_incl κ' κ -∗ &{κ, idx} Px -∗ &{κ', idx} Px.
   Proof.
       unseal_bor. destruct idx as [sn κ2]. iIntros "#g [#g2 #slice]".
-      iFrame "slice". iApply (guard_trans with "g g2").
+      iFrame "slice". iApply (st_incl_trans with "g g2").
   Qed.
 
   (* begin hide *)
@@ -998,7 +1098,7 @@ Section LlftLogic.
           (Unborrow κ (set_map LtAtomSwell idx.2) {[default_dead]}) -∗
         bor_sem Qx -∗
         (bor_sem Qx ∗ llft_dead_def' κ ={↑NllftUsr ∪ ↑NllftUsr2}=∗ bor_sem Px)
-        -∗ |=[llft_wsat]=> ∃ sn, idx_bor_def' κ (sn, idx.2) Qx
+        -∗ |=[llft_wsat]=> ∃ sn, sinv_tok sn Qx
             ∗ idx_bor_tok (sn, idx.2) ∗ llft_alive_def' κ.
   Proof.
       destruct idx as [sn κ']. iIntros "_ #idxbor OwnBor Q vs".
@@ -1026,8 +1126,7 @@ Section LlftLogic.
       { iFrame "WG Shr Box". iSplitR "Delayed O".
         - iExists sa, sd, (blocked ∖ κ). iFrame.
         - iExists outlives. iFrame. }
-      iExists sn2. iFrame "Ret OwnBor". rewrite /idx_bor_def'. iFrame "incl".
-      iExists Qx. iFrame "slice2". iModIntro. iSplit; by iIntros "$".
+      iExists sn2. by iFrame "Ret OwnBor slice2".
   Qed.
 
   Local Lemma llftl_idx_acc_back_at_same_idx κ idx Px :
@@ -1070,17 +1169,19 @@ Section LlftLogic.
   Proof.
     iIntros "#ctx #incl1 fb alive". unseal_bor.
     iDestruct "fb" as (sn κ'') "[#incl [#slice OwnBor]]".
-    iDestruct (guard_trans with "incl1 incl") as "incl2".
+    iDestruct (st_incl_incl with "incl") as "#inclr".
+    iDestruct (st_slice_raw with "slice") as "#slicer".
+    iDestruct (guard_trans with "incl1 inclr") as "#incl2".
     iMod (llftl_idx_acc_fwd E κ' (sn, κ'') Px with "ctx [] OwnBor alive")
       as "[P OwnBor]".
-      { rewrite /idx_bor_def'. iFrame "#". }
+      { rewrite /idx_bor_def'. iFrame "incl2 slicer". }
     iModIntro. iFrame "P". iIntros (Qx) "vs Q".
     iMod (llftl_idx_acc_back_vs κ' (sn, κ'') Px Qx
       with "ctx [] OwnBor Q [vs]") as (sn2) "[#bor2 [tok2 alive]]".
-      { rewrite /idx_bor_def'. iFrame "#". }
+      { rewrite /idx_bor_def'. iFrame "incl2 slicer". }
       { iIntros "[Q _]". by iApply "vs". }
     iModIntro. iFrame "alive". iExists sn2, κ''. iFrame "incl tok2".
-    rewrite /idx_bor_def'. by iDestruct "bor2" as "[_ $]".
+    iExists Qx. iFrame "bor2". iApply st_iff_refl.
   Qed.
   (* end hide *)
 
@@ -1106,20 +1207,22 @@ Section LlftLogic.
   Proof.
     iIntros "#ctx fb alive". unseal_bor.
     iDestruct "fb" as (sn κ') "[#incl [#slice OwnBor]]".
+    iDestruct (st_incl_incl with "incl") as "#inclr".
+    iDestruct (st_slice_raw with "slice") as "#slicer".
     iMod (llftl_idx_acc_fwd E (set_map LtAtomSwell κ) (sn, κ') Px
       with "ctx [] OwnBor [alive]") as "[P OwnBor]".
       { rewrite /idx_bor_def' /llft_alive_def' big_sepS_set_map. unseal.
-        iFrame "incl". iFrame "slice". }
+        iFrame "inclr". iFrame "slicer". }
       { rewrite /llft_alive_def' big_sepS_set_map. unseal. iFrame "alive". }
     iModIntro. iFrame "P". iIntros (Qx) "vs Q".
     iMod (llftl_idx_acc_back_vs (set_map LtAtomSwell κ) (sn, κ') Px Qx
       with "ctx [] OwnBor Q [vs]") as (sn2) "[#bor2 [tok2 alive]]".
       { rewrite /idx_bor_def' /llft_alive_def' big_sepS_set_map. unseal.
-        iFrame "incl". iFrame "slice". }
+        iFrame "inclr". iFrame "slicer". }
       { rewrite /llft_dead_def' -dead_def_set_map. unseal. iFrame "vs". }
     iModIntro. iSplitR "alive".
-    { iExists sn2, κ'. iFrame "incl tok2". rewrite /idx_bor_def'.
-      by iDestruct "bor2" as "[_ $]". }
+    { iExists sn2, κ'. iFrame "incl tok2". iExists Qx. iFrame "bor2".
+      iApply st_iff_refl. }
     rewrite /llft_alive_def' big_sepS_set_map. unseal. iFrame "alive".
   Qed.
 
@@ -1134,7 +1237,8 @@ Section LlftLogic.
           ∨ (llft_wsat ∗ [†κ]).
   Proof.
       iIntros "_ fb". unseal_bor.
-      iDestruct "fb" as (sn κ') "[#Incl [#slice OwnBor]]".
+      iDestruct "fb" as (sn κ') "[#Incls [#slice OwnBor]]".
+      iDestruct (st_incl_incl with "Incls") as "#Incl".
       rewrite {1}/llft_wsat /llft_wsatG.
       iIntros "[[WG [Shr [Box Main]]] Other]".
       iDestruct "Other" as (outlives) "[Delayed O]".
@@ -1183,7 +1287,8 @@ Section LlftLogic.
       iMod ("X" with "Box") as "[Box X]".
       iDestruct "X" as (outlives') "[%Ho' [Delayed [O [OuInv State]]]]".
       iDestruct "O" as "[Ostate Oguards]".
-      iDestruct "slice" as (Px') "[#PEquiv #slice']".
+      iDestruct "slice" as (Px') "[#PEq #slice']".
+      iDestruct (st_iff_iff with "PEq") as "#PEquiv".
       iDestruct (outer_unborrow_atomic llft_name o_name d_name sa' sd blocked
         outlives' sn (set_map LtAtomSwell κ) (set_map LtAtomSwell κ')
         {[default_dead]} Px' with "[Delayed OuInv OwnBor Ostate]") as "X".
@@ -1204,8 +1309,8 @@ Section LlftLogic.
         iSplitR "Delayed Ostate Oguards".
         - iExists sa', sd, blocked. iFrame.
         - iExists outlives'. iFrame. }
-      iExists sn2, κ'. iFrame "Incl OwnBor". iExists Qx. iFrame "slice2".
-      iModIntro. iSplit; by iIntros "$".
+      iExists sn2, κ'. iFrame "Incls OwnBor". iExists Qx. iFrame "slice2".
+      iApply st_iff_refl.
   Qed.
 
   (* begin hide *)
@@ -1232,11 +1337,16 @@ Section LlftLogic.
         |=[llft_wsat]{E}=> bor_sem Px ∗
           (bor_sem Px -∗ |=[llft_wsat]=> idx_bor_tok idx ∗ @[κ]).
   Proof.
-    iIntros "ctx".
-    iDestruct (llftl_bor_idx_acc_maybe_swell E Px (set_map LtAtomSwell κ) idx
-      with "ctx") as "A".
-    destruct idx. unseal_bor. rewrite /idx_bor_def' /llft_incl /llft_alive_def'.
-    unseal. rewrite big_sepS_set_map. iFrame "A".
+    iIntros "#ctx #bor tok alive".
+    iMod (llftl_bor_idx_acc_maybe_swell E Px (set_map LtAtomSwell κ) idx
+      with "ctx [] tok [alive]") as "[$ A]".
+    { destruct idx as [sn κ']. unseal_bor. iDestruct "bor" as "[#I #S]".
+      rewrite /idx_bor_def' /llft_alive_def' big_sepS_set_map. unseal.
+      iDestruct (st_incl_incl with "I") as "#I'". rewrite /llft_incl. unseal.
+      iFrame "I'". by iApply st_slice_raw. }
+    { rewrite /llft_alive_def' big_sepS_set_map. unseal. iFrame "alive". }
+    iIntros "!> P". iMod ("A" with "P") as "[$ a]". iModIntro.
+    rewrite /llft_alive_def' big_sepS_set_map. unseal. iFrame "a".
   Qed.
 
   (* begin hide *)
@@ -1343,8 +1453,8 @@ Section LlftLogic.
     iMod (llftl_borrow_fwd Px κ with "ctx P")
       as (sn1 sn2) "[#slice1 [#slice2 [OwnBor1 OwnBor2]]]".
     iModIntro. iSplitL "OwnBor1".
-    { iExists sn1, κ. iFrame "OwnBor1". iSplitR. { iApply guard_refl. }
-      iExists Px. iFrame "slice1". iModIntro. iSplit; by iIntros "$". }
+    { iExists sn1, κ. iFrame "OwnBor1". iSplitR. { iApply st_incl_refl. }
+      iExists Px. iFrame "slice1". iApply st_iff_refl. }
     iIntros "#kdead".
     iApply (llftl_borrow_rev Px κ sn2 with "ctx slice2 OwnBor2 kdead").
   Qed.
@@ -1360,7 +1470,8 @@ Section LlftLogic.
       iIntros "[[WG [Shr [Box Main]]] Other]".
       iDestruct "Other" as (outlives) "[Delayed O]".
       iDestruct "Main" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
-      iDestruct "slice" as (PQ) "[#PQEquiv #slice']".
+      iDestruct "slice" as (PQ) "[#PQEq #slice']".
+      iDestruct (st_iff_iff with "PQEq") as "#PQEquiv".
       iDestruct (outer_iff llft_name o_name d_name sa sd blocked sn
         (set_map LtAtomSwell κ') {[default_dead]} PQ (bor_sep Px Qx)
         with "[Delayed OuInv OwnBor]") as "X".
@@ -1379,10 +1490,10 @@ Section LlftLogic.
         - iExists sa, sd, blocked. iFrame.
         - iExists outlives. iFrame. }
       iSplitL "OwnBor1".
-      { iExists sn1, κ'. iFrame "OwnBor1 incl". iExists Px. iFrame "slice1".
-        iModIntro. iSplit; by iIntros "$". }
-      { iExists sn2, κ'. iFrame "OwnBor2 incl". iExists Qx. iFrame "slice2".
-        iModIntro. iSplit; by iIntros "$". }
+      { iExists sn1, κ'. iFrame "OwnBor1 incl". iExists Px.
+        iFrame "slice1". iApply st_iff_refl. }
+      { iExists sn2, κ'. iFrame "OwnBor2 incl". iExists Qx.
+        iFrame "slice2". iApply st_iff_refl. }
   Qed.
 
   (** LeLiLo-Sep-Join *)
@@ -1422,11 +1533,9 @@ Section LlftLogic.
         - iExists sa', sd, blocked. iFrame.
         - iExists outlives. iFrame. }
       iExists sn, (κ1 ∪ κ2). rewrite set_map_inter. iFrame "OwnBor".
-      iSplitR. { iApply llftl_incl_glb; iFrame "#". }
-      iExists (bor_sep Px' Qx'). iFrame "slice". iModIntro.
-      rewrite !bor_sep_sem. iSplit; iIntros "[P Q]".
-      - iSplitL "P". { by iApply "PEquiv". } { by iApply "QEquiv". }
-      - iSplitL "P". { by iApply "PEquiv". } { by iApply "QEquiv". }
+      iSplitR. { iApply st_incl_glb; iFrame "#". }
+      iExists (bor_sep Px' Qx'). iFrame "slice".
+      iApply (st_iff_sep with "PEquiv QEquiv").
   Qed.
 
   (** LeLiLo-Unnest *)
@@ -1444,7 +1553,9 @@ Section LlftLogic.
       iDestruct "Other" as (outlives) "[Delayed O]".
       iDestruct "Main" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
       iDestruct "slice" as (Px') "[#PEquiv #slice']".
-      iDestruct "Hs2" as (Pibt) "[#PibtEquiv #slice2]".
+      iDestruct "Hs2" as (Pibt) "[#PibtEq #slice2]".
+      iDestruct (st_iff_iff with "PEquiv") as "#PEquivr".
+      iDestruct (st_iff_iff with "PibtEq") as "#PibtEquiv".
       iDestruct (outer_iff llft_name o_name d_name sa sd blocked sn'
         (set_map LtAtomSwell κ2') {[default_dead]} Pibt
         (bor_state_fml sn (Borrow (set_map LtAtomSwell κ2) {[default_dead]}))
@@ -1464,9 +1575,9 @@ Section LlftLogic.
         - iExists outlives. iFrame. }
       iExists sn2, (κ2 ∪ κ2'). rewrite set_map_inter. iFrame "OwnBor".
       iSplitR.
-      { iApply llftl_incl_glb.
-        - iApply llftl_incl_weaken_lhs_l. iFrame "incl".
-        - iApply llftl_incl_weaken_lhs_r. iFrame "incl2". }
+      { iApply st_incl_glb.
+        - iApply (st_incl_trans with "[] incl"). iApply st_incl_meet_l.
+        - iApply (st_incl_trans with "[] incl2"). iApply st_incl_meet_r. }
       iExists Px'. iFrame "slice3". iFrame "PEquiv".
   Qed.
 
@@ -1490,8 +1601,8 @@ Section LlftLogic.
       { iFrame "WG Shr Box". iSplitR "Delayed O".
         - iExists sa, sd, blocked. iFrame.
         - iExists outlives. iFrame. }
-      iExists sn, κ. iFrame "OwnBor". iSplitR. { iApply guard_refl. }
-      iExists Px. iFrame "slice". iModIntro. iSplit; by iIntros "$".
+      iExists sn, κ. iFrame "OwnBor". iSplitR. { iApply st_incl_refl. }
+      iExists Px. iFrame "slice". iApply st_iff_refl.
   Qed.
 
   (** Indexed borrows and guards *)
@@ -1616,8 +1727,10 @@ Section LlftLogic.
       G &&{llft_wsatG}&&> (@[κ] ∗ bor_sem Px).
   Proof.
     destruct i as [sn κ']. unseal_bor.
-    iIntros "_ [#Incl #Slice] #Galive #Gtok".
-    iDestruct "Slice" as (Px') "[#PEquiv #slice]".
+    iIntros "_ [#Incls #Slice] #Galive #Gtok".
+    iDestruct "Slice" as (Px') "[#PEq #slice]".
+    iDestruct (st_iff_iff with "PEq") as "#PEquiv".
+    iDestruct (st_incl_incl with "Incls") as "#Incl".
     (* Combine the slice's guard with the one for the main invariant. *)
     iDestruct (guard_wsat_out (W:=llft_inv_main) (W':=llft_inv_main)
       (P:=True%I)) as "#gmain".
@@ -1695,19 +1808,17 @@ Section LlftLogic.
   Qed.
 
   Lemma llftl_idx_bor_iff κ i Px Px' :
-    □ (bor_sem Px ↔ bor_sem Px') -∗ &{κ,i} Px -∗ &{κ,i} Px'.
+    st_iff Px Px' -∗ &{κ,i} Px -∗ &{κ,i} Px'.
   Proof.
-    destruct i as [sn κ']. unseal_bor. iIntros "#Eq [#Incl #S]".
+    destruct i as [sn κ'']. unseal_bor. iIntros "#Eq [#Incl #S]".
     iDestruct "S" as (Px'') "[#Eq' slice]". iFrame "Incl". iExists Px''.
-    iFrame "slice". iModIntro. iSplit.
-    - iIntros. iApply "Eq". iApply "Eq'". iFrame.
-    - iIntros. iApply "Eq'". iApply "Eq". iFrame.
+    iFrame "slice". iApply (st_iff_trans with "Eq' Eq").
   Qed.
 
   (** Derived rules about full borrows *)
 
   Lemma llftl_bor_shorten κ κ' Px :
-      κ' ⊑ κ -∗ &{κ} Px -∗ &{κ'} Px.
+      st_incl κ' κ -∗ &{κ} Px -∗ &{κ'} Px.
   Proof.
       rewrite llftl_bor_idx. rewrite llftl_bor_idx.
       iIntros "#incl fb". iDestruct "fb" as (idx) "[idx tok]".
@@ -1716,18 +1827,21 @@ Section LlftLogic.
   Qed.
 
   Lemma llftl_bor_iff κ Px Px' :
-    □ (bor_sem Px ↔ bor_sem Px') -∗ &{κ} Px -∗ &{κ} Px'.
+    st_iff Px Px' -∗ &{κ} Px -∗ &{κ} Px'.
   Proof.
     rewrite !llftl_bor_idx. iIntros "#HP Hbor".
     iDestruct "Hbor" as (i) "[Hbor Htok]". iExists i. iFrame "Htok".
     iApply llftl_idx_bor_iff; done.
   Qed.
 
-  Lemma llftl_reborrow E κ κ' Px :
-      llft_ctx -∗ κ' ⊑ κ -∗ &{κ} Px -∗ |=[llft_wsat]{E}=>
-        &{κ'} Px ∗ ([†κ'] -∗ |=[llft_wsat]=> &{κ} Px).
+  (** Reborrowing *without* an inclusion: the result lives at [κ ⊓ κ'],
+    which needs nothing of the caller.  [llftl_reborrow] shortens it, and
+    that *does* need a storable inclusion, since the result is a borrow. *)
+  Lemma llftl_reborrow_meet E κ κ' Px :
+      llft_ctx -∗ &{κ} Px -∗ |=[llft_wsat]{E}=>
+        &{κ ⊓ κ'} Px ∗ ([†κ'] -∗ |=[llft_wsat]=> &{κ} Px).
   Proof.
-      iIntros "#ctx #incl fb". rewrite llftl_bor_idx.
+      iIntros "#ctx fb". rewrite llftl_bor_idx.
       iDestruct "fb" as (idx) "[#idx tok]". destruct idx as [sn κ2].
       iMod (llftl_borrow κ'
         (bor_state_fml sn (Borrow (set_map LtAtomSwell κ2) {[default_dead]}))
@@ -1735,12 +1849,20 @@ Section LlftLogic.
       { by iApply bi.equiv_entails_1_2; [apply bor_state_fml_sem|]. }
       iMod (llftl_idx_bor_unnest E κ κ' (sn, κ2) Px with "ctx idx tokbor")
         as "fullbor".
-      iModIntro. iSplitL "fullbor".
-      { iApply (llftl_bor_shorten with "[] fullbor").
-        iApply llftl_incl_glb. { iFrame "incl". } iApply guard_refl. }
+      iModIntro. iFrame "fullbor".
       iIntros "#dead". iMod ("back" with "dead") as "tok". iModIntro.
       iExists (sn, κ2). iFrame "idx".
       by iApply bi.equiv_entails_1_1; [apply bor_state_fml_sem|].
+  Qed.
+
+  Lemma llftl_reborrow E κ κ' Px :
+      llft_ctx -∗ st_incl κ' κ -∗ &{κ} Px -∗ |=[llft_wsat]{E}=>
+        &{κ'} Px ∗ ([†κ'] -∗ |=[llft_wsat]=> &{κ} Px).
+  Proof.
+      iIntros "#ctx #incl fb".
+      iMod (llftl_reborrow_meet E κ κ' Px with "ctx fb") as "[fullbor $]".
+      iModIntro. iApply (llftl_bor_shorten with "[] fullbor").
+      iApply st_incl_glb. { iFrame "incl". } iApply st_incl_refl.
   Qed.
 
   Lemma llftl_bor_freeze `{!Inhabited T} E κ (Pxs : T → FML $oi Σ) Qx :
@@ -1897,7 +2019,9 @@ Section LlftLogic.
     iMod (llftl_bor_idx_acc_maybe_swell E Px κ' idx with "ctx [] tok Alive")
       as "[P Pback]".
     { destruct idx as [sn κ2]. unseal_bor. rewrite /idx_bor_def'.
-      iDestruct "bor" as "[B1 $]". iApply (guard_trans with "Incl B1"). }
+      iDestruct "bor" as "[B1 B2]". iSplitR; last by iApply st_slice_raw.
+      iDestruct (st_incl_incl with "B1") as "#B1'".
+      iApply (guard_trans with "Incl B1'"). }
     iModIntro. iFrame "P". iIntros "P". iMod ("Pback" with "P") as "[tok alive]".
     iMod ("Kill" with "alive") as "X".
     iMod ("Back" with "X") as "G". iModIntro. iFrame.

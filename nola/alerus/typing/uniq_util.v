@@ -226,23 +226,19 @@ Section uniq_util.
 
   (** Similar to [†κ], but the inclusion rule applies immediately instead of
     through an update. *)
-  (** Note the [dguard], not [dincl]: this is the semantic counterpart of
-    [basically_dead_fml], which holds a [guard_fml]. *)
+  (** A [dincl], matching [basically_dead_fml], which holds an [incl_fml]. *)
   Definition basically_dead (κ: lft) : iProp Σ :=
-    ∃ κ', dguard (alive_fml κ) (alive_fml κ') ∗ [†κ'].
+    ∃ κ', dincl κ κ' ∗ [†κ'].
 
   #[export] Instance basically_dead_persistent κ : Persistent (basically_dead κ).
   Proof. exact _. Qed.
 
-  (** Weakening by an inclusion held at the ambient interpretation; a
-    [dincl] can be turned into one with [dincl_dguard]. *)
+  (** Weakening by a storable inclusion *)
   Lemma basically_dead_incl κ κ' :
-    dguard (alive_fml κ') (alive_fml κ) -∗
-    basically_dead κ -∗ basically_dead κ'.
+    dincl κ' κ -∗ basically_dead κ -∗ basically_dead κ'.
   Proof.
-    have ? := guard_fml_pers_at alt_here.
     iIntros "#Incl (%κ'' & #Incl2 & #Dead)". iExists κ''. iFrame "Dead".
-    iApply (dguard_trans with "Incl Incl2").
+    iApply (dincl_trans with "Incl Incl2").
   Qed.
 
   (** Bumping the depth indices of a unique borrow.
@@ -344,12 +340,13 @@ Section uniq_util.
       [done|].
     iMod ("Fr'" with "W") as "[W (%g1 & Bor)]".
     (* Reborrow to [κ'] and open. *)
-    iDestruct (llftl_reborrow F κ κ' _ with "LFT Incl Bor") as "Rb".
+    iDestruct (llftl_reborrow_meet F κ κ' _ with "LFT Bor") as "Rb".
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Rb") as "Rb'";
       [done|].
     iMod ("Rb'" with "W") as "[W [Bor' Back]]".
-    iDestruct (llftl_bor_acc' F _ κ' κ' with "LFT [] Bor' κ'tok") as "Acc";
-      [iApply guard_refl|].
+    iDestruct (llftl_bor_acc' F _ κ' (κ ⊓ κ') with "LFT [] Bor' κ'tok")
+      as "Acc";
+      [iApply llftl_incl_glb; [iFrame "Incl"|iApply guard_refl]|].
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Acc") as "Acc'";
       [done|].
     iMod ("Acc'" with "W") as "[W [Inner ForallQ]]".
@@ -617,23 +614,14 @@ Section uniq_util.
     Persistent (sem (basically_dead_fml κ)).
   Proof.
     rewrite /basically_dead_fml. apply (ex_pers_at H)=> κ'.
-    apply (sep_pers_at H); [by apply guard_fml_pers_at|by apply dead_pers_at].
+    apply (sep_pers_at H); [exact _|by apply dead_pers_at].
   Qed.
 
   Lemma basically_dead_fml_sem κ :
     bor_sem (basically_dead_fml κ) ⊣⊢ basically_dead κ.
   Proof.
     rewrite /basically_dead_fml /basically_dead ex_fml_sem.
-    apply bi.exist_proper=> κ'. by rewrite bor_sep_sem dead_fml_sem.
-  Qed.
-
-  (** An indexed borrow only cares about the semantics of its contents *)
-  Lemma idx_bor_iff {κ i} {Px Px' : FML $oi Σ} :
-    (bor_sem Px ⊣⊢ bor_sem Px') → (&{κ,i} Px ⊣⊢ &{κ,i} Px').
-  Proof.
-    move=> eq. apply bi.equiv_entails. split;
-      (iApply llftl_idx_bor_iff; iIntros "!>"; rewrite eq;
-        iSplit; by iIntros "$").
+    apply bi.exist_proper=> κ'. by rewrite bor_sep_sem dead_fml_sem incl_fml_sem.
   Qed.
 
   (** Changing the thread id of the borrowed body *)
@@ -688,7 +676,7 @@ Section uniq_util.
     (∀ y, ty_phys ty y tid = ty_phys ty' y tid) →
     □ (∀ sem' (_ : alt_sem sem'), ∀ y e h,
          sem' (ty.(ty_ghox) y e h tid) ∗-∗ sem' (ty'.(ty_ghox) y e h tid)) -∗
-    sem (guard_fml (alive_fml κ') (alive_fml κ)) -∗
+    dincl κ' κ -∗
     sem (idxbor_fml κ idx (uniq_body_fml ty x ξi tid l)) -∗
     sem (idxbor_fml κ' idx (uniq_body_fml ty' x ξi tid l)).
   Proof.

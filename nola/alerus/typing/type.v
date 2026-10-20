@@ -48,6 +48,8 @@ Class typeG (FML : oFunctor) Σ : Type := TypeG {
   #[global] type_heapSem :: HeapSem FML Σ;
   #[global] type_gsrcSem :: GsrcSem FML Σ;
   #[global] type_typeFml :: TypeFml FML Σ;
+  #[global] type_stBor :: StBor FML Σ;
+  #[global] type_stBorSem :: StBorSem;
   #[global] type_altSem :: AltSem FML Σ;
 }.
 

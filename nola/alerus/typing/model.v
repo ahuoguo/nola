@@ -338,6 +338,125 @@ Section sem_at.
   Proof. done. Qed.
 End sem_at.
 
+(** ** The storable lifetime inclusion and the storable alteration
+
+  [StBor] in [nola/alerus/lifetime/lifetime_full.v] abstracts the two places
+  where a full borrow mentions the interpretation.  Here both become the
+  *family*: the inclusion holds at every good interpretation's guarding world
+  satisfaction, and the alteration holds at every good interpretation.  Both
+  are plain [iProp]s - [idx_bor] is not a formula - so no judgment, and hence
+  no family rule, is involved: each eliminates at *every* good [δ], which is
+  exactly what makes a full borrow storable. *)
+Section stbor_at.
+  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+    `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+  Context (δ : JUDG -n> iProp Σ).
+  Local Instance AlerusSem_δ0 : AlerusSem (cifOF CON) Σ := AlerusSem_at δ.
+
+  Lemma st_refl_at {κ} : ⊢ @[κ] &&{alerus_WGuard_at δ}&&> @[κ].
+  Proof. exact: guard_refl. Qed.
+  Lemma st_meet_l_at {κ κ'} : ⊢ @[κ ⊓ κ'] &&{alerus_WGuard_at δ}&&> @[κ].
+  Proof. exact: llftl_intersect_incl_l. Qed.
+  Lemma st_meet_r_at {κ κ'} : ⊢ @[κ' ⊓ κ] &&{alerus_WGuard_at δ}&&> @[κ].
+  Proof. exact: llftl_intersect_incl_r. Qed.
+  Lemma st_glb_at {κ κ' κ''} :
+    (@[κ] &&{alerus_WGuard_at δ}&&> @[κ']) -∗
+    (@[κ] &&{alerus_WGuard_at δ}&&> @[κ'']) -∗
+    @[κ] &&{alerus_WGuard_at δ}&&> @[κ' ⊓ κ''].
+  Proof. exact: llftl_incl_glb. Qed.
+End stbor_at.
+
+Section stbor.
+  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+    `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+  Implicit Type δ : JUDG -n> iProp Σ.
+
+  Definition st_incl_cif (κ κ' : lft) : iProp Σ :=
+    □ ∀ δ (_ : Deriv (λ _, True) δ), @[κ] &&{alerus_WGuard_at δ}&&> @[κ'].
+  Definition st_iff_cif (Px Qx : cifOF CON $oi Σ) : iProp Σ :=
+    □ ∀ δ (_ : Deriv (λ _, True) δ), ⟦ Px ⟧ᶜ(δ) ↔ ⟦ Qx ⟧ᶜ(δ).
+
+  #[export] Instance st_iff_cif_ne : NonExpansive2 st_iff_cif.
+  Proof. solve_proper. Qed.
+
+  Lemma st_incl_cif_refl {κ} : ⊢ st_incl_cif κ κ.
+  Proof. iIntros "!>" (δ ?). iApply st_refl_at. Qed.
+  Lemma st_incl_cif_trans {κ κ' κ''} :
+    st_incl_cif κ κ' -∗ st_incl_cif κ' κ'' -∗ st_incl_cif κ κ''.
+  Proof.
+    iIntros "#g #g' !>" (δ ?).
+    iApply (guard_trans with "[] []"); [iApply "g"|iApply "g'"]; done.
+  Qed.
+  Lemma st_incl_cif_meet_l {κ κ'} : ⊢ st_incl_cif (κ ⊓ κ') κ.
+  Proof. iIntros "!>" (δ ?). iApply st_meet_l_at. Qed.
+  Lemma st_incl_cif_meet_r {κ κ'} : ⊢ st_incl_cif (κ' ⊓ κ) κ.
+  Proof. iIntros "!>" (δ ?). iApply st_meet_r_at. Qed.
+  Lemma st_incl_cif_glb {κ κ' κ''} :
+    st_incl_cif κ κ' -∗ st_incl_cif κ κ'' -∗ st_incl_cif κ (κ' ⊓ κ'').
+  Proof.
+    iIntros "#g #g' !>" (δ ?).
+    iApply (st_glb_at with "[] []"); [iApply "g"|iApply "g'"]; done.
+  Qed.
+  Lemma st_iff_cif_refl {Px} : ⊢ st_iff_cif Px Px.
+  Proof. iIntros "!>" (δ ?). by iSplit; iIntros "$". Qed.
+  Lemma st_iff_cif_sym {Px Qx} : st_iff_cif Px Qx -∗ st_iff_cif Qx Px.
+  Proof.
+    iIntros "#g !>" (δ ?). iSplit; iIntros "P".
+    - by iApply ("g" with "[//]"). - by iApply ("g" with "[//]").
+  Qed.
+  Lemma st_iff_cif_trans {Px Qx Rx} :
+    st_iff_cif Px Qx -∗ st_iff_cif Qx Rx -∗ st_iff_cif Px Rx.
+  Proof.
+    iIntros "#g #g' !>" (δ ?). iSplit; iIntros "P".
+    - iApply ("g'" with "[//]"). by iApply ("g" with "[//]").
+    - iApply ("g" with "[//]"). by iApply ("g'" with "[//]").
+  Qed.
+
+  Lemma st_iff_cif_sep {Px Px' Qx Qx'} :
+    st_iff_cif Px Px' -∗ st_iff_cif Qx Qx' -∗
+      st_iff_cif (cif_sep Px Qx) (cif_sep Px' Qx').
+  Proof.
+    iIntros "#g #g' !>" (δ ?). iSplit; iIntros "[P Q]".
+    - iSplitL "P"; [by iApply ("g" with "[//]")|by iApply ("g'" with "[//]")].
+    - iSplitL "P"; [by iApply ("g" with "[//]")|by iApply ("g'" with "[//]")].
+  Qed.
+
+  Definition stBor_cif : StBor (cifOF CON) Σ := {|
+    st_incl := st_incl_cif; st_iff := st_iff_cif;
+    st_incl_persistent := (λ _ _, _); st_iff_persistent := (λ _ _, _);
+    st_iff_ne := st_iff_cif_ne;
+    st_incl_refl := @st_incl_cif_refl;
+    st_incl_trans := @st_incl_cif_trans;
+    st_incl_meet_l := @st_incl_cif_meet_l;
+    st_incl_meet_r := @st_incl_cif_meet_r;
+    st_incl_glb := @st_incl_cif_glb;
+    st_iff_refl := @st_iff_cif_refl;
+    st_iff_sym := @st_iff_cif_sym;
+    st_iff_trans := @st_iff_cif_trans;
+  |}.
+End stbor.
+
+(** The two elimination rules, at a good interpretation: each is the family
+  instantiated at that interpretation. *)
+Section stbor_sem.
+  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+    `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+  Context (δ : JUDG -n> iProp Σ).
+  Local Instance AlerusSem_δ1 : AlerusSem (cifOF CON) Σ := AlerusSem_at δ.
+  Local Instance stBor_δ : StBor (cifOF CON) Σ := stBor_cif (JUDG:=JUDG).
+
+  Lemma stBorSem_at (Hδ : Deriv (λ _, True) δ) : StBorSem.
+  Proof.
+    split.
+    - iIntros (κ κ') "#g". iApply ("g" $! δ Hδ).
+    - iIntros (Px Qx) "#g !>". iApply ("g" $! δ Hδ).
+    - iIntros (Px Px' Qx Qx') "g g'". iApply (st_iff_cif_sep with "g g'").
+  Qed.
+End stbor_sem.
+
 (** ** The two judgments
 
   A guard [Px &&{W}&&> Qx] and an indexed borrow [&{κ,idx} Px] both quantify
@@ -350,6 +469,17 @@ End sem_at.
 Variant guardJT_id := .
 Definition guardJT (FM : ofe) : ofe := tagged guardJT_id (FM * FM).
 Notation guardJ FM := (inJ (guardJT FM)).
+
+(** [inclJT]: a storable lifetime inclusion, as a judgment.
+
+  [st_incl κ κ'] quantifies the guarding world satisfaction, so like a guard
+  it cannot be written in an [Ecsem]: the body would have to apply the
+  semantics to a sub-formula, which is only allowed contractively, and a
+  Leaf guard has no later.  It goes through a judgment for that reason
+  alone - its *semantics* does not mention the interpretation. *)
+Variant inclJT_id := .
+Definition inclJT : ofe := tagged inclJT_id (leibnizO lft * leibnizO lft).
+Notation inclJ := (inJ inclJT).
 
 (** [idxborJT]: an indexed borrow, as a judgment *)
 Variant idxborJT_id := .
@@ -384,6 +514,7 @@ Section idxbor_judg.
       !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
   Context (δ : JUDG -n> iProp Σ).
   Local Instance AlerusSem_δ : AlerusSem (cifOF CON) Σ := AlerusSem_at δ.
+  Local Instance stBor_δ' : StBor (cifOF CON) Σ := stBor_cif (JUDG:=JUDG).
 
   Definition idxborJT_sem_at (J : idxborJT (cifO CON Σ)) : iProp Σ :=
     idx_bor (FML:=cifOF CON) J.(untag).1.1 J.(untag).1.2 J.(untag).2.
@@ -391,18 +522,37 @@ Section idxbor_judg.
   Proof. move=> ?[[[??]?]][[[??]?]][[/=/leibniz_equiv_iff<-?]?]. solve_proper. Qed.
 End idxbor_judg.
 
+Section incl_judg.
+  Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
+    `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
+      !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+
+  Definition inclJT_sem (J : inclJT) : iProp Σ :=
+    st_incl_cif (CON:=CON) (JUDG:=JUDG) J.(untag).1 J.(untag).2.
+  #[export] Instance inclJT_sem_ne : NonExpansive inclJT_sem.
+  Proof. move=> ?[[??]][[??]][/=/leibniz_equiv_iff<-/leibniz_equiv_iff<-] //. Qed.
+  #[export] Instance inclJT_dsem : Dsem JUDG inclJT (iProp Σ) :=
+    DSEM (λ _, inclJT_sem) _.
+End incl_judg.
+
 Section judg2.
   Context `{!alerusC CON, !naInvC CON} {JUDG Σ}
     `{!alerusGS (cifOF CON) Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
       !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ}.
+  (** [idx_bor] no longer mentions the interpretation at all: with [st_incl]
+    and [st_iff] abstracted, an indexed borrow is [st_incl κ κ'], a family of
+    alterations and a [sinv_tok], none of which is interpreted.  So the
+    judgment's semantics is constant in [δ] - which is what lets a borrow be
+    stored. *)
   #[export] Instance idxborJT_dsem
     : Dsem JUDG (idxborJT (cifO CON Σ)) (iProp Σ) :=
-    DSEM idxborJT_sem_at _.
+    DSEM (λ _, idxborJT_sem_at) _.
 End judg2.
 
 (** Semantics of the two judgment types registered *)
 Notation guardJS CON JUDG Σ := (inJS (guardJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation idxborJS CON JUDG Σ := (inJS (idxborJT (cifO CON Σ)) JUDG (iProp Σ)).
+Notation inclJS CON JUDG Σ := (inJS inclJT JUDG (iProp Σ)).
 
 (** ** The judgment constructors
 
@@ -415,6 +565,12 @@ Definition guardCT : cifcon :=
   Cifcon guardCT_id unit (λ _, Empty_set) (λ _, bool) (λ _, unitO) _.
 Notation guardC := (inC guardCT).
 
+Variant inclCT_id := .
+Definition inclCT : cifcon :=
+  Cifcon inclCT_id (lft * lft)%type (λ _, Empty_set) (λ _, Empty_set)
+    (λ _, unitO) _.
+Notation inclC := (inC inclCT).
+
 Variant idxborCT_id := .
 Definition idxborCT : cifcon :=
   Cifcon idxborCT_id (lft * Idx)%type (λ _, Empty_set) (λ _, unit)
@@ -422,7 +578,9 @@ Definition idxborCT : cifcon :=
 Notation idxborC := (inC idxborCT).
 
 Section judgC.
-  Context `{!guardC CON, !idxborC CON} {Σ}.
+  Context `{!guardC CON, !idxborC CON, !inclC CON} {Σ}.
+  Definition cif_incl (κ κ' : lft) : cif CON Σ :=
+    cif_in inclCT (κ, κ') nullary nullary ().
   Definition cif_guard (Px Qx : cif CON Σ) : cif CON Σ :=
     cif_in guardCT () nullary (binary Px Qx) ().
   Definition cif_idxbor κ idx (Px : cif CON Σ) : cif CON Σ :=
@@ -440,7 +598,9 @@ Section judgC.
   Qed.
 
   Context {JUDG} `{guard_j0 : !guardJ (cifO CON Σ) JUDG,
-    idxbor_j0 : !idxborJ (cifO CON Σ) JUDG, !Jsem JUDG (iProp Σ)}.
+    idxbor_j0 : !idxborJ (cifO CON Σ) JUDG, incl_j0 : !inclJ JUDG,
+    !Jsem JUDG (iProp Σ)}.
+  Definition incl_j (κ κ' : lft) : JUDG := incl_j0 (Tagged (κ, κ')).
   (** The judgments as elements of [JUDG] *)
   Definition guard_j (Px Qx : cif CON Σ) : JUDG :=
     guard_j0 (Tagged (Px, Qx)).
@@ -470,10 +630,18 @@ Section judgC.
     ECSEM (λ _ _ s _ Ψx _,
       □ ∀ δ', ⌜Deriv (λ _, True) δ'⌝ → δ' (idxbor_j s.1 s.2 (Ψx ())))%I _.
   Next Obligation. solve_proper. Qed.
+  (** Like an indexed borrow, a stored inclusion is the *family*, and its
+    semantics does not mention [δ]: reading it at any candidate is reading
+    it at [der]. *)
+  #[export] Program Instance inclCT_ecsem : Ecsem inclCT CON JUDG Σ :=
+    ECSEM (λ _ _ s _ _ _,
+      □ ∀ δ', ⌜Deriv (λ _, True) δ'⌝ → δ' (incl_j s.1 s.2))%I _.
+  Next Obligation. solve_proper. Qed.
 End judgC.
 
 Notation guardCS := (inCS guardCT).
 Notation idxborCS := (inCS idxborCT).
+Notation inclCS := (inCS inclCT).
 
 (** ** Constructor and judgment constraints
 
@@ -485,10 +653,12 @@ Class typingC CON : Type := TYPING_C {
   typingC_naInv :: naInvC CON;
   typingC_guard :: guardC CON;
   typingC_idxbor :: idxborC CON;
+  typingC_incl :: inclC CON;
 }.
 Class typingJ CON JUDG Σ : Type := TYPING_J {
   typingJ_guard :: guardJ (cifO CON Σ) JUDG;
   typingJ_idxbor :: idxborJ (cifO CON Σ) JUDG;
+  typingJ_incl :: inclJ JUDG;
 }.
 Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ)} : Prop :=
@@ -497,12 +667,14 @@ Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   typingCS_naInv :: naInvCS CON JUDG Σ;
   typingCS_guard :: guardCS CON JUDG Σ;
   typingCS_idxbor :: idxborCS CON JUDG Σ;
+  typingCS_incl :: inclCS CON JUDG Σ;
 }.
 Class typingJS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
     !typingCS CON JUDG Σ} : Prop := TYPING_JS {
   typingJS_guard :: guardJS CON JUDG Σ;
   typingJS_idxbor :: idxborJS CON JUDG Σ;
+  typingJS_incl :: inclJS CON JUDG Σ;
 }.
 
 (** ** The ambient interpretation and the [TypeFml] instance
@@ -574,6 +746,7 @@ Section model.
     or_fml := cif_or;
     vo_fml := cif_vo;
     idxbor_fml := cif_idxbor;
+    incl_fml := cif_incl;
     dead_fml := cif_dead;
     cmapstoany_fml := cif_cmapstoany;
   |}.
