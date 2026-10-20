@@ -166,7 +166,7 @@ Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
   #[global] alerus_llftGS :: llft_logicGS Σ;
   #[global] alerus_sinvGS :: sinvGS FML Σ;
   #[global] alerus_heapGS :: heapGS FML Σ;
-  #[global] alerus_na_invG :: na_invG Σ;
+  #[global] alerus_naInvGS :: naInvGS FML Σ;
   #[global] alerus_alcG :: alc_logicG Σ;
   #[global] alerus_prophG :: prophG Σ;
   #[global] alerus_uniqG :: uniqG Σ;
@@ -332,7 +332,7 @@ Section alerus.
   (** The program logic *)
   #[export] Instance alerus_lrustGS : lrustGS_gen HasNoLc FML Σ := {|
     lrustGS_invGS := alerus_invGS;
-    lrustGS_na_invGS := alerus_na_invG;
+    lrustGS_na_invGS := na_inv_invG;
     lrustGS_alcGS := alerus_alcG;
     lrustGS_heapGS := alerus_heapGS;
     lrustGS_naSem := alerus_NaSem;

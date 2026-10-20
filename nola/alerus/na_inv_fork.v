@@ -19,8 +19,23 @@ From iris.proofmode Require Import proofmode.
 From iris.prelude Require Import options.
 Import iPropAppNotation ModwNotation.
 
+(** The ghost state.
+
+  The simple-invariant family is given by a *name* beside the pre-ghost
+  state rather than by an ambient [sinvGS]: the lifetime logic's box uses an
+  [sinvGS] of its own, and two [sinv_wsat]s over the same family would each
+  claim the authoritative map.  Making this a class of its own keeps the
+  client's notation unchanged and the two families apart. *)
+Class naInvGS (FML : oFunctor) Σ : Type := NaInvGS {
+  #[global] na_inv_sinvG :: sinvGpreS FML Σ;
+  #[global] na_inv_invG :: na_invG Σ;
+  na_inv_name : gname;
+}.
+
 Section na_inv.
-  Context `{!sinvGS FML Σ, !na_invG Σ}.
+  Context `{!naInvGS FML Σ}.
+  #[local] Instance naSinvGS : sinvGS FML Σ :=
+    SinvGS FML Σ na_inv_sinvG na_inv_name.
   Local Existing Instance na_inv_inG.
   Implicit Type (p : na_inv_pool_name) (i : positive) (Px : FML $oi Σ).
 
