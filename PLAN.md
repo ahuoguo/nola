@@ -106,9 +106,29 @@ the other half of the same divergence.
 
 ## Next
 
-0. **Close the model**, in the order of the previous section: `Send`/`Sync`
-   to `≡` on formulas; `st_incl` to a token; `st_iff` into the δ layer; then
-   `inst.v`'s `Csem`/`Jsem`, which become mechanical.
+0. **Close the model.**  Four steps, in order; `lifetime_full.v` is not
+   touched, because the lifetime logic is *instantiated at the candidate*
+   rather than rewritten.
+
+   a. `st_incl` becomes a token, per-atom:
+      `st_incl κ κ' := ∃ E, ⌜κ' ⊆ κ ∪ E⌝ ∗ [∗ set] a ∈ E, eternal_tok {[a]}`.
+      `st_incl_at` follows from `llftl_incl_sub` on `κ' ∩ κ` and a
+      `llftl_incl_glb` fold of `eternal_tok_guard` over `κ' ∖ κ`.  Drop
+      `st_incl_of_all`, and with it `dincl_fguardx` and the one use in
+      `function.v`.
+   b. `stBor_cif` takes the candidate: `st_iff := λ Px Qx, □ (⟦Px⟧ᶜ(δ) ↔
+      ⟦Qx⟧ᶜ(δ))`, so `idxborJT_sem` **applies** δ instead of being constant
+      in it.  `idxbor_fml_iff_at` takes `bor_wand`'s shape (`alt_into sem
+      sem'`) and `idxbor_fml_guard_into` gains `alt_into alt_amb sem`; both
+      call sites in `uniq_util.v` already have what that asks for.
+   c. `inclJT` can go away entirely - a token needs no judgment, so
+      `inclCT`'s `Ecsem` returns `st_incl` directly.
+   d. `inst.v`'s `Csem` and `Jsem`, which are then mechanical: `sigTCT_Csem`
+      from the `Ecsem`s, `sigT_dsem` from the two remaining judgments.
+
+   Not needed, but worth doing afterwards: `Send`/`Sync` to `≡` on formulas,
+   as `rust_halt` has them.  It is strictly stronger and removes their use of
+   `idxbor_fml_iff_at` outright.
 1. **`fn` must be stratified by an execution level** (thesis (5.4),
    § 3.4.1).  `FnFml`'s `fn_fml_sem_2` has no model and must not be
    discharged as it stands, so `fn` is the one type former the model does
