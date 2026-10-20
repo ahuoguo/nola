@@ -102,35 +102,38 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
   whose ghost component is a bi-implication of interpretations rather than
   an equality of formulas, and that is what forces [st_iff].
 
-  So the fix is to put the stored things where Nola puts them - in a
-  judgment at the *ambient* interpretation - and to let the lifetime logic
-  take them as parameters.  Concretely:
+  Putting the stored things in a judgment at the *ambient* interpretation -
+  [st_incl κ κ' := □ der (incl_j κ κ')] and so on - is the first thing to
+  try, and it does not work: [AltSem]'s [st_incl_at] reads an inclusion at
+  *every* candidate, because [dincl_at] stores one at an arbitrary
+  candidate and [dincl_guard_at] opens one there, while [□ der J] is
+  readable only at the candidates [der] maps into.  That is the family rule
+  again, one level up.
 
-  - a fourth judgment [iffJT], with
-    [iffJT_sem δ (Px, Qx) := □ (⟦Px⟧ᶜ(δ) ↔ ⟦Qx⟧ᶜ(δ))];
-  - [inclJT_sem δ (κ, κ') := @[κ] &&{alerus_WGuard_at δ}&&> @[κ']] - the
-    *raw* guard at [δ], not the family;
-  - [idxborJT_sem δ (κ, (sn, κ'), Px) := (@[κ] &&{W δ}&&> @[κ']) ∗
-      ∃ Px', □ (⟦Px'⟧ᶜ(δ) ↔ ⟦Px⟧ᶜ(δ)) ∗ sinv_tok sn Px'] - likewise raw.
+  So the obstruction is exactly this chain:
 
-  Every one of the four mentions only [Csem], so [Jsem] is free of itself
-  and the model exists.  [StBor] then supplies
+  - [st_incl] and [st_iff] have to be readable at *every* candidate;
+  - they mention the interpretation, so being readable everywhere forces a
+    quantification over candidates inside them;
+  - the quantification has to be restricted to the *good* candidates,
+    because what *produces* an [st_iff] - a type's semantic equality, via
+    [AltSem]'s [idxbor_fml_iff_at] - is only available there, and likewise
+    for the [st_incl] that [type_call_iris'] builds;
+  - "good" is [Deriv], which is defined from [Jsem]; and [st_incl] and
+    [st_iff] sit inside [idx_bor], which *is* [idxborJT_sem], a component
+    of [Jsem].
 
-    [st_idx κ idx Px := □ der (idxbor_j κ idx Px)]
-    [st_incl κ κ'   := □ der (incl_j κ κ')]
-    [st_iff Px Qx   := □ der (iff_j Px Qx)]
+  Breaking it means breaking one of the first three:
 
-  - all three outside [Jsem], so [der] may appear in them - and
-  [lifetime_full.v]'s [idx_bor] becomes [st_idx] rather than a record of
-  parts.  [StBorSem] at a candidate [δ] that [der] maps into eliminates
-  each by [dinto der δ], and creating one is [Deriv_factor'] at [der],
-  whose obligation is the raw form at every candidate [der] maps into -
-  which is exactly what [llftl_incl_sub], [sinv_tok_guard],
-  [eternal_tok_guard] and [AltSem]'s [idxbor_fml_iff_at] premise give.
-
-  The one thing to check while doing it is that the lifetime logic only
-  ever opens a borrow at a candidate [der] maps into; [AltSem]'s
-  [idxbor_fml_guard_into] already has that shape.
+  - make [st_incl] and [st_iff] not mention the interpretation at all, that
+    is, make them **tokens**, as Nola's own lifetime logic does.  For
+    [st_incl] that is Nola's [⊑□]; for [st_iff] it means a borrow carries no
+    alteration, which costs the [&uniq{κ}] subtyping rule its *semantic*
+    type equality - it would have to ask for [≡] on ghost formulas, which is
+    what [rust_halt] gets away with because [ty_mutref] is invariant;
+  - stratify, so that a judgment whose semantics quantifies over
+    interpretations lives at a level below the ones that are quantified
+    over.  This is the same device the [fn] type needs.
 
   Until that is done, the development stays parametric in [Csem] and
   [Jsem] exactly as [nola/examples/rust_halt/] does, and the constructor

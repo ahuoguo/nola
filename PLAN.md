@@ -64,25 +64,27 @@ holds at every *candidate*, and its callers get it from a type's subtyping,
 whose proof for `&uniq{κ}` has to produce `δ J` and so needs `δ` to be
 good.
 
-The fix, written out in `inst.v`, is to put the stored things where Nola
-puts them - in a judgment at the *ambient* interpretation - and to let the
-lifetime logic take them as parameters:
+Putting the stored things in a judgment at the ambient interpretation -
+`st_incl κ κ' := □ der (incl_j κ κ')` - is the first thing to try, and it
+does not work: `st_incl_at` reads an inclusion at *every* candidate, while
+`□ der J` is readable only at the ones `der` maps into.  The obstruction,
+written out in `inst.v`, is the chain
 
-* add a fourth judgment `iffJT` for the borrow's alteration;
-* make `inclJT_sem` and `idxborJT_sem` the **raw** forms at `δ` (a Leaf
-  guard, an iff, a `sinv_tok`) rather than families - then all four
-  judgments mention only `Csem`, so `Jsem` is free of itself and the model
-  exists;
-* let `StBor` supply `st_idx := □ der (idxbor_j …)`, `st_incl :=
-  □ der (incl_j …)` and `st_iff := □ der (iff_j …)`, all *outside* `Jsem`,
-  and make `lifetime_full.v`'s `idx_bor` be `st_idx`;
-* `StBorSem` at a candidate `der` maps into eliminates each by
-  `dinto der δ`, and creating one is `Deriv_factor'` at `der`, whose
-  obligation is exactly what `llftl_incl_sub`, `sinv_tok_guard`,
-  `eternal_tok_guard` and `idxbor_fml_iff_at`'s premise give.
+> `st_incl`/`st_iff` must be readable at every candidate → they mention the
+> interpretation, so that forces a quantification over candidates inside
+> them → the quantification must be restricted to the **good** candidates,
+> because what *produces* an `st_iff` (a type's semantic equality) is only
+> available there → "good" is `Deriv`, which is defined from `Jsem`, and
+> `st_incl`/`st_iff` sit inside `idx_bor`, which *is* `idxborJT_sem`.
 
-The alternative is to stratify, which is the same device the `fn` type
-needs (next section), so the two open issues would close together.
+so one of the first three has to give:
+
+* make them **tokens**, as Nola's lifetime logic does - `⊑□` for the
+  inclusion, and no alteration at all for the borrow, which costs the
+  `&uniq{κ}` rule its *semantic* type equality (`rust_halt` gets away with
+  `≡` on ghost formulas because `ty_mutref` is invariant);
+* stratify, which is the same device the `fn` type needs, so the two open
+  issues would close together.
 
 Until one is done the development is at parity with `rust_halt`: sound and
 parametric, with the satisfiability of its constraints open.
