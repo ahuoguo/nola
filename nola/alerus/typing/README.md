@@ -248,6 +248,56 @@ build green.
 
 ### What building the model showed about `AltSem`
 
+**The rule.**  A stored guard lives at one interpretation and *cannot be
+moved to another*: that would need `δ J ⊢ δ' J`, while `Deriv_factor'`
+gives only `δ J ⊢ ⟦J⟧(δ')` (`Psgoidp_factor'` yields one conjunct of the
+thesis's `δ ⇝ δ'`, not the `δ' J` one).  So anything that has to be
+*usable while building* a stored guard at a candidate - and candidates
+only ever arise from such a build - must be held as a **family**, one
+member per candidate, from the moment it is created.
+
+That is now how inclusions work: `dguard_all Px Qx` is
+`□ ∀ sem, alt_sem sem → sem (guard_fml Px Qx)`, `dincl` is its
+lifetime-token case, `dincl_at` reads the member at a candidate and
+`dincl_dguard` at the ambient one.  Everything that creates one creates
+the whole family (`dincl_of_incl` replays a closed lifetime-logic fact at
+each candidate; `dincl_eternalize`'s and `guard_fml_borrow_shared`'s
+tokens mention no interpretation).  `&uniq{κ} ty`'s *own* inclusion
+component stays a plain `dguard` - it is one formula at one
+interpretation.
+
+**Still open, and the same shape: the indexed borrow.**
+`idxbor_fml_into : sem (idxbor_fml κ idx Px) ⊢ sem' (idxbor_fml κ idx Px)`
+is not realisable, for exactly the reason above.  Its one consumer is
+`dguard_inner_from_guard_uniq_body`, which turns `&uniq`'s indexed borrow
+into a guard at a candidate (`idxbor_fml_guard_at`) in order to build
+`&shr`'s ghost assertion - so `type_deref_shr_uniq` really does need the
+indexed borrow at every candidate.  The fix is the same move
+(`idxbor_fml_of_bor` yields a family, `uniq_body_pers_component` becomes
+one), but unlike the inclusion case it does not fit behind the existing
+formula: `uniq_body_fmlx` holds a single `idxbor_fml`, so
+`uniq_body_fmlx_sem` would no longer relate the formula to the family.
+Deciding where that family lives is the next piece of design.
+
+**`alt_into` should be defined by what it is used for.**  In the model a
+candidate is a function `FML $oi Σ → iProp Σ`, and nothing recovers the
+`δ` behind it, so `alt_into` cannot be `dinto δ δ'` as written.  Both of
+its uses are "a judgment stored at `sem` can be read at `sem'`", which
+*is* a function of the two interpretations - so that is what it should be
+defined as, with `dinto δ δ'` discharging it.  `alt_WGuard` had the same
+problem and is solved: `alerus_WGuard_of` is `llft_wsatG`'s body with
+`bor_sem` replaced by the argument, and agrees with both `alerus_WGuard`
+and `alerus_WGuard_at δ` definitionally.
+
+**A performance note.**  `dguard_all` is sealed and `Typeclasses Opaque`.
+Unfolded it is a `□ ∀ sem` under a class binder, and with about a hundred
+occurrences that sends every unification and every `Persistent` search
+under the binder: `lft_contexts.v` alone went from 4s to over ten minutes
+before sealing.  Any further family-shaped definition needs the same
+treatment.
+
+
+
 Trying to instantiate `AltSem` turned up two things the interface claimed
 that Nola's `Deriv` cannot give.  The first is fixed; the second says how
 the interface has to be reshaped.
