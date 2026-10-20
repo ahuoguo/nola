@@ -276,6 +276,10 @@ Class fracKeyGS (K : Type) `{!EqDecision K, !Countable K} Σ : Type :=
 Definition fracKeyΣ (K : Type) `{!EqDecision K, !Countable K} : gFunctors :=
   #[ GFunctor (constRF (gmap_viewR gname (agreeR (leibnizO K)))) ].
 
+#[export] Instance subG_fracKeyGpreS {K Σ} `{!EqDecision K, !Countable K,
+  !subG (fracKeyΣ K) Σ} : inG Σ (gmap_viewR gname (agreeR (leibnizO K))).
+Proof. solve_inG. Qed.
+
 Section frac_key.
   Context `{!EqDecision K, !Countable K, !inG Σ frac_shareR, !fracKeyGS K Σ}.
   Context (f : K → iProp Σ).

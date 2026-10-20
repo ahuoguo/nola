@@ -39,6 +39,15 @@ Class alerusGpreS (FML : oFunctor) Σ : Type := AlerusGpreS {
     inG Σ (gmap_viewR gname (agreeR (leibnizO (gmultiset lft))));
 }.
 
+Definition alerusΣ FML `{!oFunctorContractive FML} : gFunctors :=
+  #[lrustΣ FML; llft_logicΣ; sinvΣ FML; prophΣ; uniqΣ; cnaΣ FML;
+    fracGuardΣ FML; GFunctor (constRF (authUR (gsetUR lft)));
+    fracKeyΣ llctx; fracKeyΣ (gmultiset lft)].
+
+#[export] Instance subG_alerusGpreS {FML Σ} `{!oFunctorContractive FML} :
+  subG (alerusΣ FML) Σ → alerusGpreS FML Σ.
+Proof. solve_inG. Qed.
+
 (** ** Allocating the world satisfaction
 
   Every component is allocated before the interpretation is known, and the

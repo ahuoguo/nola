@@ -73,6 +73,10 @@ Definition cnaΣ FML `{!oFunctorContractive FML} : gFunctors :=
      GFunctor (constRF (dfrac_agreeR (leibnizO (option lft))));
      sinvΣ (cnaOF FML) ].
 
+#[export] Instance subG_cnaGpreS {FML Σ}
+  `{!oFunctorContractive FML, !subG (cnaΣ FML) Σ} : cnaGpreS FML Σ.
+Proof. solve_inG. Qed.
+
 Section cna.
   #[local] Set Default Proof Using "All".
   Context {Σ : gFunctors} {FML : oFunctor}.
