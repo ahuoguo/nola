@@ -827,6 +827,39 @@ Section altSem.
   Lemma alt_sem_cif_here : alt_sem_cif alt_amb.
   Proof. exists der. split; [exact _|done]. Qed.
 
+  Local Instance stBor_alt : StBor (cifOF CON) Σ := stBor_cif (JUDG:=JUDG).
+
+  (** *** The three judgments, unfolded *)
+
+  (** A stored guard at the ambient interpretation is the guard *)
+  Lemma alt_into_cif_here : alt_into_cif alt_amb alt_amb.
+  Proof.
+    move=> Px Qx. rewrite /cand_fun /= /cif_guard sem_cif_in /=.
+    iIntros "#g". iDestruct (der_sound with "g") as "g'". by rewrite in_js.
+  Qed.
+
+  (** An indexed borrow's semantics does not mention the candidate *)
+  Lemma cif_idxbor_sem {δ κ idx} {Px : cif CON Σ} :
+    ⟦ cif_idxbor κ idx Px ⟧ᶜ(δ) ⊣⊢ idx_bor κ idx Px.
+  Proof.
+    destruct idx as [sn κ']. rewrite /cif_idxbor sem_cif_in /=. iSplit.
+    - iIntros "#big". iDestruct ("big" $! der with "[%]") as "g";
+        [exact _|]. iDestruct (der_sound with "g") as "g'". by rewrite in_js.
+    - iIntros "#b !>" (δ' Hδ'). iApply Deriv_factor'.
+      iIntros (δ'' ? _ _). by rewrite in_js.
+  Qed.
+
+  (** So is a stored inclusion's *)
+  Lemma cif_incl_sem {δ κ κ'} :
+    ⟦ cif_incl κ κ' : cif CON Σ ⟧ᶜ(δ) ⊣⊢ st_incl κ κ'.
+  Proof.
+    rewrite /cif_incl sem_cif_in /=. iSplit.
+    - iIntros "#big". iDestruct ("big" $! der with "[%]") as "g";
+        [exact _|]. iDestruct (der_sound with "g") as "g'". by rewrite in_js.
+    - iIntros "#b !>" (δ' Hδ'). iApply Deriv_factor'.
+      iIntros (δ'' ? _ _). by rewrite in_js.
+  Qed.
+
   (** Replace a candidate by the derivability predicate behind it *)
   Local Ltac alt_at H :=
     let d := fresh "δ" in let Hd := fresh "Hδ" in let Heq := fresh "Heq" in
