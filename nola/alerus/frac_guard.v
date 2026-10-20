@@ -276,6 +276,10 @@ Class fracKeyGS (K : Type) `{!EqDecision K, !Countable K} Σ : Type :=
 Definition fracKeyΣ (K : Type) `{!EqDecision K, !Countable K} : gFunctors :=
   #[ GFunctor (constRF (gmap_viewR gname (agreeR (leibnizO K)))) ].
 
+#[export] Instance subG_fracKeyGpreS {K Σ} `{!EqDecision K, !Countable K,
+  !subG (fracKeyΣ K) Σ} : inG Σ (gmap_viewR gname (agreeR (leibnizO K))).
+Proof. solve_inG. Qed.
+
 Section frac_key.
   Context `{!EqDecision K, !Countable K, !inG Σ frac_shareR, !fracKeyGS K Σ}.
   Context (f : K → iProp Σ).
@@ -389,3 +393,16 @@ Section frac_key.
     frac_key_tok γ k ⊢ frac_tok γ q &&{W}&&> f k.
   Proof. rewrite frac_key_guard. iApply guard_wsat_incl. Qed.
 End frac_key.
+
+(** Allocate the world satisfaction for the keyed version *)
+Lemma frac_key_wsat_alloc {K Σ} `{!EqDecision K, !Countable K,
+  !inG Σ (gmap_viewR gname (agreeR (leibnizO K)))} :
+  ⊢ |==> ∃ _ : fracKeyGS K Σ, ∀ (_ : inG Σ frac_shareR) f, frac_key_wsat f.
+Proof.
+  iMod (own_alloc (A:=gmap_viewR gname (agreeR (leibnizO K)))
+    (gmap_view_auth (DfracOwn 1) ∅)) as (γ) "●".
+  { apply gmap_view_auth_valid. }
+  iModIntro. iExists (FracKeyGS K _ _ Σ _ γ). iIntros (? f).
+  iExists ∅. rewrite /frac_key_auth fmap_empty big_sepM_empty. by iFrame "●".
+Qed.
+

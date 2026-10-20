@@ -591,9 +591,8 @@ Section uniq_util.
     iDestruct (guard_rhs_iff (idx_bor_tok_fml_sem_at Hs ξidx) with "Gtok0")
       as "#Gtok".
     rewrite /uniq_body_pers_component.
-    iDestruct (idxbor_fml_into alt_here Hs Hi with "Bor") as "#Bor'".
-    iDestruct (idxbor_fml_guard_at Hs κ ξidx _ (sem' Gx)
-      with "Bor' Gκ Gtok") as "#Ginner".
+    iDestruct (idxbor_fml_guard_into Hs κ ξidx _ (sem' Gx)
+      with "Bor Gκ Gtok") as "#Ginner".
     iDestruct (guard_rhs_sep_r with "Ginner") as "#Ginner2".
     iDestruct (guard_rhs_iff (uniq_body_fml_sem_at Hs ty x ξi tid l)
       with "Ginner2") as "#Ginner3".

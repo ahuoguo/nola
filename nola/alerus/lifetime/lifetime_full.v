@@ -2108,13 +2108,19 @@ End LlftLogic.
   the same content becomes the world satisfaction [llft_wsat], which the client
   threads instead of opening. *)
 
+(** The ghost state is allocated *before* the interpretation and the
+  client's guarding world satisfaction are known, and both are taken
+  afterwards: [alerus_WG] mentions [llctx_interp], which needs the
+  [llft_logicGS] this very call allocates, and [bor_sem] in the model is
+  [⟦⟧ᶜ(der)], whose [Csem] needs the ghost state too.  The lemma never looks
+  inside either, so handing them in last breaks the cycle. *)
 Lemma llft_wsat_alloc {Σ : gFunctors} {FML : oFunctor} {hlc}
-  `{!llft_logicGpreS Σ, !sinvGpreS FML Σ, !invGS_gen hlc Σ, !BorSem FML Σ}
-  (WG : iProp Σ) :
-  WG ⊢ |==> ∃ (_ : llft_logicGS Σ) (_ : sinvGS FML Σ) (shr_name : gname),
-    llft_wsat (LlftWG0 := LlftWGS Σ shr_name WG).
+  `{!llft_logicGpreS Σ, !sinvGpreS FML Σ, !invGS_gen hlc Σ,
+    !Inhabited (FML $oi Σ)} :
+  ⊢ |==> ∃ (_ : llft_logicGS Σ) (_ : sinvGS FML Σ) (shr_name : gname),
+    ∀ (BorSem0 : BorSem FML Σ) (WG : iProp Σ), WG -∗
+      llft_wsat (LlftWG0 := LlftWGS Σ shr_name WG).
 Proof.
-  iIntros "WG".
   iMod lt_alloc as (γ) "[J [Ab Modulo]]".
   iMod (outlives_alloc ∅) as (γo) "[O1 O2]".
   iMod (delayed_alloc None) as (γd) "[D1 D2]".
@@ -2124,11 +2130,12 @@ Proof.
   { iFrame. }
   iMod sinv_wsat_alloc as (Hbox) "Wbox".
   iMod sinv_wsat_alloc_name as (shr_name) "Wshr".
+  iModIntro. iExists (LlftLogicG _ _ γ γo γd), Hbox, shr_name.
+  iIntros (BorSem0 WG) "WG".
   iDestruct ("Wbox" $! (λ γ' Px, slice_body bor_sem γ' Px) with "[]") as "Wbox".
   { iIntros (?). iApply ne_internal_ne. solve_proper. }
   iDestruct ("Wshr" $! (λ _ Px, bor_sem Px) with "[]") as "Wshr".
   { iIntros (?). iApply ne_internal_ne. solve_proper. }
-  iModIntro. iExists (LlftLogicG _ _ γ γo γd), Hbox, shr_name.
   rewrite /llft_wsat /llft_wsatG /shr_wsat /llft_inv_other /llft_outlives
     /llft_inv_main /box_wsat /llft_shr_name /llft_WG /=.
   iFrame "WG Wshr Wbox".

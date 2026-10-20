@@ -19,8 +19,23 @@ From iris.proofmode Require Import proofmode.
 From iris.prelude Require Import options.
 Import iPropAppNotation ModwNotation.
 
+(** The ghost state.
+
+  The simple-invariant family is given by a *name* beside the pre-ghost
+  state rather than by an ambient [sinvGS]: the lifetime logic's box uses an
+  [sinvGS] of its own, and two [sinv_wsat]s over the same family would each
+  claim the authoritative map.  Making this a class of its own keeps the
+  client's notation unchanged and the two families apart. *)
+Class naInvGS (FML : oFunctor) Σ : Type := NaInvGS {
+  #[global] na_inv_sinvG :: sinvGpreS FML Σ;
+  #[global] na_inv_invG :: na_invG Σ;
+  na_inv_name : gname;
+}.
+
 Section na_inv.
-  Context `{!sinvGS FML Σ, !na_invG Σ}.
+  Context `{!naInvGS FML Σ}.
+  #[local] Instance naSinvGS : sinvGS FML Σ :=
+    SinvGS FML Σ na_inv_sinvG na_inv_name.
   Local Existing Instance na_inv_inG.
   Implicit Type (p : na_inv_pool_name) (i : positive) (Px : FML $oi Σ).
 
@@ -77,6 +92,14 @@ Section na_inv.
   Proof. exact _. Qed.
   #[export] Instance na_inv_tok_ne {p N} : NonExpansive (na_inv_tok p N).
   Proof. solve_proper. Qed.
+
+  (** Non-expansiveness of the body, for allocating the world satisfaction *)
+  Lemma na_body_ne {p sm} :
+    internal_ne (PROP:=iProp Σ) sm -∗ ∀ i, internal_ne (na_body p sm i).
+  Proof.
+    iIntros "#Ne" (i). rewrite /internal_ne /na_body. iIntros (Px Qx) "eq".
+    iDestruct ("Ne" $! Px Qx with "eq") as "eq'". by iRewrite "eq'".
+  Qed.
 
   (** Allocate a non-atomic invariant *)
   Lemma na_inv_tok_alloc {p sm} Px N :
@@ -161,3 +184,26 @@ Section na_inv.
     iFrame "F".
   Qed.
 End na_inv.
+
+(** The same with the ghost state given, so that the record is a
+  constructor application and its fields reduce.  A client that has to
+  compare the [na_invG] it allocated with the one it started from - the
+  program logic's [lrustGS_gen] does - needs that. *)
+Lemma na_inv_wsat_alloc_name `{!sinvGS FML Σ, na_invG0 : !na_invG Σ} :
+  ⊢ |==> ∃ γ : gname, ∀ p sm, internal_ne (PROP:=iProp Σ) sm -∗
+    @na_inv_wsat FML Σ (NaInvGS FML Σ sinvGS_pre na_invG0 γ) p sm.
+Proof.
+  iMod (sinv_wsat_alloc_name (FML:=FML)) as (γ) "W". iModIntro.
+  iExists γ. iIntros (p sm) "Ne". rewrite /na_inv_wsat /naSinvGS.
+  iApply "W". by iApply na_body_ne.
+Qed.
+
+(** Allocate the world satisfaction for non-atomic invariants *)
+Lemma na_inv_wsat_alloc `{!sinvGpreS FML Σ, !na_invG Σ} :
+  ⊢ |==> ∃ _ : naInvGS FML Σ, ∀ p sm,
+    internal_ne (PROP:=iProp Σ) sm -∗ na_inv_wsat p sm.
+Proof.
+  iMod (sinv_wsat_alloc (FML:=FML)) as ([pre γ]) "W". iModIntro.
+  iExists (NaInvGS FML Σ pre _ γ). iIntros (p sm) "Ne".
+  rewrite /na_inv_wsat /naSinvGS. iApply "W". by iApply na_body_ne.
+Qed.
