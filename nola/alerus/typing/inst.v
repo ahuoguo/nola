@@ -88,16 +88,32 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
   subtyping, whose proof for [&uniq{κ}] has to produce [δ J] and so needs
   [δ] to be good.
 
+  What Nola does instead is worth spelling out, because it says exactly
+  what would have to change.  Its borrow token
+
+    [bor_tok α Px := [†α] ∨ ∃ α' i j, α ⊑□ α' ∗ bor_jtok i j α' (Px, Clsd) ∨ …]
+
+  is plain ghost state: the lifetime inclusion [⊑□] is a *persistent token*
+  rather than a guard, and there is **no alteration at all** - the formula
+  [Px] sits in the ghost state, so a borrow of [Px] and a borrow of [Qx] are
+  the same token exactly when [Px ≡ Qx].  [rust_halt] gets away with that
+  because [ty_mutref] is invariant in its argument and its type equality is
+  [≡] on [cif]s.  This port's [uniq_subtype] takes a *semantic* [eqtype],
+  whose ghost component is a bi-implication of interpretations rather than
+  an equality of formulas, and that is what forces [st_iff].
+
   So the two routes out are:
 
-  - make lifetime inclusion and the borrow's alteration **tokens**, as
-    Nola's own lifetime logic does ([nola/iris/lft.v]: [lft_incl] is pure
-    and [⊑□] is a persistent token).  In this model every inclusion that is
-    *created* is structural or eternal, both of which are token-shaped; the
-    one that is not is the one [type_call_iris'] builds from a shared borrow
-    of a fraction.
-  - stratify, so that the judgments whose semantics quantifies over
-    interpretations live at a level below the ones that are quantified over.
+  - follow Nola: drop [st_iff] by making the [&uniq{κ}] subtyping rule ask
+    for [≡] on ghost formulas rather than a bi-implication, and make
+    [st_incl] a persistent token.  The model can supply such a token for the
+    structural and the eternal inclusions, which is every inclusion it
+    *creates* except the one [type_call_iris'] builds from a shared borrow
+    of a fraction - and that one would go away if the callee's lifetime were
+    created as a meet with the caller's rather than fresh, as RustBelt's is.
+  - stratify, so that a judgment whose semantics quantifies over
+    interpretations lives at a level below the ones that are quantified
+    over.
 
   Until one of them is done, the development stays parametric in [Csem] and
   [Jsem] exactly as [nola/examples/rust_halt/] does, and the constructor
