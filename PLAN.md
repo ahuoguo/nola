@@ -46,51 +46,69 @@ missing guarding lemma, so pull in `storage_protocol/` when starting
 ## The one open hole: is the model concrete?
 
 `model.v` gives the interpretation *parametrically* in `CON` and `JUDG`,
-with constraint classes - exactly as `nola/examples/rust_halt/` does.
-`typing/inst.v` tries to build the smallest `CON` and `JUDG` that satisfy
-them.  The constructor signature and the judgment type come out fine, and
-`Csem` is now free of `Jsem` (no `Ecsem` quantifies the interpretation).
-`Jsem` is not free of *itself*:
+with constraint classes - as `nola/examples/rust_halt/` does.
+`typing/inst.v` builds the smallest `CON` and `JUDG` satisfying them.  The
+constructor signature and the judgment type come out fine, and `Csem` is
+free of `Jsem`.  `Jsem` is not free of *itself*.
 
-> `idxborJT_sem` is `idx_bor`, which carries `StBor`'s `st_incl` and
-> `st_iff`, and both are families over the **good** derivability
-> predicates.  `Deriv` is defined from `Jsem`.
+Nola's construction order (thesis Def. 4.1) is
 
-Dropping the goodness restriction is the obvious next move, and every
-closure rule survives it - `llftl_incl_sub`, `eternal_tok_guard`,
-`sinv_tok_guard`, `guard_trans` all hold at every interpretation.  One
-source does not: `AltSem`'s `idxbor_fml_iff_at` takes an alteration that
-holds at every *candidate*, and its callers get it from a type's subtyping,
-whose proof for `&uniq{κ}` has to produce `δ J` and so needs `δ` to be
-good.
+> `Csem` (from the `Ecsem`s) → `Jsem` (**applying** δ) → `Deriv`, `der`
 
-Putting the stored things in a judgment at the ambient interpretation -
-`st_incl κ κ' := □ der (incl_j κ κ')` - is the first thing to try, and it
-does not work: `st_incl_at` reads an inclusion at *every* candidate, while
-`□ der J` is readable only at the ones `der` maps into.  The obstruction,
-written out in `inst.v`, is the chain
+and it holds everywhere upstream: `⟦Px ⇒ Qx⟧δ = ⟦Px⟧δ -∗ |⇛ ⟦Qx⟧δ` (§ 6.4).
+The quantification over interpretations lives in the *lemmas* -
+`Deriv_factor'`, `Deriv_map`, `bor_wand` - never inside the semantics.
+Our `guardJT_sem` has that shape.  `idxborJT_sem` and `inclJT_sem` were
+instead made **constant** in δ, and the only way to make a guard constant in
+δ is to quantify over every δ - which must be restricted to the *good* ones,
+which is `Deriv`, which is defined from `Jsem`.  Hence the cycle.
 
-> `st_incl`/`st_iff` must be readable at every candidate → they mention the
-> interpretation, so that forces a quantification over candidates inside
-> them → the quantification must be restricted to the **good** candidates,
-> because what *produces* an `st_iff` (a type's semantic equality) is only
-> available there → "good" is `Deriv`, which is defined from `Jsem`, and
-> `st_incl`/`st_iff` sit inside `idx_bor`, which *is* `idxborJT_sem`.
+**The fix is two moves, both Nola's own**, written out in `inst.v`:
 
-so one of the first three has to give:
+1. `st_incl` becomes a **token**, as `lft_sincl α β := [†α] ∨ [∞ lft_diff β α]`
+   is upstream.  `st_incl_at` then stops being a field and is *derived* by
+   replaying `llftl_incl_sub` and `eternal_tok_guard` at the candidate's own
+   world satisfaction - both are parametric in `BorSem`.  Sound because those
+   two are the only sources of an inclusion in the whole typing layer.
+2. `st_iff` moves **out of the borrow into the δ layer**, exactly as
+   `bor δ α Px := ∃ Qx, □ δ (jbupd Px Qx) ∗ □ δ (jbupd Qx Px) ∗ bor_tok α Qx`
+   is built on a token that carries no alteration.
 
-* make them **tokens**, as Nola's lifetime logic does - `⊑□` for the
-  inclusion, and no alteration at all for the borrow, which costs the
-  `&uniq{κ}` rule its *semantic* type equality (`rust_halt` gets away with
-  `≡` on ghost formulas because `ty_mutref` is invariant);
-* stratify, which is the same device the `fn` type needs, so the two open
-  issues would close together.
+Contrary to what this file said before, (2) does **not** cost `&uniq{κ}` its
+semantic type equality: § 6.4 is *titled* "Semantic Alteration by
+Derivability" and `bor-alter` is one of its rules.  `idxbor_fml_iff_at`
+simply takes `bor_wand`'s shape - the alteration is wanted at the candidates
+`sem'` with `alt_into sem sem'`, not at every candidate - and its callers all
+hold the unrestricted family already.
 
-Until one is done the development is at parity with `rust_halt`: sound and
-parametric, with the satisfiability of its constraints open.
+The one casualty is `st_incl_of_all`.  It has one use (`dincl_fguardx`),
+which has one use (`function.v`'s `type_call_iris'`) - and `function.v` is
+already the file whose `AltSem` obligation has no model pending
+stratification.  The two open issues still close together, for a different
+reason than previously recorded.
+
+**Not at parity with `rust_halt`.**  Neither development instantiates `CON`
+and `JUDG` - `sigTCT`/`sigTO` appear nowhere in `nola/examples/`.  But for
+`rust_halt` it is mechanical, because its types are formulas all the way
+down (`ty_own, ty_shr : … → cif CON Σ`), so `Send`, `Sync` and type equality
+are `≡` in the `cif` OFE with no interpretation anywhere:
+
+```coq
+send : ty_own T t d xπ vl ≡ ty_own T t' d xπ vl
+```
+
+We state them as `∀ sem, alt_sem sem → sem … ⊣⊢ sem …`, and that is what
+pushes a family into `idx_bor`.  Adopting `≡` for `Send`/`Sync` - strictly
+stronger, provable the same way by congruence - removes their dependence on
+`idxbor_fml_iff_at` outright, leaving only `subtype`/`eqtype` on the
+`bor_wand` shape.  Our `ty_shr` is still an `iProp`, not a formula; that is
+the other half of the same divergence.
 
 ## Next
 
+0. **Close the model**, in the order of the previous section: `Send`/`Sync`
+   to `≡` on formulas; `st_incl` to a token; `st_iff` into the δ layer; then
+   `inst.v`'s `Csem`/`Jsem`, which become mechanical.
 1. **`fn` must be stratified by an execution level** (thesis (5.4),
    § 3.4.1).  `FnFml`'s `fn_fml_sem_2` has no model and must not be
    discharged as it stands, so `fn` is the one type former the model does

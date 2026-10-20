@@ -67,75 +67,115 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
 #[export] Instance typingJ_JUDG {Σ} :
   typingJ alerusCON (alerusJUDG Σ) Σ := TYPING_J _ _ _ _ _ _.
 
-(** ** The semantics, and why they cannot be given yet
+(** ** The semantics, and the one thing that blocks them
 
-  [Csem] is now free of [Jsem]: no [Ecsem] quantifies the interpretation, so
-  the constructors' semantics mention [δ] only by applying it to a judgment.
-  [Jsem] is not free of [Csem] - it cannot be - and that is fine; the
-  problem is that it is not free of *itself*.
+  [Csem] is free of [Jsem]: no [Ecsem] quantifies the interpretation, so the
+  constructors' semantics mention [δ] only by applying it to a judgment.
+  [Jsem] is not free of *itself*, and the reason is a design choice of this
+  port rather than anything forced.
 
-  [idxborJT_sem] is [idx_bor], which carries [StBor]'s [st_incl] and
-  [st_iff], and both are families over the *good* derivability predicates:
+  *** The shape Nola requires
+
+  Definition 4.1 of the thesis (§ 4.3) builds [Deriv] and [der] from a
+  judgment semantics [⟦⟧+_ : (Judg → iProp) → (Judg → iProp)] that must
+  already exist.  So the construction order is
+
+    [Csem] (from the [Ecsem]s)  →  [Jsem] (applying δ)  →  [Deriv], [der].
+
+  Nola keeps to it everywhere.  Its judgment semantics *apply* δ and never
+  quantify over it - [⟦Px ⇒ Qx⟧δ+ ≜ ⟦Px⟧δ -∗ |⇛ ⟦Qx⟧δ] (thesis § 6.4),
+  [jiff], [jbupd].  The quantification over interpretations lives one layer
+  up, in the *lemmas* - [Deriv_factor'], [Deriv_map], [bor_wand]'s
+  [⌜Deriv ih δ'⌝ → ⌜ih δ'⌝ → ⌜dinto δ δ'⌝] - never inside [⟦⟧+_].
+
+  This port's [guardJT_sem] has exactly that shape:
+
+    [guardJT_sem δ J := ⟦J.1⟧(δ) &&{alerus_WGuard_at δ}&&> ⟦J.2⟧(δ)]
+
+  [idxborJT_sem] and [inclJT_sem] do not.  Both were made *constant* in δ,
+  and the only way to make a guard constant in δ is to quantify over every δ:
 
     [st_incl κ κ' := □ ∀ δ, ⌜Deriv ⊤ δ⌝ → @[κ] &&{alerus_WGuard_at δ}&&> @[κ']]
 
-  [Deriv] is defined from [Jsem], so [Jsem] would have to be defined from
-  itself.  Dropping the [⌜Deriv ⊤ δ⌝] is what one would try next, and the
-  closure rules survive it - [llftl_incl_sub], [eternal_tok_guard],
-  [sinv_tok_guard], [guard_trans] all hold at every interpretation.  One
-  source does not: [AltSem]'s [idxbor_fml_iff_at] takes an alteration that
-  holds at every *candidate*, and its callers get it from a type's
-  subtyping, whose proof for [&uniq{κ}] has to produce [δ J] and so needs
-  [δ] to be good.
+  That quantification has to be restricted to the good candidates (an
+  unrestricted one cannot be produced where a type's semantic equality is
+  what produces it), "good" is [Deriv], [Deriv] is defined from [Jsem], and
+  [st_incl] sits inside [idx_bor] = [idxborJT_sem].  Hence the cycle.
 
-  What Nola does instead is worth spelling out, because it says exactly
-  what would have to change.  Its borrow token
+  *** The fix, in two parts
 
-    [bor_tok α Px := [†α] ∨ ∃ α' i j, α ⊑□ α' ∗ bor_jtok i j α' (Px, Clsd) ∨ …]
+  Both parts are Nola's own, and neither costs the development anything it
+  uses.
 
-  is plain ghost state: the lifetime inclusion [⊑□] is a *persistent token*
-  rather than a guard, and there is **no alteration at all** - the formula
-  [Px] sits in the ghost state, so a borrow of [Px] and a borrow of [Qx] are
-  the same token exactly when [Px ≡ Qx].  [rust_halt] gets away with that
-  because [ty_mutref] is invariant in its argument and its type equality is
-  [≡] on [cif]s.  This port's [uniq_subtype] takes a *semantic* [eqtype],
-  whose ghost component is a bi-implication of interpretations rather than
-  an equality of formulas, and that is what forces [st_iff].
+  (1) [st_incl] becomes a **token**.  Nola's persistent lifetime inclusion is
+  [lft_sincl α β := [†α] ∨ [∞ lft_diff β α]] ([nola/iris/lft.v]) - plain
+  ghost state, mentioning no interpretation, hence readable at every
+  candidate for free.  The counterpart here is
 
-  Putting the stored things in a judgment at the *ambient* interpretation -
-  [st_incl κ κ' := □ der (incl_j κ κ')] and so on - is the first thing to
-  try, and it does not work: [AltSem]'s [st_incl_at] reads an inclusion at
-  *every* candidate, because [dincl_at] stores one at an arbitrary
-  candidate and [dincl_guard_at] opens one there, while [□ der J] is
-  readable only at the candidates [der] maps into.  That is the family rule
-  again, one level up.
+    [st_incl κ κ' := ⌜κ' ⊆ κ⌝ ∨ ∃ κ0, ⌜κ' ⊆ κ ∪ κ0⌝ ∗ [∗ set] k ∈ κ0, eternal_tok k]
 
-  So the obstruction is exactly this chain:
+  and [st_incl_at] stops being a field of [AltSem]: it is derived by
+  replaying [llftl_incl_sub] and [eternal_tok_guard] at the candidate's own
+  [alt_WGuard sem], both of which are parametric in [BorSem].  This is sound
+  because those two are the *only* sources of an inclusion in the whole
+  typing layer - every [dincl] in [typing/] comes from [dincl_refl],
+  [dincl_of_sub], [dincl_trans], [dincl_glb] or [st_incl_eternalize].
 
-  - [st_incl] and [st_iff] have to be readable at *every* candidate;
-  - they mention the interpretation, so being readable everywhere forces a
-    quantification over candidates inside them;
-  - the quantification has to be restricted to the *good* candidates,
-    because what *produces* an [st_iff] - a type's semantic equality, via
-    [AltSem]'s [idxbor_fml_iff_at] - is only available there, and likewise
-    for the [st_incl] that [type_call_iris'] builds;
-  - "good" is [Deriv], which is defined from [Jsem]; and [st_incl] and
-    [st_iff] sit inside [idx_bor], which *is* [idxborJT_sem], a component
-    of [Jsem].
+  The one casualty is [st_incl_of_all], which turns an arbitrary family into
+  a storable inclusion.  It has exactly one use, [dincl_fguardx], which has
+  exactly one use, [typing/function.v]'s [type_call_iris'] - and [function.v]
+  is already the one file whose [AltSem] obligation ([fn_fml_sem_2]) has no
+  model pending stratification.  So the two open issues still close together,
+  but not for the reason previously recorded here.
 
-  Breaking it means breaking one of the first three:
+  (2) [st_iff] moves **out of the borrow and into the δ layer**.  Nola's
+  borrow token carries the formula literally and has no alteration at all,
 
-  - make [st_incl] and [st_iff] not mention the interpretation at all, that
-    is, make them **tokens**, as Nola's own lifetime logic does.  For
-    [st_incl] that is Nola's [⊑□]; for [st_iff] it means a borrow carries no
-    alteration, which costs the [&uniq{κ}] subtyping rule its *semantic*
-    type equality - it would have to ask for [≡] on ghost formulas, which is
-    what [rust_halt] gets away with because [ty_mutref] is invariant;
-  - stratify, so that a judgment whose semantics quantifies over
-    interpretations lives at a level below the ones that are quantified
-    over.  This is the same device the [fn] type needs.
+    [bor_tok α Px := [†α] ∨ ∃ α' i j, α ⊑□ α' ∗ (bor_jtok i j α' (Px, Clsd) ∨ …)]
 
-  Until that is done, the development stays parametric in [Csem] and
-  [Jsem] exactly as [nola/examples/rust_halt/] does, and the constructor
-  signature and judgment type above are as far as a concrete instance
-  gets. *)
+  and the alteration lives one layer up ([nola/iris/borrow_deriv.v]):
+
+    [bor δ α Px := ∃ Qx, □ δ (jbupd Px Qx) ∗ □ δ (jbupd Qx Px) ∗ bor_tok α Qx]
+
+  which is the thesis's [⟦bor^α P⟧δ ≜ ∃Q. δ(P⇒Q) ∗ δ(Q⇒P) ∗ bor^α Q] (§ 6.4,
+  (6.4)).  The counterpart here is
+
+    [idxborJT_sem δ κ idx Px := ∃ Px', □ δ (iff_j Px' Px) ∗ idx_bor_raw κ idx Px']
+
+  with [idx_bor_raw] carrying only the token inclusion of (1) and a
+  [sinv_tok].  [Jsem] then applies δ, and the construction order above goes
+  through.
+
+  Note that this does **not** cost [&uniq{κ}] its semantic type equality, as
+  an earlier version of this comment claimed.  § 6.4 of the thesis is titled
+  "Semantic Alteration by Derivability" precisely because [bor-alter],
+
+    [δ(P⇒Q) ∗ δ(Q⇒P) ∗ ⟦bor^α P⟧δ ⊨ ⟦bor^α Q⟧δ],
+
+  is supported.  [AltSem]'s [idxbor_fml_iff_at] simply takes the shape of
+  [bor_wand]: the alteration is required at the candidates [sem'] with
+  [alt_into sem sem'], not at every candidate.  Its callers all hold the
+  unrestricted family already (it is what [type_incl] carries), and an
+  unrestricted family discharges a restricted obligation, so every call site
+  survives.  [nola/examples/rust_halt]'s [ty_mutref] never needs the
+  alteration only because mutable references are invariant there.
+
+  *** A caveat about parity
+
+  [nola/examples/rust_halt/] is parametric in [CON] and [JUDG] exactly as
+  this port is, and never instantiates them either: [sigTCT] and [sigTO] are
+  used nowhere in [nola/examples/].  But for [rust_halt] the instantiation is
+  a mechanical exercise, because its [Jsem] already applies δ, and the deeper
+  reason is that its types are *formulas all the way down* -
+  [ty_own, ty_shr : … → cif CON Σ] - so that [Send], [Sync] and type equality
+  are [≡] in the [cif] OFE, with no interpretation anywhere:
+
+    [send : ty_own T t d xπ vl ≡ ty_own T t' d xπ vl]
+
+  This port states them as [∀ sem, alt_sem sem → sem … ⊣⊢ sem …], which is
+  what propagates a family into [idx_bor] in the first place.  Adopting
+  [rust_halt]'s [≡] for [Send] and [Sync] (strictly stronger, and provable
+  the same way by congruence) would remove their dependence on
+  [idxbor_fml_iff_at] entirely, leaving only [subtype]/[eqtype] to use the
+  [bor_wand] shape of (2).  So this port is *not* at parity with [rust_halt]
+  on this point; the gap is real, specific and closable. *)
