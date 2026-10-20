@@ -455,6 +455,25 @@ Section stbor_sem.
     - iIntros (Px Qx) "#g !>". iApply ("g" $! δ Hδ).
     - iIntros (Px Px' Qx Qx') "g g'". iApply (st_iff_cif_sep with "g g'").
   Qed.
+
+  (** The lifetime logic's facts, replayed at this interpretation *)
+  Context (Hδ : Deriv (λ _, True) δ).
+  Local Instance stBorSem_δ : StBorSem := stBorSem_at Hδ.
+
+  Lemma idxbor_guard_at {κ idx} {Px : cif CON Σ} {G : iProp Σ} :
+    idx_bor κ idx Px -∗ (G &&{alerus_WGuard_at δ}&&> @[κ]) -∗
+    (G &&{alerus_WGuard_at δ}&&> idx_bor_tok idx) -∗
+    G &&{alerus_WGuard_at δ}&&> (@[κ] ∗ ⟦ Px ⟧ᶜ(δ)).
+  Proof. iIntros "#b". iApply (llftl_idx_bor_guard' with "[//] b"). Qed.
+
+  Lemma Ltok_guard_frac_at' {γ L q} :
+    frac_key_tok γ L ⊢ frac_tok γ q &&{alerus_WGuard_at δ}&&> llctx_interp L.
+  Proof. exact Ltok_guard_frac. Qed.
+
+  Lemma shr_tok_guard_at {κ γc sn} {Px : cif CON Σ} :
+    sinv_tok (sinvGS0:=shrGS) sn (cif_shr (set_map ra.LtAtomSwell κ) γc Px) ⊢
+      @[κ] &&{alerus_WGuard_at δ}&&> ⟦ Px ⟧ᶜ(δ).
+  Proof. exact (llftl_shr_tok_guard_alive κ γc sn Px). Qed.
 End stbor_sem.
 
 (** ** The two judgments
@@ -828,6 +847,7 @@ Section altSem.
   Proof. exists der. split; [exact _|done]. Qed.
 
   Local Instance stBor_alt : StBor (cifOF CON) Σ := stBor_cif (JUDG:=JUDG).
+  Local Instance stBorSem_alt : StBorSem := stBorSem_at der der_Deriv.
 
   (** *** The three judgments, unfolded *)
 
@@ -912,4 +932,126 @@ Section altSem.
   Lemma bor_state_sem_cif {S} (H : alt_sem_cif S) sn bs :
     S (cif_bor_state sn bs) ⊣⊢ bor_sem (cif_bor_state sn bs).
   Proof. alt_at H. rewrite /bor_sem /= !cif_bor_state_sem //. Qed.
+
+  (** *** Storing a guard: [Deriv_factor'] at the candidate
+
+    The obligation it leaves is the guard at every candidate [δ'] the
+    candidate maps into, and the [dinto] it hands out is exactly
+    [alt_into]. *)
+  Lemma guard_fml_sem_2_cif {S} (H : alt_sem_cif S) Px Qx :
+    (∀ S', ⌜alt_sem_cif S'⌝ → ⌜alt_into_cif S S'⌝ →
+      S' Px &&{alt_WGuard S'}&&> S' Qx) ⊢ S (cif_guard Px Qx).
+  Proof.
+    move: (H)=> [δ[Hδ Heq]]. have ? : Deriv (λ _, True) δ := Hδ.
+    rewrite /cand_fun /= Heq /= /cif_guard sem_cif_in /=.
+    iIntros "#big !>". iApply Deriv_factor'. iIntros (δ' Hδ' _ Hinto).
+    rewrite in_js /=.
+    iApply ("big" $! (MkCand (AlerusSem_at δ')) with "[%] [%]").
+    { by exists δ'. }
+    { move=> Px' Qx'. rewrite /cand_fun /= Heq /= /cif_guard sem_cif_in /=.
+      iIntros "#g". rewrite (Hinto (guard_j Px' Qx')) in_js //. }
+  Qed.
+
+  (** *** Persistence *)
+  Lemma guard_fml_pers_cif {S} (H : alt_sem_cif S) Px Qx :
+    Persistent (S (cif_guard Px Qx)).
+  Proof.
+    move: H=> [δ[? Heq]].
+    rewrite /cand_fun /= Heq /= /cif_guard sem_cif_in /=. exact _.
+  Qed.
+  Lemma idxbor_fml_pers_cif {S} (H : alt_sem_cif S) κ idx Px :
+    Persistent (S (cif_idxbor κ idx Px)).
+  Proof.
+    move: H=> [δ[? Heq]]. rewrite /cand_fun /= Heq /= cif_idxbor_sem.
+    destruct idx. exact _.
+  Qed.
+
+  (** *** The indexed borrow *)
+  Lemma idxbor_fml_sem_1_cif {κ idx} {Px : cif CON Σ} :
+    bor_sem (cif_idxbor κ idx Px) ⊢ idx_bor κ idx Px.
+  Proof. rewrite /bor_sem /= cif_idxbor_sem //. Qed.
+  Lemma idxbor_fml_of_bor_cif {κ} {Px : cif CON Σ} :
+    full_bor κ Px ⊣⊢ ∃ idx, bor_sem (cif_idxbor κ idx Px) ∗ idx_bor_tok idx.
+  Proof.
+    rewrite (llftl_bor_idx (FML:=cifOF CON)). apply bi.exist_proper=> idx.
+    by rewrite /bor_sem /= cif_idxbor_sem.
+  Qed.
+  Lemma idxbor_fml_into_cif {S S'} (H : alt_sem_cif S) (H' : alt_sem_cif S')
+    κ idx (Px : cif CON Σ) :
+    S (cif_idxbor κ idx Px) ⊢ S' (cif_idxbor κ idx Px).
+  Proof.
+    move: H H'=> [δ[? Heq]][δ'[? Heq']].
+    rewrite /cand_fun /= Heq Heq' /= !cif_idxbor_sem //.
+  Qed.
+  Lemma idxbor_fml_iff_at_cif {S} (H : alt_sem_cif S) κ idx
+    (Px Qx : cif CON Σ) :
+    □ (∀ S' (_ : alt_sem_cif S'), S' Px ∗-∗ S' Qx) -∗
+    S (cif_idxbor κ idx Px) -∗ S (cif_idxbor κ idx Qx).
+  Proof.
+    move: (H)=> [δ[? Heq]]. rewrite /cand_fun /= Heq /= !cif_idxbor_sem.
+    iIntros "#eq". iApply llftl_idx_bor_iff. iIntros "!>" (δ' ?).
+    iDestruct ("eq" $! (MkCand (AlerusSem_at δ')) with "[%]") as "[F B]".
+    { by exists δ'. }
+    iSplit; iIntros "P"; [by iApply "F"|by iApply "B"].
+  Qed.
+
+  (** *** The stored inclusion *)
+  Lemma incl_fml_sem_at_cif {S} (H : alt_sem_cif S) κ κ' :
+    S (cif_incl κ κ') ⊣⊢ st_incl κ κ'.
+  Proof. alt_at H. exact cif_incl_sem. Qed.
+  Lemma st_incl_of_all_cif {κ κ'} :
+    (□ ∀ S (_ : alt_sem_cif S), @[κ] &&{alt_WGuard S}&&> @[κ']) ⊢
+      st_incl κ κ'.
+  Proof.
+    iIntros "#g !>" (δ Hδ).
+    iApply ("g" $! (MkCand (AlerusSem_at δ)) with "[%]"). by exists δ.
+  Qed.
+  (** *** The lifetime logic at a candidate *)
+  Lemma idxbor_fml_guard_at_cif {S} (H : alt_sem_cif S) κ idx
+    (Px : cif CON Σ) (G : iProp Σ) :
+    S (cif_idxbor κ idx Px) -∗
+    (G &&{alt_WGuard S}&&> @[κ]) -∗
+    (G &&{alt_WGuard S}&&> idx_bor_tok idx) -∗
+    G &&{alt_WGuard S}&&> (@[κ] ∗ S Px).
+  Proof.
+    move: H=> [δ[Hδ Heq]].
+    rewrite /alt_WGuard /cand_fun /= Heq /= cif_idxbor_sem.
+    exact (idxbor_guard_at δ Hδ).
+  Qed.
+  Lemma idxbor_fml_shorten_at_cif {S} (H : alt_sem_cif S) κ κ' idx
+    (Px : cif CON Σ) :
+    st_incl κ' κ -∗ S (cif_idxbor κ idx Px) -∗ S (cif_idxbor κ' idx Px).
+  Proof.
+    move: H=> [δ[? Heq]]. rewrite /cand_fun /= Heq /= !cif_idxbor_sem.
+    exact (llftl_idx_shorten κ κ' idx Px).
+  Qed.
+  Lemma Ltok_guard_frac_at_cif {S} (H : alt_sem_cif S) γ L q :
+    frac_key_tok γ L ⊢ frac_tok γ q &&{alt_WGuard S}&&> llctx_interp L.
+  Proof.
+    move: H=> [δ[Hδ Heq]]. rewrite /alt_WGuard /= Heq.
+    exact (Ltok_guard_frac_at' δ).
+  Qed.
+
+  (** *** Allocating a shared borrow.  The [sinv_tok] it allocates mentions
+    no interpretation, so the guard it yields holds at every candidate - this
+    is one of the two places where a guard can be stored. *)
+  Lemma guard_fml_borrow_shared_cif {κ} {Px : cif CON Σ} :
+    bor_sem Px -∗ |=[alerus_WGuard]=>
+      (□ ∀ S (_ : alt_sem_cif S), @[κ] &&{alt_WGuard S}&&> S Px) ∗
+      ([†κ] -∗ |=[alerus_WGuard]=> bor_sem Px).
+  Proof.
+    iIntros "P W".
+    iMod (llftl_borrow_shared_tok (FML:=cifOF CON) κ Px with "P W")
+      as "[$ (%γc & %sn & #tok & $)]".
+    iIntros "!> !>" (S HS). move: HS=> [δ[Hδ Heq]].
+    rewrite /alt_WGuard /cand_fun /= Heq /=.
+    iApply (shr_tok_guard_at δ). iApply "tok".
+  Qed.
+
+  Lemma st_incl_at_cif {S} (H : alt_sem_cif S) κ κ' :
+    st_incl κ κ' ⊢ @[κ] &&{alt_WGuard S}&&> @[κ'].
+  Proof.
+    move: H=> [δ[Hδ Heq]]. rewrite /alt_WGuard /= Heq.
+    iIntros "#g". iApply ("g" $! δ Hδ).
+  Qed.
 End altSem.

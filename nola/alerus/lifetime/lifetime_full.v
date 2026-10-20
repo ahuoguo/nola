@@ -102,7 +102,7 @@ Section LlftWsat.
     that it does not become a typeclass instance and get picked up by the box. *)
   Context `{!LlftWG Σ}.
   Local Notation shr_name := llft_shr_name.
-  Local Definition shrGS : sinvGS FML Σ := SinvGS FML Σ sinvGS_pre shr_name.
+  Definition shrGS : sinvGS FML Σ := SinvGS FML Σ sinvGS_pre shr_name.
   Context `{!ShrBorSem FML Σ}.
   (** [unnest] needs the formula language to express borrow-state ownership. *)
   Context `{!BorStateFml llft_name}.
@@ -659,10 +659,44 @@ Section LlftWsat.
   Proof. apply bi.equiv_entails_1_2, shr_fml_sem. Qed.
 
   (* begin hide *)
-  Local Lemma llftl_borrow_shared_maybe_swell κ (Px : FML $oi Σ) :
-      bor_sem Px -∗ |=[llft_wsatG]=>
-        (llft_alive_def' κ &&{llft_wsatG}&&> bor_sem Px)
-        ∗ (llft_dead_def' κ -∗ |=[llft_wsatG]=> bor_sem Px).
+  (** The guard a shared borrow's token yields.  It is built from the token
+    alone - no linear resource is consumed - so the same proof replays at
+    *every* interpretation, which is what lets the guard be stored. *)
+  Lemma llftl_shr_tok_guard κ γc sn (Px : FML $oi Σ) :
+    sinv_tok (sinvGS0:=shrGS) sn (shr_fml κ γc Px) ⊢
+      llft_alive_def' κ &&{llft_wsatG}&&> bor_sem Px.
+  Proof.
+    iIntros "#tok".
+    iDestruct (sinv_tok_guard (sinvGS0:=shrGS) (sm := λ _ Qx, bor_sem Qx)
+      with "tok") as "#Tguard".
+    rewrite -/shr_wsat.
+    iDestruct (guard_wsat_incl (W:=llft_wsatG) with "Tguard") as "#Tguard'".
+    iAssert (llft_alive_def' κ &&{llft_wsatG}&&>
+      bor_sem (shr_fml κ γc Px))%I as "#G".
+    { iApply (guard_trans with "[] Tguard'"). iApply guard_true. }
+    iAssert (bor_sem (shr_fml κ γc Px) &&{llft_wsatG}&&>
+      ((llft_dead_def' κ ∗ CCancel γc) ∨ bor_sem Px))%I as "#Gswap".
+    { iApply guard_intro. iIntros "!> Q".
+      iDestruct (shr_fml_sem_1 with "Q") as "[P|D]".
+      - iSplitL "P"; first by iRight. iIntros "X". iApply shr_fml_sem_2.
+        iDestruct "X" as "[D|P]"; [by iRight|by iLeft].
+      - iSplitL "D"; first by iLeft. iIntros "X". iApply shr_fml_sem_2.
+        iDestruct "X" as "[D|P]"; [by iRight|by iLeft]. }
+    iDestruct (guard_trans with "G Gswap") as "#Gor".
+    iApply (guard_cancel_or (Q:=llft_alive_def' κ)
+      (R:=(llft_dead_def' κ ∗ CCancel γc)%I) (S:=bor_sem Px) with "[] Gor").
+    { iIntros "t".
+      iAssert (llft_dead_def' κ) as "#D". { iDestruct "t" as "[_ [$ _]]". }
+      iApply (llftl_not_own_end_unswell κ with "[t] D").
+      { iDestruct "t"  as "[$ _]". } }
+    { iApply guard_refl. }
+  Qed.
+
+  (* begin hide *)
+  Local Lemma llftl_borrow_shared_alloc κ (Px : FML $oi Σ) :
+      bor_sem Px -∗ |=[llft_wsatG]=> ∃ γc sn,
+        sinv_tok (sinvGS0:=shrGS) sn (shr_fml κ γc Px) ∗
+        (llft_dead_def' κ -∗ |=[llft_wsatG]=> bor_sem Px).
   Proof.
     iIntros "P". iMod new_cancel as (γc) "c1".
     rewrite {1}/modw /llft_wsatG. iIntros "[WG [Shr Rest]]".
@@ -672,42 +706,28 @@ Section LlftWsat.
     { iPureIntro. apply is_fresh. }
     iDestruct ("Shr" with "[P]") as "Shr".
     { iApply shr_fml_sem_2. by iLeft. }
-    iDestruct (sinv_tok_guard (sinvGS0:=shrGS) (sm := λ _ Qx, bor_sem Qx)
-      with "tok") as "#Tguard".
-    rewrite -/shr_wsat.
-    iDestruct (guard_wsat_incl (W:=llft_wsatG) with "Tguard") as "#Tguard'".
-    iModIntro. iFrame "WG Shr Rest". iSplit.
-    - (* the guard *)
-      iAssert (llft_alive_def' κ &&{llft_wsatG}&&>
-        bor_sem (shr_fml κ γc Px))%I as "#G".
-      { iApply (guard_trans with "[] Tguard'"). iApply guard_true. }
-      iAssert (bor_sem (shr_fml κ γc Px) &&{llft_wsatG}&&>
-        ((llft_dead_def' κ ∗ CCancel γc) ∨ bor_sem Px))%I as "#Gswap".
-      { iApply guard_intro. iIntros "!> Q".
-        iDestruct (shr_fml_sem_1 with "Q") as "[P|D]".
-        - iSplitL "P"; first by iRight. iIntros "X". iApply shr_fml_sem_2.
-          iDestruct "X" as "[D|P]"; [by iRight|by iLeft].
-        - iSplitL "D"; first by iLeft. iIntros "X". iApply shr_fml_sem_2.
-          iDestruct "X" as "[D|P]"; [by iRight|by iLeft]. }
-      iDestruct (guard_trans with "G Gswap") as "#Gor".
-      iApply (guard_cancel_or (Q:=llft_alive_def' κ)
-        (R:=(llft_dead_def' κ ∗ CCancel γc)%I) (S:=bor_sem Px) with "[] Gor").
-      { iIntros "t".
-        iAssert (llft_dead_def' κ) as "#D". { iDestruct "t" as "[_ [$ _]]". }
-        iApply (llftl_not_own_end_unswell κ with "[t] D").
-        { iDestruct "t"  as "[$ _]". } }
-      { iApply guard_refl. }
-    - (* the reclamation *)
-      iIntros "#deadk". rewrite /modw /llft_wsatG.
-      iIntros "[WG [Shr Rest]]".
-      iDestruct (sinv_tok_acc (sm := λ _ Qx, bor_sem Qx) with "tok Shr")
-        as "[J K]".
-      iDestruct (shr_fml_sem_1 with "J") as "[P|[_ c2]]".
-      + iDestruct ("K" with "[c1]") as "Shr".
-        { iApply shr_fml_sem_2. iRight. iFrame "deadk c1". }
-        iModIntro. by iFrame.
-      + iDestruct (cancel_cancel_false γc with "[c1 c2]") as "J".
-        { iFrame. } iExFalso. iFrame "J".
+    iModIntro. iFrame "WG Shr Rest". iExists γc, (fresh I). iFrame "tok".
+    iIntros "#deadk". rewrite /modw /llft_wsatG.
+    iIntros "[WG [Shr Rest]]".
+    iDestruct (sinv_tok_acc (sm := λ _ Qx, bor_sem Qx) with "tok Shr")
+      as "[J K]".
+    iDestruct (shr_fml_sem_1 with "J") as "[P|[_ c2]]".
+    + iDestruct ("K" with "[c1]") as "Shr".
+      { iApply shr_fml_sem_2. iRight. iFrame "deadk c1". }
+      iModIntro. by iFrame.
+    + iDestruct (cancel_cancel_false γc with "[c1 c2]") as "J".
+      { iFrame. } iExFalso. iFrame "J".
+  Qed.
+
+  Local Lemma llftl_borrow_shared_maybe_swell κ (Px : FML $oi Σ) :
+      bor_sem Px -∗ |=[llft_wsatG]=>
+        (llft_alive_def' κ &&{llft_wsatG}&&> bor_sem Px)
+        ∗ (llft_dead_def' κ -∗ |=[llft_wsatG]=> bor_sem Px).
+  Proof.
+    iIntros "P W".
+    iMod (llftl_borrow_shared_alloc κ Px with "P W")
+      as "[W (%γc & %sn & #tok & Back)]".
+    iModIntro. iFrame "W Back". by iApply llftl_shr_tok_guard.
   Qed.
   (* end hide *)
 
@@ -719,6 +739,28 @@ Section LlftWsat.
   Proof.
       unseal. rewrite -big_sepS_set_map dead_def_set_map.
       apply (llftl_borrow_shared_maybe_swell (set_map LtAtomSwell κ)).
+  Qed.
+
+  (** The same, keeping the token: the guard it yields holds at every
+    interpretation, the reclamation only at this one. *)
+  Lemma llftl_borrow_shared_tok κ (Px : FML $oi Σ) :
+      bor_sem Px -∗ |=[llft_wsatG]=> ∃ γc sn,
+        sinv_tok (sinvGS0:=shrGS) sn
+          (shr_fml (set_map LtAtomSwell κ) γc Px) ∗
+        ([† κ ] -∗ |=[llft_wsatG]=> bor_sem Px).
+  Proof.
+    iIntros "P W".
+    iMod (llftl_borrow_shared_alloc (set_map LtAtomSwell κ) Px with "P W")
+      as "[$ (%γc & %sn & #tok & Back)]".
+    iModIntro. iExists γc, sn. iFrame "tok". iIntros "#d".
+    iApply "Back". unseal. by rewrite dead_def_set_map.
+  Qed.
+  Lemma llftl_shr_tok_guard_alive κ γc sn (Px : FML $oi Σ) :
+      sinv_tok (sinvGS0:=shrGS) sn (shr_fml (set_map LtAtomSwell κ) γc Px) ⊢
+        @[κ] &&{llft_wsatG}&&> bor_sem Px.
+  Proof.
+    iIntros "#tok". iDestruct (llftl_shr_tok_guard with "tok") as "#g".
+    unseal. rewrite /llft_alive_def' -big_sepS_set_map. iApply "g".
   Qed.
 
   (** LeLiLo-Shr-Pers *)
