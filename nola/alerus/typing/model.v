@@ -410,6 +410,16 @@ Section stbor_at.
     (@[κ] &&{alerus_WGuard_at δ}&&> @[κ'']) -∗
     @[κ] &&{alerus_WGuard_at δ}&&> @[κ' ⊓ κ''].
   Proof. exact: llftl_incl_glb. Qed.
+
+  (** The same, with the meet given by an equation: [llftl_incl_glb] joins
+    two lifetimes, and the caller usually knows the join by a set fact
+    rather than syntactically. *)
+  Lemma st_glb_eq_at {κ κ1 κ2 κ'} :
+    κ1 ⊓ κ2 = κ' →
+    (@[κ] &&{alerus_WGuard_at δ}&&> @[κ1]) -∗
+    (@[κ] &&{alerus_WGuard_at δ}&&> @[κ2]) -∗
+    @[κ] &&{alerus_WGuard_at δ}&&> @[κ'].
+  Proof. move=> <-. exact: st_glb_at. Qed.
 End stbor_at.
 
 Section stbor.
@@ -418,31 +428,148 @@ Section stbor.
       !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ, !exsCS CON JUDG Σ}.
   Implicit Type δ : JUDG -n> iProp Σ.
 
+  (** The eternalized part of a storable inclusion.
+
+    Nola's persistent lifetime inclusion
+    [lft_sincl α β := [†α] ∨ [∞ lft_diff β α]] ([nola/iris/lft.v]) is plain
+    ghost state, and that is what makes it readable at every candidate: it
+    mentions no interpretation, so nothing has to quantify over
+    interpretations to state it.  This is the counterpart here.  Every atom
+    of [κ'] is either supplied by [κ] itself or covered by one of a finite
+    set of eternalized lifetimes; the set is what makes the tokens compose
+    under union, which is what transitivity needs. *)
+  Definition eternal_lfts (S : gset lft) : iProp Σ :=
+    □ ∀ κ0 : lft, ⌜κ0 ∈ S⌝ → eternal_tok alerus_eternal_name κ0.
+  Definition covers (κ : lft) (S : gset lft) (κ' : lft) : Prop :=
+    ∀ a, a ∈ κ' → a ∈ κ ∨ ∃ κ0, κ0 ∈ S ∧ a ∈ κ0.
+
   Definition st_incl_cif (κ κ' : lft) : iProp Σ :=
-    □ ∀ δ (_ : Deriv (λ _, True) δ), @[κ] &&{alerus_WGuard_at δ}&&> @[κ'].
+    ∃ S : gset lft, ⌜covers κ S κ'⌝ ∧ eternal_lfts S.
   Definition st_iff_cif (Px Qx : cifOF CON $oi Σ) : iProp Σ :=
     □ ∀ δ (_ : Deriv (λ _, True) δ), ⟦ Px ⟧ᶜ(δ) ↔ ⟦ Qx ⟧ᶜ(δ).
 
   #[export] Instance st_iff_cif_ne : NonExpansive2 st_iff_cif.
   Proof. solve_proper. Qed.
 
+  (** [eternal_lfts] is persistent, monotone and union-closed *)
+  #[export] Instance eternal_lfts_persistent {S} : Persistent (eternal_lfts S).
+  Proof. exact _. Qed.
+  Lemma eternal_lfts_empty : ⊢ eternal_lfts ∅.
+  Proof. iIntros "!>" (κ0 ?). set_solver. Qed.
+  Lemma eternal_lfts_union {S S'} :
+    eternal_lfts S -∗ eternal_lfts S' -∗ eternal_lfts (S ∪ S').
+  Proof.
+    iIntros "#e #e' !>" (κ0 H).
+    destruct (decide (κ0 ∈ S)) as [?|?]; [by iApply "e"|].
+    iApply "e'". iPureIntro. set_solver.
+  Qed.
+
+  (** [covers] is reflexive, transitive and monotone in the obvious ways *)
+  Local Lemma covers_sub {κ κ'} : κ' ⊆ κ → covers κ ∅ κ'.
+  Proof. move=> Hsub a ?. left. exact: Hsub. Qed.
+  Local Lemma covers_trans {κ κ' κ'' S S'} :
+    covers κ S κ' → covers κ' S' κ'' → covers κ (S ∪ S') κ''.
+  Proof.
+    move=> H H' a /H'[/H[?|[κ0[??]]]|[κ0[??]]];
+      [by left|right|right]; exists κ0; split=>//; set_solver.
+  Qed.
+  Local Lemma covers_union {κ κ' κ'' S S'} :
+    covers κ S κ' → covers κ S' κ'' → covers κ (S ∪ S') (κ' ∪ κ'').
+  Proof.
+    move=> H H' a. rewrite elem_of_union=> -[/H|/H']-[?|[κ0[??]]];
+      [by left|right|by left|right]; exists κ0; split=>//; set_solver.
+  Qed.
+
+  Lemma eternal_lfts_mono {S S'} :
+    S' ⊆ S → eternal_lfts S ⊢ eternal_lfts S'.
+  Proof.
+    move=> ?. iIntros "#e !>" (κ0 ?). iApply "e". iPureIntro. set_solver.
+  Qed.
+
+  (** Two set facts [set_solver] does not get on [lft] *)
+  Local Lemma lft_inter_diff_union (κ κ' : lft) : (κ' ∩ κ) ⊓ (κ' ∖ κ) = κ'.
+  Proof.
+    apply set_eq=> x. unfold meet, llft_intersect.
+    rewrite elem_of_union elem_of_intersection elem_of_difference.
+    destruct (decide (x ∈ κ)); tauto.
+  Qed.
+  Local Lemma lft_inter_subseteq (κ κ' : lft) : κ' ∩ κ ⊆ κ.
+  Proof. move=> x. rewrite elem_of_intersection. tauto. Qed.
+
+  (** The eternalized lifetimes are guarded by anything, at every candidate:
+    [eternal_tok_guard] is a fact about ghost state, and [llftl_incl_glb]
+    folds the covering lifetimes back together. *)
+  Lemma eternal_lfts_guard_at δ {κ} S :
+    ∀ B, covers ∅ S B → eternal_lfts S ⊢ @[κ] &&{alerus_WGuard_at δ}&&> @[B].
+  Proof.
+    move: S. apply: set_ind_L.
+    { move=> B HB. iIntros "_". iApply st_sub_at.
+      move=> a /HB[|[?[??]]]; set_solver. }
+    move=> κ0 S Hκ0 IH B HB. iIntros "#e".
+    iApply (st_glb_eq_at δ (lft_inter_diff_union κ0 B) with "[] []").
+    - iApply (guard_trans with "[] []"); last first.
+      { iApply st_sub_at. exact: lft_inter_subseteq. }
+      iApply (guard_trans with "[] []"); last first.
+      { iApply (eternal_incl_at δ). iApply "e". iPureIntro. set_solver. }
+      iApply st_sub_at. unfold static, llft_empty. set_solver.
+    - iApply IH; [|iApply (eternal_lfts_mono with "e"); set_solver].
+      move=> a. rewrite elem_of_difference=> -[/HB[|[κ1[Hκ1 ?]]] ?];
+        [set_solver|]. right. exists κ1. split=>//.
+      move: Hκ1. rewrite elem_of_union elem_of_singleton=> -[?|?];
+        [by subst|done].
+  Qed.
+
+  (** The elimination rule: a storable inclusion is a guard at every
+    candidate.  [κ' ∩ κ] comes from the left-hand side by [llftl_incl_sub],
+    [κ' ∖ κ] from the eternalized lifetimes, and [llftl_incl_glb] joins
+    them. *)
+  Lemma st_incl_cif_at δ {κ κ'} :
+    st_incl_cif κ κ' ⊢ @[κ] &&{alerus_WGuard_at δ}&&> @[κ'].
+  Proof.
+    iIntros "(%S & %Hc & #e)".
+    iApply (st_glb_eq_at δ (lft_inter_diff_union κ κ') with "[] []").
+    { iApply st_sub_at. exact: lft_inter_subseteq. }
+    iApply (eternal_lfts_guard_at δ S with "e").
+    move=> a. rewrite elem_of_difference=> -[/Hc[?|?] ?]; [done|by right].
+  Qed.
+
+  Lemma st_incl_cif_of_sub {κ κ'} : κ' ⊆ κ → ⊢ st_incl_cif κ κ'.
+  Proof.
+    move=> ?. iExists ∅. iSplit; [iPureIntro; exact: covers_sub|].
+    iApply eternal_lfts_empty.
+  Qed.
   Lemma st_incl_cif_refl {κ} : ⊢ st_incl_cif κ κ.
-  Proof. iIntros "!>" (δ ?). iApply st_refl_at. Qed.
+  Proof. by iApply st_incl_cif_of_sub. Qed.
   Lemma st_incl_cif_trans {κ κ' κ''} :
     st_incl_cif κ κ' -∗ st_incl_cif κ' κ'' -∗ st_incl_cif κ κ''.
   Proof.
-    iIntros "#g #g' !>" (δ ?).
-    iApply (guard_trans with "[] []"); [iApply "g"|iApply "g'"]; done.
+    iIntros "(%S & %H & #e) (%S' & %H' & #e')". iExists (S ∪ S').
+    iSplit; [iPureIntro; exact: covers_trans|].
+    iApply (eternal_lfts_union with "e e'").
   Qed.
   Lemma st_incl_cif_meet_l {κ κ'} : ⊢ st_incl_cif (κ ⊓ κ') κ.
-  Proof. iIntros "!>" (δ ?). iApply st_meet_l_at. Qed.
+  Proof.
+    apply st_incl_cif_of_sub. unfold meet, llft_intersect. set_solver.
+  Qed.
   Lemma st_incl_cif_meet_r {κ κ'} : ⊢ st_incl_cif (κ' ⊓ κ) κ.
-  Proof. iIntros "!>" (δ ?). iApply st_meet_r_at. Qed.
+  Proof.
+    apply st_incl_cif_of_sub. unfold meet, llft_intersect. set_solver.
+  Qed.
   Lemma st_incl_cif_glb {κ κ' κ''} :
     st_incl_cif κ κ' -∗ st_incl_cif κ κ'' -∗ st_incl_cif κ (κ' ⊓ κ'').
   Proof.
-    iIntros "#g #g' !>" (δ ?).
-    iApply (st_glb_at with "[] []"); [iApply "g"|iApply "g'"]; done.
+    iIntros "(%S & %H & #e) (%S' & %H' & #e')". iExists (S ∪ S').
+    iSplit; [iPureIntro; exact: covers_union|].
+    iApply (eternal_lfts_union with "e e'").
+  Qed.
+
+  (** Eternalizing a lifetime gives a storable inclusion from [static] *)
+  Lemma st_incl_cif_eternalize {κ} :
+    eternal_tok alerus_eternal_name κ ⊢ st_incl_cif static κ.
+  Proof.
+    iIntros "#tok". iExists {[κ]}. iSplit.
+    { iPureIntro=> a ?. right. exists κ. split=>//. set_solver. }
+    iIntros "!>" (κ0 Hκ0). move: Hκ0=> /elem_of_singleton->. iApply "tok".
   Qed.
   Lemma st_iff_cif_refl {Px} : ⊢ st_iff_cif Px Px.
   Proof. iIntros "!>" (δ ?). by iSplit; iIntros "$". Qed.
@@ -496,7 +623,7 @@ Section stbor_sem.
   Lemma stBorSem_at (Hδ : Deriv (λ _, True) δ) : StBorSem.
   Proof.
     split.
-    - iIntros (κ κ') "#g". iApply ("g" $! δ Hδ).
+    - iIntros (κ κ') "#g". iApply (st_incl_cif_at δ with "g").
     - iIntros (Px Qx) "#g !>". iApply ("g" $! δ Hδ).
     - iIntros (Px Px' Qx Qx') "g g'". iApply (st_iff_cif_sep with "g g'").
   Qed.
@@ -592,7 +719,7 @@ Section incl_judg.
       !alerusCS CON JUDG Σ, !naInvCS CON JUDG Σ, !exsCS CON JUDG Σ}.
 
   Definition inclJT_sem (J : inclJT) : iProp Σ :=
-    st_incl_cif (CON:=CON) (JUDG:=JUDG) J.(untag).1 J.(untag).2.
+    st_incl_cif (CON:=CON) J.(untag).1 J.(untag).2.
   #[export] Instance inclJT_sem_ne : NonExpansive inclJT_sem.
   Proof. move=> ?[[??]][[??]][/=/leibniz_equiv_iff<-/leibniz_equiv_iff<-] //. Qed.
   #[export] Instance inclJT_dsem : Dsem JUDG inclJT (iProp Σ) :=
@@ -1149,13 +1276,6 @@ Section altSem.
     iApply (st_incl_trans with "[] [m]"); [iApply "l"|].
     iApply (st_incl_trans with "m []"). iApply "r".
   Qed.
-  Lemma st_incl_of_all_cif {κ κ'} :
-    (□ ∀ S (_ : alt_sem_cif S), @[κ] &&{alt_WGuard S}&&> @[κ']) ⊢
-      st_incl κ κ'.
-  Proof.
-    iIntros "#g !>" (δ Hδ).
-    iApply ("g" $! (MkCand (AlerusSem_at δ)) with "[%]"). by exists δ.
-  Qed.
   (** *** The lifetime logic at a candidate *)
   (** An indexed borrow stored at the *ambient* interpretation, opened at a
     candidate the ambient one maps into.  Reading it at the candidate itself
@@ -1207,7 +1327,7 @@ Section altSem.
   Qed.
 
   Lemma st_incl_of_sub_cif {κ κ'} : κ' ⊆ κ → ⊢ st_incl κ κ'.
-  Proof. move=> ?. iIntros "!>" (δ Hδ). by iApply st_sub_at. Qed.
+  Proof. exact: st_incl_cif_of_sub. Qed.
 
   (** Eternalizing a lifetime.  The [eternal_tok] it allocates mentions no
     interpretation, so the inclusion it yields holds at every candidate. *)
@@ -1218,8 +1338,8 @@ Section altSem.
       (eternal_wsat alerus_eternal_name llft_alive) _).
     iDestruct "W" as "[We Wr]".
     iMod (eternal_tok_alloc with "K We") as "[#tok We]". iModIntro.
-    iSplitL "We Wr"; [by iFrame|]. iIntros "!>" (δ Hδ).
-    iApply (eternal_incl_at δ). iApply "tok".
+    iSplitL "We Wr"; [by iFrame|].
+    iApply (st_incl_cif_eternalize with "tok").
   Qed.
 
   (** *** A full borrow, stored as a guard
@@ -1258,7 +1378,7 @@ Section altSem.
     st_incl κ κ' ⊢ @[κ] &&{alt_WGuard S}&&> @[κ'].
   Proof.
     move: H=> [δ[Hδ Heq]]. rewrite /alt_WGuard /= Heq.
-    iIntros "#g". iApply ("g" $! δ Hδ).
+    exact (st_incl_cif_at δ).
   Qed.
 
   (** ** The [AltSem] instance *)
@@ -1300,7 +1420,6 @@ Section altSem.
     incl_fml_pers_at := @incl_fml_pers_cif;
     incl_fml_mono_at := @incl_fml_mono_at_cif;
     st_incl_of_sub := @st_incl_of_sub_cif;
-    st_incl_of_all := @st_incl_of_all_cif;
     st_incl_at := @st_incl_at_cif;
     st_incl_eternalize := @st_incl_eternalize_cif;
     Ltok_guard_frac_at := @Ltok_guard_frac_at_cif;

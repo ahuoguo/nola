@@ -969,12 +969,6 @@ Class AltSem (FML : oFunctor) Σ
     mentions no interpretation, so it replays at every candidate.  Every
     inclusion the typing layer creates from nothing is of this shape. *)
   st_incl_of_sub {κ κ'} : κ' ⊆ κ → ⊢ st_incl κ κ';
-  (** An inclusion that holds at *every* candidate is a storable one.  This
-    is the only way to build one from scratch; in the model both sides are
-    the same family. *)
-  st_incl_of_all {κ κ'} :
-    (□ ∀ sem (_ : alt_sem sem), @[κ] &&{alt_WGuard sem}&&> @[κ']) ⊢
-      st_incl κ κ';
   (** The storable inclusion eliminates at *every* candidate - that is what
     it is for.  In the model it is the family
     [□ ∀ δ good, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']], and this field
@@ -1464,16 +1458,6 @@ Section alt_sem.
     rewrite (alive_sem_at Hs) (alive_sem_at Hs).
     by iApply (dincl_guard_at Hs).
   Qed.
-  Lemma dincl_fguardx {κ κ'} :
-    dincl κ κ' ⊣⊢ fguardx (alive_fml κ) (alive_fml κ').
-  Proof.
-    iSplit.
-    - iIntros "#In". iApply fguardx_of_all. iIntros "!>" (sem H).
-      rewrite !(alive_sem_at H). by iApply (dincl_guard_at H).
-    - iIntros "#g". iApply st_incl_of_all. iIntros "!>" (sem H).
-      rewrite -!(alive_sem_at H). by iApply (fguardx_at H).
-  Qed.
-
   Lemma incl_fml_sem {κ κ'} : bor_sem (incl_fml κ κ') ⊣⊢ dincl κ κ'.
   Proof.
     apply bi.equiv_entails; split;
