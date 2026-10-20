@@ -64,20 +64,25 @@ holds at every *candidate*, and its callers get it from a type's subtyping,
 whose proof for `&uniq{κ}` has to produce `δ J` and so needs `δ` to be
 good.
 
-Two routes out, written up in `inst.v`:
+The fix, written out in `inst.v`, is to put the stored things where Nola
+puts them - in a judgment at the *ambient* interpretation - and to let the
+lifetime logic take them as parameters:
 
-* make lifetime inclusion and the borrow's alteration **tokens**, as Nola's
-  own lifetime logic does (`nola/iris/lft.v`: `lft_incl` is pure and `⊑□` a
-  persistent token).  Every inclusion this model *creates* is structural or
-  eternal - both token-shaped - except the one `type_call_iris'` builds
-  from a shared borrow of a fraction;
-* stratify, so that a judgment whose semantics quantifies over
-  interpretations lives below the ones quantified over.
+* add a fourth judgment `iffJT` for the borrow's alteration;
+* make `inclJT_sem` and `idxborJT_sem` the **raw** forms at `δ` (a Leaf
+  guard, an iff, a `sinv_tok`) rather than families - then all four
+  judgments mention only `Csem`, so `Jsem` is free of itself and the model
+  exists;
+* let `StBor` supply `st_idx := □ der (idxbor_j …)`, `st_incl :=
+  □ der (incl_j …)` and `st_iff := □ der (iff_j …)`, all *outside* `Jsem`,
+  and make `lifetime_full.v`'s `idx_bor` be `st_idx`;
+* `StBorSem` at a candidate `der` maps into eliminates each by
+  `dinto der δ`, and creating one is `Deriv_factor'` at `der`, whose
+  obligation is exactly what `llftl_incl_sub`, `sinv_tok_guard`,
+  `eternal_tok_guard` and `idxbor_fml_iff_at`'s premise give.
 
-The second route is the same device the `fn` type needs (next section), so
-the two open issues would close together: level-index the formula language
-up to a fixed maximum `L`, give each level its own interpretation, and let
-a level-`j` judgment quantify over the interpretations of levels `< j`.
+The alternative is to stratify, which is the same device the `fn` type
+needs (next section), so the two open issues would close together.
 
 Until one is done the development is at parity with `rust_halt`: sound and
 parametric, with the satisfiability of its constraints open.

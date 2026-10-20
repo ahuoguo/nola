@@ -102,20 +102,37 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
   whose ghost component is a bi-implication of interpretations rather than
   an equality of formulas, and that is what forces [st_iff].
 
-  So the two routes out are:
+  So the fix is to put the stored things where Nola puts them - in a
+  judgment at the *ambient* interpretation - and to let the lifetime logic
+  take them as parameters.  Concretely:
 
-  - follow Nola: drop [st_iff] by making the [&uniq{κ}] subtyping rule ask
-    for [≡] on ghost formulas rather than a bi-implication, and make
-    [st_incl] a persistent token.  The model can supply such a token for the
-    structural and the eternal inclusions, which is every inclusion it
-    *creates* except the one [type_call_iris'] builds from a shared borrow
-    of a fraction - and that one would go away if the callee's lifetime were
-    created as a meet with the caller's rather than fresh, as RustBelt's is.
-  - stratify, so that a judgment whose semantics quantifies over
-    interpretations lives at a level below the ones that are quantified
-    over.
+  - a fourth judgment [iffJT], with
+    [iffJT_sem δ (Px, Qx) := □ (⟦Px⟧ᶜ(δ) ↔ ⟦Qx⟧ᶜ(δ))];
+  - [inclJT_sem δ (κ, κ') := @[κ] &&{alerus_WGuard_at δ}&&> @[κ']] - the
+    *raw* guard at [δ], not the family;
+  - [idxborJT_sem δ (κ, (sn, κ'), Px) := (@[κ] &&{W δ}&&> @[κ']) ∗
+      ∃ Px', □ (⟦Px'⟧ᶜ(δ) ↔ ⟦Px⟧ᶜ(δ)) ∗ sinv_tok sn Px'] - likewise raw.
 
-  Until one of them is done, the development stays parametric in [Csem] and
+  Every one of the four mentions only [Csem], so [Jsem] is free of itself
+  and the model exists.  [StBor] then supplies
+
+    [st_idx κ idx Px := □ der (idxbor_j κ idx Px)]
+    [st_incl κ κ'   := □ der (incl_j κ κ')]
+    [st_iff Px Qx   := □ der (iff_j Px Qx)]
+
+  - all three outside [Jsem], so [der] may appear in them - and
+  [lifetime_full.v]'s [idx_bor] becomes [st_idx] rather than a record of
+  parts.  [StBorSem] at a candidate [δ] that [der] maps into eliminates
+  each by [dinto der δ], and creating one is [Deriv_factor'] at [der],
+  whose obligation is the raw form at every candidate [der] maps into -
+  which is exactly what [llftl_incl_sub], [sinv_tok_guard],
+  [eternal_tok_guard] and [AltSem]'s [idxbor_fml_iff_at] premise give.
+
+  The one thing to check while doing it is that the lifetime logic only
+  ever opens a borrow at a candidate [der] maps into; [AltSem]'s
+  [idxbor_fml_guard_into] already has that shape.
+
+  Until that is done, the development stays parametric in [Csem] and
   [Jsem] exactly as [nola/examples/rust_halt/] does, and the constructor
   signature and judgment type above are as far as a concrete instance
   gets. *)
