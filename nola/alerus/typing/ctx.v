@@ -249,6 +249,24 @@ Section alerus.
   (** [↑NllftG] itself: the world satisfaction every guard is taken over *)
   Definition alerus_WGuard : iProp Σ := llft_wsatG.
 
+  (** The same as a function of the *interpretation*.
+
+    [alerus_WGuard] is phrased through the [AlerusSem] record, so it is a
+    function of that record.  [AltSem]'s [alt_WGuard] has to map a candidate
+    interpretation - which is just a function - to the world satisfaction
+    its guards live at, so the model needs this form.  The body is
+    [llft_wsatG]'s with [bor_sem] replaced by the argument; they agree at
+    the ambient interpretation by [alerus_WGuard_of_here]. *)
+  Definition alerus_WGuard_of (sem : FML $oi Σ → iProp Σ) : iProp Σ :=
+    (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat sem ∗
+     frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp) ∗
+    sinv_wsat (sinvGS0 := SinvGS FML Σ sinvGS_pre alerus_shr_name)
+      (λ _ Px, sem Px) ∗
+    box_wsat sem ∗ llft_inv_main.
+
+  Lemma alerus_WGuard_of_here : alerus_WGuard_of bor_sem = alerus_WGuard.
+  Proof. done. Qed.
+
   (** The Points-To Cell Logic guards at [naN = NllftG] *)
   #[export] Instance alerus_NaSem : NaSem FML Σ := {|
     na_sem := bor_sem;

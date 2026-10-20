@@ -293,9 +293,18 @@ Section sem_at.
 
   (** And in particular the guarding world satisfaction at a candidate,
     which is what the two judgments below quantify over.  This is the whole
-    point of separating [AlerusSem] from [alerusGS]. *)
+    point of separating [AlerusSem] from [alerusGS].
+
+    Note it is also [alerus_WGuard_of] applied to the candidate's
+    interpretation - definitionally so - which is what [AltSem]'s
+    [alt_WGuard] needs, since a candidate there is just a function. *)
   Definition alerus_WGuard_at δ : iProp Σ :=
     @alerus_WGuard (cifOF CON) Σ _ (AlerusSem_at δ).
+  Lemma alerus_WGuard_at_of δ :
+    alerus_WGuard_at δ =
+      @alerus_WGuard_of (cifOF CON) Σ _ (AlerusSem_at δ)
+        (λ Px : cifOF CON $oi Σ, ⟦ Px ⟧ᶜ(δ)).
+  Proof. done. Qed.
 End sem_at.
 
 (** ** The two judgments
