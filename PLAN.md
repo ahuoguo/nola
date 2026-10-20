@@ -14,13 +14,18 @@ of `typing/ctx.v`'s interface (`FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`,
 three judgments for the guard, the indexed borrow and the stored
 inclusion), `model_inst.v` bundles it into a `typeG` with the remaining
 formula-language classes, and `soundness.v` allocates the world
-satisfaction and proves
+satisfaction and proves both
 
-> a closed, semantically well-typed program **terminates**
+> a closed, semantically well-typed program has no data race and no thread
+> gets stuck  (`type_safety`, the original's conclusion)
 
-which the original cannot state: its weakest precondition is partial,
-because a guard there hands out a `▷` that only a later credit pays for.
-`Print Assumptions` reports only `Eq_rect_eq`.
+and
+
+> it **terminates**  (`type_soundness`)
+
+The second is one the original cannot state: its weakest precondition is
+partial, because a guard there hands out a `▷` that only a later credit
+pays for.  `Print Assumptions` reports only `Eq_rect_eq` for both.
 
 File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
 
@@ -68,6 +73,11 @@ Two routes out, written up in `inst.v`:
   from a shared borrow of a fraction;
 * stratify, so that a judgment whose semantics quantifies over
   interpretations lives below the ones quantified over.
+
+The second route is the same device the `fn` type needs (next section), so
+the two open issues would close together: level-index the formula language
+up to a fixed maximum `L`, give each level its own interpretation, and let
+a level-`j` judgment quantify over the interpretations of levels `< j`.
 
 Until one is done the development is at parity with `rust_halt`: sound and
 parametric, with the satisfiability of its constraints open.
