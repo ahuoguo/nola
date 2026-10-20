@@ -160,14 +160,13 @@ Section typing.
   Global Instance shr_sync {𝔄} κ (ty: type 𝔄) : Sync ty → Sync (&shr{κ} ty).
   Proof.
     move=> Hsync tid tid' x d g. split; [done|].
-    have Hsh : ∀ sem, alt_sem sem →
-      sem (st_ghox (shr_bor_st κ ty) x d g tid) ⊣⊢
-      sem (st_ghox (shr_bor_st κ ty) x d g tid').
-    { move=> sem Hsem. rewrite /= /by_succx.
-      destruct d as [|dd]; [done|]=>/=.
+    have Hsh : st_ghox (shr_bor_st κ ty) x d g tid ≡
+               st_ghox (shr_bor_st κ ty) x d g tid'.
+    { rewrite /= /by_succx. destruct d as [|dd]; [done|]=>/=.
       destruct (Hsync tid tid' (snd x) dd g) as [phys [gho pers]].
-      rewrite !(sep_sem_at Hsem) phys (pers _ Hsem).
-      by rewrite (dguard_rhs_iff_at' Hsem (Px:=alive_fml κ) gho). }
+      rewrite phys. apply equiv_dist=> n. f_equiv. f_equiv.
+      - f_equiv. by apply equiv_dist.
+      - by apply equiv_dist. }
     by split.
   Qed.
 

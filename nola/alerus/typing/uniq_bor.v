@@ -223,25 +223,13 @@ Section uniq_bor_sem.
     have Hp : ∀ y, ty_phys ty y tid = ty_phys ty y tid'.
     { move=> y. by have [? _] := SyncTy tid tid' y 0 0. }
     have [_ [_ Hps]] := SyncTy tid tid' x0 d' g'.
-    (* the borrowed body only differs in the thread id, and an indexed
-      borrow only cares about the semantics of its contents *)
-    have Hbody : ∀ sem, alt_sem sem →
-      sem (idxbor_fml κ idx (uniq_body_fml ty x0 ξi tid l)) ⊣⊢
-      sem (idxbor_fml κ idx (uniq_body_fml ty x0 ξi tid' l)).
-    { have Hb : ∀ sem', alt_sem sem' →
-        sem' (uniq_body_fml ty x0 ξi tid l) ⊣⊢
-        sem' (uniq_body_fml ty x0 ξi tid' l).
-      { move=> sem' Hs.
-        apply (uniq_body_fml_sem_tid_at Hs ty x0 ξi tid tid' l); [|done].
-        move=> y e h. have [_ [Hg _]] := SyncTy tid tid' y e h. by apply Hg. }
-      move=> sem Hsem. apply bi.equiv_entails; split; iIntros "B";
-        iApply (idxbor_fml_iff_at Hsem with "[] B");
-        iIntros "!>" (sem' Hs); rewrite (Hb _ Hs); iSplit; iIntros "$". }
-    split; [done|]. split=> sem Hsem.
-    - rewrite /= /uniq_body_fmlx !(sep_sem_at Hsem) !(or_sem_at Hsem)
-        (Hps _ Hsem) (Hbody _ Hsem) //.
-    - rewrite /= !(sep_sem_at Hsem) !(or_sem_at Hsem)
-        (Hps _ Hsem) (Hbody _ Hsem) //.
+    (* the borrowed body differs only in the thread id, and [Sync] is now an
+      equation of formulas, so the indexed borrow of it is too *)
+    have Hbody : uniq_body_fml ty x0 ξi tid l ≡ uniq_body_fml ty x0 ξi tid' l.
+    { apply uniq_body_fml_tid; [|done]=> y e h.
+      by have [_ [? _]] := SyncTy tid tid' y e h. }
+    split; [done|].
+    split=>/=; rewrite /uniq_body_fmlx Hbody Hps //.
   Qed.
 
   Lemma uniq_resolve {𝔄} E L κ (ty: type 𝔄) :

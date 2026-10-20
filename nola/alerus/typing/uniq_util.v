@@ -649,6 +649,21 @@ Section uniq_util.
     rewrite /uniq_body_at_fml !(sep_sem_at H) Hg Hp //.
   Qed.
 
+  (** The thread id of the borrowed body, as an equation of *formulas*.
+
+    This is what [Sync] gives now (see the note on [Sync] in [typing/type.v]):
+    [uniq_body_fml] builds its formula from [ty_ghox] by non-expansive
+    constructors, so the law is a congruence and needs no interpretation. *)
+  Lemma uniq_body_fml_tid {𝔄} (ty: type 𝔄) x ξi tid tid' l :
+    (∀ y e h, ty.(ty_ghox) y e h tid ≡ ty.(ty_ghox) y e h tid') →
+    (∀ y, ty_phys ty y tid = ty_phys ty y tid') →
+    uniq_body_fml ty x ξi tid l ≡ uniq_body_fml ty x ξi tid' l.
+  Proof.
+    move=> Hg Hp. apply equiv_dist=> n. rewrite /uniq_body_fml.
+    apply exs_fml_ne=> x'. apply ex_fml_ne=> d'. apply ex_fml_ne=> g'.
+    rewrite /uniq_body_at_fml Hp. f_equiv. f_equiv. by apply equiv_dist.
+  Qed.
+
   (** Changing the type of the borrowed body, at every candidate *)
   Lemma uniq_body_fml_iff_at {𝔄} (ty ty': type 𝔄) x ξi tid l :
     (∀ y, ty_phys ty y tid = ty_phys ty' y tid) →

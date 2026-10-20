@@ -349,7 +349,7 @@ Section typing.
   Qed.
 
   Global Instance fn_sync {A 𝔄l 𝔅 ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) : Sync (fn fp spec).
-  Proof. move=> *. split; [done|]. by split=> sem Hsem. Qed.
+  Proof. move=> *. by split. Qed.
 
   Lemma fn_resolve {A 𝔄l 𝔅 ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) E L : resolve E L (fn fp spec) (const (const True)).
   Proof. apply resolve_just. Qed.

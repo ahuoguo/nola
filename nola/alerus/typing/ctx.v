@@ -756,6 +756,25 @@ Section type_fml.
     by apply equiv_dist.
   Qed.
 
+  (** [≡]-properness of every formula constructor, so that [Sync] - which is
+    an equation of formulas (see [typing/type.v]) - can be proved by plain
+    [rewrite]. *)
+  #[export] Instance sep_fml_proper :
+    Proper ((≡) ==> (≡) ==> (≡)) (bor_sep (FML:=FML) (Σ:=Σ)) :=
+    ne_proper_2 _.
+  #[export] Instance or_fml_proper : Proper ((≡) ==> (≡) ==> (≡)) or_fml :=
+    ne_proper_2 _.
+  #[export] Instance guard_fml_proper :
+    Proper ((≡) ==> (≡) ==> (≡)) guard_fml := ne_proper_2 _.
+  #[export] Instance idxbor_fml_proper {κ idx} :
+    Proper ((≡) ==> (≡)) (idxbor_fml κ idx) := ne_proper _.
+  #[export] Instance exs_fml_proper' {𝔄} :
+    Proper (pointwise_relation (~~𝔄) (≡) ==> (≡)) (@exs_fml _ _ _ _ _ 𝔄).
+  Proof.
+    move=> ?? eq. apply equiv_dist=> n. apply exs_fml_ne=> a.
+    by apply equiv_dist.
+  Qed.
+
   (** Persistence, so that the [Persistent] obligations of the type formers
     are discharged by type class search as they were before. *)
   #[export] Instance false_fml_persistent : Persistent (bor_sem false_fml).

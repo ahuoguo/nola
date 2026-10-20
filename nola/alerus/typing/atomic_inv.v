@@ -305,7 +305,7 @@ Section atomic_invariants.
   Proof.
     move=> Hsend tid tid' [[N γ] c] d g. split; [done|].
     rewrite /= (atomic_inv_body_send_irrel ty pred c tid tid' Hsend).
-    by split=> sem Hsem.
+    by split.
   Qed.
 
   (** Releasing the global atomic lock.  Acquiring it is [GlobalAtomicLock],
