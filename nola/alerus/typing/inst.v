@@ -274,3 +274,25 @@ Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
   typingJS alerusCON (alerusJUDG Σ) Σ :=
   {| typingJS_guard := _; typingJS_idxbor := _; typingJS_incl := _ |}.
 
+
+(** ** Non-vacuity
+
+  [typing/soundness.v]'s [type_soundness] and [type_safety] leave the four
+  semantics existentially quantified, so they would say nothing if nothing
+  satisfied them.  This is the witness: everything they ask for, at the
+  concrete [CON] and [JUDG] above. *)
+Definition alerus_sem {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  Csem alerusCON (alerusJUDG Σ) Σ * Jsem (alerusJUDG Σ) (iProp Σ) *
+  typingCS alerusCON (alerusJUDG Σ) Σ * typingJS alerusCON (alerusJUDG Σ) Σ :=
+  (alerusCsem, alerusJsem, typingCS_CON, typingJS_JUDG).
+
+(** Restating the two theorems concretely - [apply]ing [type_soundness] at
+  this [CON] and [JUDG] - is left out on purpose.  It is not that it fails:
+  the *statement* elaborates (a [Check] of the [typed_body] in it costs about
+  500MB), but [apply] has to elaborate [type_soundness]'s hypothesis, in
+  which the four semantics are *bound* rather than resolved, so [typeG_cif]
+  and the whole record under it are rebuilt symbolically under four
+  existentials.  That ran past 3.5GB here and was killed; [Strategy opaque]
+  on the signature and the judgment type does not help.  Nothing is lost -
+  a client applies [type_soundness] and supplies [alerus_sem]'s four
+  components - but it is worth knowing before trying it again. *)
