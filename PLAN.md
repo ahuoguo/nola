@@ -43,105 +43,57 @@ later/`iLöb`/`pers` machinery disappears.  Nothing in the tree waits on a
 missing guarding lemma, so pull in `storage_protocol/` when starting
 `protocol.v`, not before.
 
-## The one open hole: is the model concrete?
+## Is the model concrete?  Yes, as of `af5aee0`
 
-`model.v` gives the interpretation *parametrically* in `CON` and `JUDG`,
-with constraint classes - as `nola/examples/rust_halt/` does.
-`typing/inst.v` builds the smallest `CON` and `JUDG` satisfying them.  The
-constructor signature and the judgment type come out fine, and `Csem` is
-free of `Jsem`.  `Jsem` is not free of *itself*.
+`model.v` gives the interpretation parametrically in `CON` and `JUDG`, as
+`nola/examples/rust_halt/` does; `typing/inst.v` now builds the smallest
+`CON` and `JUDG` satisfying the constraints **and their semantics**.
+Neither development had ever instantiated `sigTCT`/`sigTO` before - they
+appear nowhere in `nola/examples/`.
 
+The obstruction was that `Jsem` would have had to be defined from itself.
 Nola's construction order (thesis Def. 4.1) is
 
 > `Csem` (from the `Ecsem`s) → `Jsem` (**applying** δ) → `Deriv`, `der`
 
-and it holds everywhere upstream: `⟦Px ⇒ Qx⟧δ = ⟦Px⟧δ -∗ |⇛ ⟦Qx⟧δ` (§ 6.4).
-The quantification over interpretations lives in the *lemmas* -
+and upstream holds to it everywhere: `⟦Px ⇒ Qx⟧δ = ⟦Px⟧δ -∗ |⇛ ⟦Qx⟧δ`
+(§ 6.4).  The quantification over interpretations lives in the *lemmas* -
 `Deriv_factor'`, `Deriv_map`, `bor_wand` - never inside the semantics.
-Our `guardJT_sem` has that shape.  `idxborJT_sem` and `inclJT_sem` were
-instead made **constant** in δ, and the only way to make a guard constant in
-δ is to quantify over every δ - which must be restricted to the *good* ones,
-which is `Deriv`, which is defined from `Jsem`.  Hence the cycle.
+`guardJT_sem` here already had that shape; `idxborJT_sem` and `inclJT_sem`
+were instead made **constant** in δ, and the only way to make a guard
+constant in δ is to quantify over every δ - which has to be restricted to
+the *good* ones, which is `Deriv`, which is defined from `Jsem`.
 
-**The fix is two moves, both Nola's own**, written out in `inst.v`:
-
-1. `st_incl` becomes a **token**, as `lft_sincl α β := [†α] ∨ [∞ lft_diff β α]`
-   is upstream.  `st_incl_at` then stops being a field and is *derived* by
-   replaying `llftl_incl_sub` and `eternal_tok_guard` at the candidate's own
-   world satisfaction - both are parametric in `BorSem`.  Sound because those
-   two are the only sources of an inclusion in the whole typing layer.
-2. `st_iff` moves **out of the borrow into the δ layer**, exactly as
-   `bor δ α Px := ∃ Qx, □ δ (jbupd Px Qx) ∗ □ δ (jbupd Qx Px) ∗ bor_tok α Qx`
-   is built on a token that carries no alteration.
-
-Contrary to what this file said before, (2) does **not** cost `&uniq{κ}` its
-semantic type equality: § 6.4 is *titled* "Semantic Alteration by
-Derivability" and `bor-alter` is one of its rules.  `idxbor_fml_iff_at`
-simply takes `bor_wand`'s shape - the alteration is wanted at the candidates
-`sem'` with `alt_into sem sem'`, not at every candidate - and its callers all
-hold the unrestricted family already.
-
-The one casualty is `st_incl_of_all`.  It has one use (`dincl_fguardx`),
-which has one use (`function.v`'s `type_call_iris'`) - and `function.v` is
-already the file whose `AltSem` obligation has no model pending
-stratification.  The two open issues still close together, for a different
-reason than previously recorded.
-
-**Not at parity with `rust_halt`.**  Neither development instantiates `CON`
-and `JUDG` - `sigTCT`/`sigTO` appear nowhere in `nola/examples/`.  But for
-`rust_halt` it is mechanical, because its types are formulas all the way
-down (`ty_own, ty_shr : … → cif CON Σ`), so `Send`, `Sync` and type equality
-are `≡` in the `cif` OFE with no interpretation anywhere:
-
-```coq
-send : ty_own T t d xπ vl ≡ ty_own T t' d xπ vl
-```
-
-We state them as `∀ sem, alt_sem sem → sem … ⊣⊢ sem …`, and that is what
-pushes a family into `idx_bor`.  Adopting `≡` for `Send`/`Sync` - strictly
-stronger, provable the same way by congruence - removes their dependence on
-`idxbor_fml_iff_at` outright, leaving only `subtype`/`eqtype` on the
-`bor_wand` shape.  Our `ty_shr` is still an `iProp`, not a formula; that is
-the other half of the same divergence.
+Both offenders are gone: `st_incl` is a token, and `st_iff` quantifies over
+every interpretation rather than the good ones.  See step 0 below for what
+that cost.
 
 ## Next
 
-0. **Close the model.**  Step (a) is done.  The order of the rest is forced,
-   and not the one first written here.
+0. ~~**Close the model.**~~  **Done**, in four steps; see
+   `nola/alerus/typing/inst.v` for the write-up.
 
-   a. **Done.**  `st_incl` is a token:
-      `st_incl κ κ' := ∃ S, ⌜covers κ S κ'⌝ ∧ eternal_lfts S` - every atom of
-      `κ'` is supplied by `κ` or covered by one of a finite set of
-      eternalized lifetimes.  `st_incl_cif_at` derives the guard at any
-      candidate from `llftl_incl_sub` on the supplied part and a
-      `llftl_incl_glb` fold of `eternal_tok_guard` over the covered part.
-      `st_incl_of_all` moved to `FnFml` as `fn_incl_of_all`, beside
-      `fn_fml_sem_2`: its one use creates a fresh lifetime whose aliveness is
-      guarded by the caller's context, which is neither of the two shapes a
-      token records.  `AltSem` is otherwise untouched.
-   b. **`Send`/`Sync` become `≡` on formulas**, as `rust_halt` has them
-      (`send : ty_own T t d xπ vl ≡ ty_own T t' d xπ vl`).  This is the
-      prerequisite, not the optional extra it was listed as.  `st_iff` only
-      has to lose its `⌜Deriv ⊤ δ⌝` for `Jsem` to be definable - that much is
-      a three-line change - but then `idxbor_fml_iff_at`'s premise has to
-      hold at *every* interpretation, candidate or not, and a semantic
-      `∀ sem, alt_sem sem → sem … ⊣⊢ sem …` cannot supply that: at a
-      non-candidate there is no `Deriv_map`, so neither `uniq_sync` nor
-      `shr_sync` goes through.  With `≡` every instance is a congruence,
-      because each type former builds its formula from `ty_ghox` by
-      non-expansive constructors - which is exactly why `rust_halt` can
-      state them that way.  21 instances.
-   c. `st_iff` drops `⌜Deriv ⊤ δ⌝`; `idxbor_fml_iff_at` and the definitional
-      `*_sem_at` fields quantify over interpretations rather than candidates.
-   d. `inclJT` goes away - `inclJT_sem` already mentions no `JUDG` after (a),
-      so `inclCT`'s `Ecsem` can return `st_incl` directly.
-   e. `inst.v`'s `Csem` and `Jsem`, then mechanical.
+   a. `st_incl` is a token - every atom of `κ'` is supplied by `κ` or covered
+      by one of a finite set of eternalized lifetimes - so it mentions no
+      interpretation and reads at every candidate for free, as Nola's
+      `lft_sincl` does.  `st_incl_of_all` moved to `FnFml` as
+      `fn_incl_of_all`: its one use creates a fresh lifetime whose aliveness
+      is guarded by the caller's context, which is neither shape a token
+      records, and `rust_halt` has no counterpart because it has no function
+      type.
+   b. `Sync` is an equation of *formulas*, as `rust_halt` states it.  Every
+      instance is then a congruence.  This is what (c) needs.
+   c. `st_iff` quantifies over every interpretation rather than over the good
+      ones, so `idx_bor` - which is `idxborJT_sem` - mentions no `Deriv`.
+      The interface gains `alt_any`; the definitional `AltSem` fields read
+      there.  The price is a premise on `uniq_subtype`.
+   d. `Csem` by `sigTCT_Csem`, `Jsem` by `sigT_dsem`, and the six `inCS` and
+      three `inJS` obligations with them.  `alerus_sem` bundles the four.
 
-   What (b) and (c) cost is `uniq_subtype` for types whose difference is
-   itself behind a judgment: the inner alteration has to hold at
-   non-candidates, so a nested `&uniq{κ} (&uniq{κ'} ty)` subtyping does not
-   go through.  That is the precise price, and it is smaller than the one
-   first recorded (the `&uniq` rule keeps semantic type equality in general).
+   **Not** done: restating `type_soundness`/`type_safety` concretely.  The
+   statement elaborates, but `apply` rebuilds `typeG_cif` symbolically under
+   four existentials and ran past 3.5GB.  A client applies the parametric
+   theorem and supplies `alerus_sem`.
 
 1. **`fn` must be stratified by an execution level** (thesis (5.4),
    § 3.4.1).  `FnFml`'s `fn_fml_sem_2` has no model and must not be
