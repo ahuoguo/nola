@@ -105,7 +105,9 @@ Three are missing:
 | `spawn.v` (394) | `join` is a spin loop proved by `iLöb` |
 | `soundness.v` (100) | waits on the model |
 
-`examples/` (`assert`, `list`, `pcell_example`) are not ported.
+`examples/` (`assert`, `list`, `pcell_example`) are not ported;
+`typing/examples/basic.v` is new here, and is the first worked example in
+the tree.
 
 ### What changed inside the ported typing files
 

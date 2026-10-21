@@ -51,4 +51,30 @@ Section basic.
   Lemma bind_int_typed_true {𝔅} E L I (C: cctx 𝔅) :
     ⊢ typed_body E L I C +[] bind_int (λ _ _ _ _, True%type).
   Proof. exact (bind_int_typed _ _ _ _ (λ _ _ _ _, True%type)). Qed.
+  (** [let a = 1 in let b = 2 in let c = a + b in ()]: two typed bindings
+    and an operation that reads them back out of the type context.  The
+    transformer is built forward into an evar by applying [typed_body_impl]
+    first, which is how upstream's examples keep the composite out of the
+    statement. *)
+  Definition add_ints : expr :=
+    (let: "a" := #1 in let: "b" := #2 in let: "c" := "a" + "b" in #☠)%E.
+
+  Lemma add_ints_typed {𝔅} E L I (C: cctx 𝔅) :
+    ⊢ typed_body E L I C +[] add_ints (λ _ _ _ _, True%type).
+  Proof.
+    rewrite /add_ints.
+    iApply (typed_body_impl with "[]"); last first.
+    { iApply type_int; last first.
+      { iIntros (v1). simpl_subst.
+        iApply type_int; last first.
+        { iIntros (v2). simpl_subst.
+          iApply type_plus; last first.
+          { iIntros (v3). simpl_subst.
+            iApply (type_done _ _ _ _ _ (#☠ : val)
+              (λ _ _ _ _, True%type)). }
+          all: solve_typing. }
+        all: solve_closed. }
+      all: solve_closed. }
+    { by move=> *. }
+  Qed.
 End basic.

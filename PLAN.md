@@ -106,8 +106,17 @@ that cost.
    is complete as a `prost`, not an OFE, so it must move to
    `profix`/`Productive` (cf. `rust_halt/rec.v`).  Until then it assumes
    `Cofe (FML $oi Σ)`, which the model cannot discharge.
-3. **A worked example**, the way `rust_halt/verify/` has one: a concrete
-   `CON`/`JUDG` and a small typed program run through `type_soundness`.
+3. ~~**A worked example**~~  **Started**:
+   `nola/alerus/typing/examples/basic.v` types two small programs against
+   the rules, parametric in `CON`/`JUDG` exactly as `rust_halt/verify/` is
+   (upstream never applies `type_total` there either).  What it found:
+   `programs.v`'s generic `type_val` cannot be applied to a concrete
+   program - its conclusion has `let: xb := v in e` for a *value*, so
+   unification has to invert `of_val ?v` against a literal and diverges.
+   Each type's own rule (`type_int`, `type_bool`) applies first-order.  The
+   same holds of any rule stated with `of_val`: pass the value explicitly
+   and `simpl_subst` after each binder.  Worth extending with a program that
+   allocates, writes and frees a box.
 
 ## Rules this port had to learn
 
