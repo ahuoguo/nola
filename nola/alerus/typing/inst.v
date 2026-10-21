@@ -162,54 +162,115 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
 
   *** What the two moves really depend on
 
-  Move (1) is done.  Move (2) turns out to need less than it looked for
-  [Jsem] and more than it looked everywhere else.
+  Both are now done, and the semantics below are concrete.
 
-  For [Jsem] it is enough that [st_iff] drop its [⌜Deriv (λ _, True) δ⌝]:
+  Move (1) made [st_incl] a token.  Move (2) needed less than it looked for
+  [Jsem] and more than it looked everywhere else.  For [Jsem] it was enough
+  that [st_iff] drop its [⌜Deriv (λ _, True) δ⌝]:
 
     [st_iff Px Qx := □ ∀ δ, ⟦ Px ⟧ᶜ(δ) ↔ ⟦ Qx ⟧ᶜ(δ)]
 
   mentions no [Deriv], so [idx_bor] - which is [idxborJT_sem] - mentions
-  none either, and the construction order goes through.  Nothing is lost on
-  the elimination side, since a borrow is only ever opened at an
-  interpretation that is a candidate anyway.
+  none either.  Nothing is lost on the elimination side, since a borrow is
+  only ever opened at an interpretation that is a candidate anyway.
 
-  What it costs is on the introduction side: [AltSem]'s [idxbor_fml_iff_at]
-  now wants the alteration at interpretations that are *not* candidates, and
-  a *semantic* family cannot supply one.  [Sync] here reads
+  What it cost is on the introduction side: [AltSem]'s [idxbor_fml_iff_at]
+  wants the alteration at interpretations that are *not* candidates, and a
+  *semantic* family cannot supply one.  [Sync] therefore became an equation
+  of formulas, as [nola/examples/rust_halt/type.v] has it
 
-    [sync_change_tid : ∀ sem, alt_sem sem →
-       sem (ty_ghox ty x d g tid) ⊣⊢ sem (ty_ghox ty x d g tid')]
+    [sync : ty_shr T t l α xπ ≡ ty_shr T t' l α xπ]
 
-  and its proof for [&uniq{κ} ty] goes through [idxbor_fml_iff_at], its proof
-  for [&shr{κ} ty] through [guard_fml_sem_2] - both [Deriv_map] in the model,
-  both unavailable at a non-candidate.  So the chain bottoms out not in the
-  borrow at all but in the fact that this port's type-level equations are
-  equations *of interpretations*.
-
-  [nola/examples/rust_halt/] does not have them.  Its types are formulas all
-  the way down - [ty_own, ty_shr : … → cif CON Σ] - so [Send], [Sync] and
-  type equality are [≡] in the [cif] OFE:
-
-    [send : ty_own T t d xπ vl ≡ ty_own T t' d xπ vl]
-
-  and every instance is then a *congruence*, because each type former builds
-  its formula from the argument's by non-expansive constructors.  An [≡] is
-  strictly stronger than the family at every interpretation, so it supplies
-  what [idxbor_fml_iff_at] asks for, at candidates and non-candidates alike.
-  That is why [rust_halt] never meets any of this, and adopting it here is
-  the prerequisite for move (2) rather than the tidy-up it first looked like.
-
-  The residual price, once that is done, is [uniq_subtype] for types whose
-  difference is itself behind a judgment: a nested
-  [&uniq{κ} (&uniq{κ'} ty)] subtyping would need its inner alteration at a
-  non-candidate.  That is narrower than losing the semantic type equality
-  outright, which is what an earlier version of this comment predicted.
+  which is strictly stronger and makes every instance a congruence, since
+  each type former builds its formula from its argument's by non-expansive
+  constructors.  [type_incl] could not follow: strengthening it propagates
+  into the [type] record's own depth laws, and [ty_gho_depth_mono_at] for
+  [&shr{κ} ty] genuinely needs [Deriv_map].  So the premise sits on the one
+  rule that needs it, [uniq_subtype], which now asks for its two ghost
+  assertions to agree off the candidates too.  That is the residual price,
+  and it is narrower than losing the semantic type equality outright, which
+  is what an earlier version of this comment predicted.
 
   *** A caveat about parity
 
   [nola/examples/rust_halt/] is parametric in [CON] and [JUDG] exactly as
   this port is, and never instantiates them either: [sigTCT] and [sigTO] are
-  used nowhere in [nola/examples/].  But for [rust_halt] the instantiation is
-  mechanical, for the reason just given.  So this port is *not* at parity
-  with [rust_halt] on this point; the gap is real, specific and closable. *)
+  used nowhere in [nola/examples/].  For [rust_halt] the instantiation is
+  mechanical, for the reason just given; here it took the two moves above.
+  With them done the gap is closed, and what follows is the instance. *)
+
+(** ** The semantics
+
+  With [st_incl] a token and [st_iff] quantifying over every interpretation
+  rather than over the good ones, neither [idxborJT_sem] nor [inclJT_sem]
+  mentions [Deriv], so the construction order of Definition 4.1 of the thesis
+  goes through: [Csem] from the [Ecsem]s, then [Jsem] applying the
+  interpretation, then [Deriv] and [der]. *)
+
+(** The constructors' semantics, by cases on the signature *)
+Definition alerusCONF_ecsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
+  (a : alerus_consel) : Ecsem (alerusCONF a) alerusCON (alerusJUDG Σ) Σ :=
+  match a with
+  | acs_alerus => alerusCT_ecsem | acs_naInv => naInvCT_ecsem
+  | acs_guard => guardCT_ecsem | acs_idxbor => idxborCT_ecsem
+  | acs_incl => inclCT_ecsem | acs_exs => exsCT_ecsem
+  end.
+
+#[export] Instance alerusCsem {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  Csem alerusCON (alerusJUDG Σ) Σ :=
+  sigTCT_Csem (ecsem := alerusCONF_ecsem).
+
+(** Each constructor's semantics is the one it was given, by [sigTCT_inCS] *)
+#[export] Instance alerusCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  alerusCS alerusCON (alerusJUDG Σ) Σ :=
+  sigTCT_inCS (semec := alerusCONF_ecsem) (a := acs_alerus).
+#[export] Instance naInvCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  naInvCS alerusCON (alerusJUDG Σ) Σ :=
+  sigTCT_inCS (semec := alerusCONF_ecsem) (a := acs_naInv).
+#[export] Instance guardCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  guardCS alerusCON (alerusJUDG Σ) Σ :=
+  sigTCT_inCS (semec := alerusCONF_ecsem) (a := acs_guard).
+#[export] Instance idxborCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  idxborCS alerusCON (alerusJUDG Σ) Σ :=
+  sigTCT_inCS (semec := alerusCONF_ecsem) (a := acs_idxbor).
+#[export] Instance inclCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  inclCS alerusCON (alerusJUDG Σ) Σ :=
+  sigTCT_inCS (semec := alerusCONF_ecsem) (a := acs_incl).
+#[export] Instance exsCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  exsCS alerusCON (alerusJUDG Σ) Σ :=
+  sigTCT_inCS (semec := alerusCONF_ecsem) (a := acs_exs).
+
+(** The judgments' semantics, by cases on the judgment type.  Each one
+  *applies* the interpretation - [guardJT_sem] to the two sub-formulas,
+  [idxborJT_sem_at] to the borrow's alteration - and none quantifies over
+  interpretations, which is why this is definable at all. *)
+Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
+  (a : alerus_jsel) : Dsem (alerusJUDG Σ) (alerusJUDGF Σ a) (iProp Σ) :=
+  match a with
+  | ajs_guard => guardJT_dsem | ajs_idxbor => idxborJT_dsem
+  | ajs_incl => inclJT_dsem
+  end.
+
+#[export] Instance alerusJsem {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  Jsem (alerusJUDG Σ) (iProp Σ) :=
+  sigT_dsem (alerusJUDGF Σ) (H := alerusJUDGF_dsem).
+
+(** Each judgment's semantics is the one it was given, by [sigT_inJS] *)
+#[export] Instance guardJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  guardJS alerusCON (alerusJUDG Σ) Σ :=
+  sigT_inJS alerusJUDGF_dsem (a := ajs_guard).
+#[export] Instance idxborJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  idxborJS alerusCON (alerusJUDG Σ) Σ :=
+  sigT_inJS alerusJUDGF_dsem (a := ajs_idxbor).
+#[export] Instance inclJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  inclJS alerusCON (alerusJUDG Σ) Σ :=
+  sigT_inJS alerusJUDGF_dsem (a := ajs_incl).
+
+#[export] Instance typingCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  typingCS alerusCON (alerusJUDG Σ) Σ :=
+  {| typingCS_alerus := _; typingCS_naInv := _; typingCS_guard := _;
+     typingCS_idxbor := _; typingCS_incl := _; typingCS_exs := _ |}.
+#[export] Instance typingJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  typingJS alerusCON (alerusJUDG Σ) Σ :=
+  {| typingJS_guard := _; typingJS_idxbor := _; typingJS_incl := _ |}.
+
