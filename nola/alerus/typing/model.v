@@ -669,6 +669,19 @@ Variant guardJT_id := .
 Definition guardJT (FM : ofe) : ofe := tagged guardJT_id (FM * FM).
 Notation guardJ FM := (inJ (guardJT FM)).
 
+(** [iffJT]: a semantic equivalence of two formulas, as a judgment.
+
+  This is the alteration a stored borrow carries, exactly as
+  [nola/iris/borrow_deriv.v]'s [bor δ α Px := ∃ Qx, □ δ (jbupd Px Qx) ∗
+  □ δ (jbupd Qx Px) ∗ bor_tok α Qx] carries two [jbupd]s - the thesis's
+  § 6.4.  Its semantics *applies* the interpretation, which is what lets
+  [Deriv_map] change it and so what makes the alteration available at the
+  candidates a stored borrow maps into rather than at every interpretation
+  whatsoever. *)
+Variant iffJT_id := .
+Definition iffJT (FM : ofe) : ofe := tagged iffJT_id (FM * FM).
+Notation iffJ FM := (inJ (iffJT FM)).
+
 (** [inclJT]: a storable lifetime inclusion, as a judgment.
 
   [st_incl κ κ'] quantifies the guarding world satisfaction, so like a guard
@@ -700,6 +713,15 @@ Section judg.
   Proof. move=> ?[[??]][[??]][/=??]. solve_proper. Qed.
   #[export] Instance guardJT_dsem
     : Dsem JUDG (guardJT (cifO CON Σ)) (iProp Σ) := DSEM guardJT_sem _.
+
+  (** Semantics of the alteration judgment: the equivalence at the
+    candidate's own interpretation *)
+  Definition iffJT_sem δ (J : iffJT (cifO CON Σ)) : iProp Σ :=
+    □ (⟦ J.(untag).1 ⟧ᶜ(δ) ↔ ⟦ J.(untag).2 ⟧ᶜ(δ)).
+  #[export] Instance iffJT_sem_ne {δ} : NonExpansive (iffJT_sem δ).
+  Proof. move=> ?[[??]][[??]][/=??]. solve_proper. Qed.
+  #[export] Instance iffJT_dsem
+    : Dsem JUDG (iffJT (cifO CON Σ)) (iProp Σ) := DSEM iffJT_sem _.
 
 End judg.
 
@@ -752,6 +774,7 @@ End judg2.
 Notation guardJS CON JUDG Σ := (inJS (guardJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation idxborJS CON JUDG Σ := (inJS (idxborJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation inclJS CON JUDG Σ := (inJS inclJT JUDG (iProp Σ)).
+Notation iffJS CON JUDG Σ := (inJS (iffJT (cifO CON Σ)) JUDG (iProp Σ)).
 
 (** ** The judgment constructors
 
@@ -798,7 +821,7 @@ Section judgC.
 
   Context {JUDG} `{guard_j0 : !guardJ (cifO CON Σ) JUDG,
     idxbor_j0 : !idxborJ (cifO CON Σ) JUDG, incl_j0 : !inclJ JUDG,
-    !Jsem JUDG (iProp Σ)}.
+    iff_j0 : !iffJ (cifO CON Σ) JUDG, !Jsem JUDG (iProp Σ)}.
   Definition incl_j (κ κ' : lft) : JUDG := incl_j0 (Tagged (κ, κ')).
   (** The judgments as elements of [JUDG] *)
   Definition guard_j (Px Qx : cif CON Σ) : JUDG :=
@@ -807,8 +830,11 @@ Section judgC.
     idxbor_j0 (Tagged (κ, idx, Px)).
   #[export] Instance guard_j_ne : NonExpansive2 guard_j.
   Proof. unfold guard_j=> ???????. f_equiv. by split. Qed.
+  Definition iff_j (Px Qx : cif CON Σ) : JUDG := iff_j0 (Tagged (Px, Qx)).
   #[export] Instance idxbor_j_ne {κ idx} : NonExpansive (idxbor_j κ idx).
   Proof. unfold idxbor_j=> ????. f_equiv. by split; [split|]. Qed.
+  #[export] Instance iff_j_ne : NonExpansive2 iff_j.
+  Proof. unfold iff_j=> ???????. f_equiv. by split. Qed.
 
   #[export] Program Instance guardCT_ecsem : Ecsem guardCT CON JUDG Σ :=
     ECSEM (λ _ δ _ _ Ψx _, □ δ (guard_j (Ψx true) (Ψx false)))%I _.
@@ -855,6 +881,7 @@ Class typingJ CON JUDG Σ : Type := TYPING_J {
   typingJ_guard :: guardJ (cifO CON Σ) JUDG;
   typingJ_idxbor :: idxborJ (cifO CON Σ) JUDG;
   typingJ_incl :: inclJ JUDG;
+  typingJ_iff :: iffJ (cifO CON Σ) JUDG;
 }.
 Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ)} : Prop :=
@@ -872,6 +899,7 @@ Class typingJS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   typingJS_guard :: guardJS CON JUDG Σ;
   typingJS_idxbor :: idxborJS CON JUDG Σ;
   typingJS_incl :: inclJS CON JUDG Σ;
+  typingJS_iff :: iffJS CON JUDG Σ;
 }.
 
 (** ** The ambient interpretation and the [TypeFml] instance

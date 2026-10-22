@@ -49,13 +49,13 @@ Definition alerusCON : cifcon := sigTCT alerusCONF.
   TYPING_C _ _ _ _ _ _ _.
 
 (** ** The judgment type *)
-Variant alerus_jsel := ajs_guard | ajs_idxbor | ajs_incl.
+Variant alerus_jsel := ajs_guard | ajs_idxbor | ajs_incl | ajs_iff.
 
 Definition alerusJUDGF Σ (s : alerus_jsel) : ofe :=
   match s with
   | ajs_guard => guardJT (cifO alerusCON Σ)
   | ajs_idxbor => idxborJT (cifO alerusCON Σ)
-  | ajs_incl => inclJT
+  | ajs_incl => inclJT | ajs_iff => iffJT (cifO alerusCON Σ)
   end.
 
 Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
@@ -66,9 +66,11 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
   idxborJ (cifO alerusCON Σ) (alerusJUDG Σ) := sigT_inJ (a := ajs_idxbor).
 #[export] Instance inclJ_JUDG {Σ} : inclJ (alerusJUDG Σ) :=
   sigT_inJ (a := ajs_incl).
+#[export] Instance iffJ_JUDG {Σ} :
+  iffJ (cifO alerusCON Σ) (alerusJUDG Σ) := sigT_inJ (a := ajs_iff).
 
 #[export] Instance typingJ_JUDG {Σ} :
-  typingJ alerusCON (alerusJUDG Σ) Σ := TYPING_J _ _ _ _ _ _.
+  typingJ alerusCON (alerusJUDG Σ) Σ := TYPING_J _ _ _ _ _ _ _.
 
 (** ** The semantics, and the one thing that blocks them
 
@@ -251,7 +253,7 @@ Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
   (a : alerus_jsel) : Dsem (alerusJUDG Σ) (alerusJUDGF Σ a) (iProp Σ) :=
   match a with
   | ajs_guard => guardJT_dsem | ajs_idxbor => idxborJT_dsem
-  | ajs_incl => inclJT_dsem
+  | ajs_incl => inclJT_dsem | ajs_iff => iffJT_dsem
   end.
 
 #[export] Instance alerusJsem {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
@@ -268,6 +270,9 @@ Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
 #[export] Instance inclJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   inclJS alerusCON (alerusJUDG Σ) Σ :=
   sigT_inJS alerusJUDGF_dsem (a := ajs_incl).
+#[export] Instance iffJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  iffJS alerusCON (alerusJUDG Σ) Σ :=
+  sigT_inJS alerusJUDGF_dsem (a := ajs_iff).
 
 #[export] Instance typingCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   typingCS alerusCON (alerusJUDG Σ) Σ :=
@@ -275,7 +280,8 @@ Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
      typingCS_idxbor := _; typingCS_incl := _; typingCS_exs := _ |}.
 #[export] Instance typingJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   typingJS alerusCON (alerusJUDG Σ) Σ :=
-  {| typingJS_guard := _; typingJS_idxbor := _; typingJS_incl := _ |}.
+  {| typingJS_guard := _; typingJS_idxbor := _; typingJS_incl := _;
+     typingJS_iff := _ |}.
 
 
 (** ** Non-vacuity
