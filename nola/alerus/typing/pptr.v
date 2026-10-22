@@ -347,7 +347,10 @@ Section typing.
     destruct c as [cl cs]. destruct cs as [|cs0 cs]; last first.
     { (* the permission's own cell list is empty, so this cannot happen *)
       iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
-      iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor".
+      iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor0".
+      iDestruct (dFullBor_exact (E:=⊤) with "LFT Bor0") as "Ex".
+      iDestruct (fupdw_incl (W:=alerus_wsat) with "Ex") as "Ex'".
+      iMod ("Ex'" with "W") as "[W Bor]".
       iAssert (bor_sem (gsrc_fml (GFrac γ 1)) &&{Wguard}&&> @[κ])%I as "#Gκx".
       { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ 1))). iApply "Gκ". }
       iDestruct (llftl_bor_acc_guarded ⊤ (gsrc_fml (GFrac γ 1)) κ
@@ -378,7 +381,7 @@ Section typing.
       iEval (rewrite -(cloc_mapsto_empty_cells ty l y tid)) in "pt2".
       iFrame "pt gho2 free pt2". }
     { iApply (idxbor_fml_iff_at alt_here with "[] ξBor").
-      iIntros "!>" (sem' Hs). rewrite !(uniq_body_fml_sem_at Hs) /=.
+      iIntros "!>" (sem' Hs _). rewrite !(uniq_body_fml_sem_at (alt_sem_any Hs)) /=.
       iSplit; iIntros "H"; iDestruct "H" as (x0 d0 g0) "(A & B & _)";
         iExists x0, d0, g0; iFrame "A B";
         by iApply (bi.equiv_entails_1_2 (heap_complete_mapsto_fancy_empty _)). }

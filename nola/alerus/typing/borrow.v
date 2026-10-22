@@ -246,7 +246,10 @@ Section borrow.
       iFrame "ξVo ξTok ξBor". iSplitR; [iApply "PtBase"|].
       iLeft. iExists κ. iFrame "†κ". iApply dincl_refl. }
     (* The main case. *)
-    iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBor2".
+    iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBor20".
+    iDestruct (dFullBor_exact (E:=⊤) with "LFT ξBor20") as "Ex".
+    iDestruct (fupdw_incl (W:=alerus_wsat) with "Ex") as "Ex'".
+    iMod ("Ex'" with "W") as "[W ξBor2]".
     iDestruct (llftl_reborrow ⊤ κ κ' (uniq_body_fml ty x0 ξi tid l)
       with "LFT Inκ'κ ξBor2") as "A".
     iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
@@ -402,8 +405,9 @@ Section borrow.
     iAssert (Px &&{Wguard}&&> idx_bor_tok ξidx)%I as "#GPtok".
     { iApply guard_intro. iIntros "!> (f & vo & tok)". iFrame "tok".
       iIntros "tok". iFrame. }
-    iDestruct (idxbor_fml_sem_1 with "ξBor") as "#ξBor1".
-    iDestruct (llftl_idx_bor_guard' κ ξidx _ Px with "LFT ξBor1 GPκ GPtok")
+    iDestruct (idxbor_fml_dIdxBor with "ξBor") as "#ξBor1".
+    iDestruct (dIdxBor_guard (κ:=κ) (idx:=ξidx) (G:=Px)
+      with "LFT ξBor1 GPκ GPtok")
       as "#Gexists".
     iDestruct (uniq_guards_get_guards_pt (own_ptr n ty) (frac_tok γ 1) (@[κ])
       (idx_bor_tok ξidx) (l1, x1) (S d'') g' ξi tid l with "Gexists")
@@ -654,7 +658,10 @@ Section borrow.
       iDestruct (guard_acc with "G3 f1 Wg") as "[Alive _]".
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
     (* Open the outer borrow. *)
-    iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBorFull".
+    iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBorFull0".
+    iDestruct (dFullBor_exact (E:=⊤) with "LFT ξBorFull0") as "Ex".
+    iDestruct (fupdw_incl (W:=alerus_wsat) with "Ex") as "Ex'".
+    iMod ("Ex'" with "W") as "[W ξBorFull]".
     iAssert (bor_sem (gsrc_fml (GFrac γ (1/2))) &&{Wguard}&&> @[κ])%I
       as "#Gκx".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ (1/2)))). iApply "Gκ". }
@@ -713,11 +720,14 @@ Section borrow.
       with "LFT Bor") as "C2".
     iDestruct (fupdw_incl (W:=alerus_wsat) with "C2") as "C2'".
     iMod ("C2'" with "W") as "[W [BorMid BorTok]]".
-    iDestruct (idxbor_fml_sem_1 with "ωBor") as "#ωBor1".
-    iDestruct (llftl_idx_bor_unnest ⊤ κ' κ ωidx (uniq_body_fml ty x1 ωi tid l1)
-      with "LFT ωBor1 BorTok") as "D".
+    iDestruct (idxbor_fml_dIdxBor with "ωBor") as "#ωBor1".
+    iDestruct (dIdxBor_unnest (E:=⊤) (κ:=κ') (κ':=κ) (idx:=ωidx)
+      (Px:=uniq_body_fml ty x1 ωi tid l1) with "LFT ωBor1 BorTok") as "D".
     iDestruct (fupdw_incl (W:=alerus_wsat) with "D") as "D'".
-    iMod ("D'" with "W") as "[W BorInner]".
+    iMod ("D'" with "W") as "[W BorInner0]".
+    iDestruct (dFullBor_exact (E:=⊤) with "LFT BorInner0") as "Ex2".
+    iDestruct (fupdw_incl (W:=alerus_wsat) with "Ex2") as "Ex2'".
+    iMod ("Ex2'" with "W") as "[W BorInner]".
     rewrite (idxbor_fml_of_bor (κ:=κ) (Px:=ccells_fml l [FVal (LitV l1.1)])).
     iDestruct "BorPt" as (idxpt) "[#BorPt Tokpt]".
     (* The guard the load runs under. *)
@@ -729,9 +739,9 @@ Section borrow.
       idx_bor_tok idxpt)%I as "#GHtok".
     { iApply (guard_lhs_iff (frac_idx_src_sem γ (1/2) idxpt)).
       iApply guard_sep_r. }
-    iDestruct (idxbor_fml_sem_1 with "BorPt") as "#BorPt1".
-    iDestruct (llftl_idx_bor_guard' κ idxpt _
-      (bor_sem (frac_idx_src γ (1/2) idxpt)) with "LFT BorPt1 GHκ GHtok")
+    iDestruct (idxbor_fml_dIdxBor with "BorPt") as "#BorPt1".
+    iDestruct (dIdxBor_guard (κ:=κ) (idx:=idxpt)
+      (G:=bor_sem (frac_idx_src γ (1/2) idxpt)) with "LFT BorPt1 GHκ GHtok")
       as "#G1".
     iDestruct (guard_rhs_sep_r with "G1") as "#G2".
     iDestruct (guard_rhs_iff (ccells_fml_sem l [FVal (LitV l1.1)]) with "G2")

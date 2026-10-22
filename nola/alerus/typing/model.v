@@ -669,6 +669,19 @@ Variant guardJT_id := .
 Definition guardJT (FM : ofe) : ofe := tagged guardJT_id (FM * FM).
 Notation guardJ FM := (inJ (guardJT FM)).
 
+(** [iffJT]: a semantic equivalence of two formulas, as a judgment.
+
+  This is the alteration a stored borrow carries, exactly as
+  [nola/iris/borrow_deriv.v]'s [bor δ α Px := ∃ Qx, □ δ (jbupd Px Qx) ∗
+  □ δ (jbupd Qx Px) ∗ bor_tok α Qx] carries two [jbupd]s - the thesis's
+  § 6.4.  Its semantics *applies* the interpretation, which is what lets
+  [Deriv_map] change it and so what makes the alteration available at the
+  candidates a stored borrow maps into rather than at every interpretation
+  whatsoever. *)
+Variant iffJT_id := .
+Definition iffJT (FM : ofe) : ofe := tagged iffJT_id (FM * FM).
+Notation iffJ FM := (inJ (iffJT FM)).
+
 (** [inclJT]: a storable lifetime inclusion, as a judgment.
 
   [st_incl κ κ'] quantifies the guarding world satisfaction, so like a guard
@@ -700,6 +713,15 @@ Section judg.
   Proof. move=> ?[[??]][[??]][/=??]. solve_proper. Qed.
   #[export] Instance guardJT_dsem
     : Dsem JUDG (guardJT (cifO CON Σ)) (iProp Σ) := DSEM guardJT_sem _.
+
+  (** Semantics of the alteration judgment: the equivalence at the
+    candidate's own interpretation *)
+  Definition iffJT_sem δ (J : iffJT (cifO CON Σ)) : iProp Σ :=
+    □ (⟦ J.(untag).1 ⟧ᶜ(δ) ↔ ⟦ J.(untag).2 ⟧ᶜ(δ)).
+  #[export] Instance iffJT_sem_ne {δ} : NonExpansive (iffJT_sem δ).
+  Proof. move=> ?[[??]][[??]][/=??]. solve_proper. Qed.
+  #[export] Instance iffJT_dsem
+    : Dsem JUDG (iffJT (cifO CON Σ)) (iProp Σ) := DSEM iffJT_sem _.
 
 End judg.
 
@@ -752,6 +774,7 @@ End judg2.
 Notation guardJS CON JUDG Σ := (inJS (guardJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation idxborJS CON JUDG Σ := (inJS (idxborJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation inclJS CON JUDG Σ := (inJS inclJT JUDG (iProp Σ)).
+Notation iffJS CON JUDG Σ := (inJS (iffJT (cifO CON Σ)) JUDG (iProp Σ)).
 
 (** ** The judgment constructors
 
@@ -798,7 +821,7 @@ Section judgC.
 
   Context {JUDG} `{guard_j0 : !guardJ (cifO CON Σ) JUDG,
     idxbor_j0 : !idxborJ (cifO CON Σ) JUDG, incl_j0 : !inclJ JUDG,
-    !Jsem JUDG (iProp Σ)}.
+    iff_j0 : !iffJ (cifO CON Σ) JUDG, !Jsem JUDG (iProp Σ)}.
   Definition incl_j (κ κ' : lft) : JUDG := incl_j0 (Tagged (κ, κ')).
   (** The judgments as elements of [JUDG] *)
   Definition guard_j (Px Qx : cif CON Σ) : JUDG :=
@@ -807,8 +830,11 @@ Section judgC.
     idxbor_j0 (Tagged (κ, idx, Px)).
   #[export] Instance guard_j_ne : NonExpansive2 guard_j.
   Proof. unfold guard_j=> ???????. f_equiv. by split. Qed.
+  Definition iff_j (Px Qx : cif CON Σ) : JUDG := iff_j0 (Tagged (Px, Qx)).
   #[export] Instance idxbor_j_ne {κ idx} : NonExpansive (idxbor_j κ idx).
   Proof. unfold idxbor_j=> ????. f_equiv. by split; [split|]. Qed.
+  #[export] Instance iff_j_ne : NonExpansive2 iff_j.
+  Proof. unfold iff_j=> ???????. f_equiv. by split. Qed.
 
   #[export] Program Instance guardCT_ecsem : Ecsem guardCT CON JUDG Σ :=
     ECSEM (λ _ δ _ _ Ψx _, □ δ (guard_j (Ψx true) (Ψx false)))%I _.
@@ -826,8 +852,15 @@ Section judgC.
       judgments' semantics is *constant* in [δ].  Reading one at another
       candidate is then [dinto δ δ'] followed by [Deriv_factor'] at [δ'],
       and transforming one is [Deriv_map]. *)
+  (** A stored indexed borrow is the *relaxed* borrower: the token part is
+    a judgment whose semantics mentions no interpretation, and the
+    alteration is read at [δ].  This is [bor δ] over [bor_tok] in
+    [nola/iris/borrow_deriv.v], and [cif_pbor]'s [Ecsem] over [pbor_tok] in
+    [nola/iris/pborrow_deriv.v], which is what [rust_halt]'s [ty_mutref]
+    stores. *)
   #[export] Program Instance idxborCT_ecsem : Ecsem idxborCT CON JUDG Σ :=
-    ECSEM (λ _ δ s _ Ψx _, □ δ (idxbor_j s.1 s.2 (Ψx ())))%I _.
+    ECSEM (λ _ δ s _ Ψx _, ∃ Px', □ δ (iff_j Px' (Ψx ())) ∗
+      □ δ (idxbor_j s.1 s.2 Px'))%I _.
   Next Obligation. solve_proper. Qed.
   #[export] Program Instance inclCT_ecsem : Ecsem inclCT CON JUDG Σ :=
     ECSEM (λ _ δ s _ _ _, □ δ (incl_j s.1 s.2))%I _.
@@ -855,6 +888,7 @@ Class typingJ CON JUDG Σ : Type := TYPING_J {
   typingJ_guard :: guardJ (cifO CON Σ) JUDG;
   typingJ_idxbor :: idxborJ (cifO CON Σ) JUDG;
   typingJ_incl :: inclJ JUDG;
+  typingJ_iff :: iffJ (cifO CON Σ) JUDG;
 }.
 Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ)} : Prop :=
@@ -872,6 +906,7 @@ Class typingJS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   typingJS_guard :: guardJS CON JUDG Σ;
   typingJS_idxbor :: idxborJS CON JUDG Σ;
   typingJS_incl :: inclJS CON JUDG Σ;
+  typingJS_iff :: iffJS CON JUDG Σ;
 }.
 
 (** ** The ambient interpretation and the [TypeFml] instance
@@ -1057,6 +1092,9 @@ Section altSem.
   Lemma alt_any_cif_ne {S} : alt_any_cif S → NonExpansive S.
   Proof. move=> [δ Heq]. rewrite /cand_fun Heq. exact _. Qed.
 
+  Local Instance stBor_alt : StBor (cifOF CON) Σ := stBor_cif (JUDG:=JUDG).
+  Local Instance stBorSem_alt : StBorSem := stBorSem_at der der_Deriv.
+
   (** [alt_into] is defined by its three uses: in the model a candidate is a
     bare record and nothing recovers the [δ] behind it, but each use is a
     function of the two interpretations, and [dinto δ δ'] discharges all
@@ -1064,15 +1102,14 @@ Section altSem.
   Definition alt_into_cif S S' : Prop :=
     (∀ Px Qx, S (cif_guard Px Qx) ⊢ S' Px &&{alt_WGuard S'}&&> S' Qx) ∧
     (∀ κ idx (Px : cif CON Σ),
-      S (cif_idxbor κ idx Px) ⊢ S' (cif_idxbor κ idx Px)) ∧
+      S (cif_idxbor κ idx Px) ⊢
+        ∃ Px', □ (S' Px' ↔ S' Px) ∗ idx_bor κ idx Px') ∧
     (∀ κ κ', S (cif_incl κ κ') ⊢ S' (cif_incl κ κ')).
 
   (** The ambient interpretation is a candidate *)
   Lemma alt_sem_cif_here : alt_sem_cif alt_amb.
   Proof. exists der. split; [exact _|done]. Qed.
 
-  Local Instance stBor_alt : StBor (cifOF CON) Σ := stBor_cif (JUDG:=JUDG).
-  Local Instance stBorSem_alt : StBorSem := stBorSem_at der der_Deriv.
 
   (** *** The three judgments, unfolded *)
 
@@ -1089,12 +1126,6 @@ Section altSem.
     iIntros "#g". iDestruct (der_sound with "g") as "g'". by rewrite in_js.
   Qed.
 
-  Lemma alt_into_cif_here : alt_into_cif alt_amb alt_amb.
-  Proof.
-    split; [|split]; [|done..]. move=> Px Qx.
-    rewrite /cand_fun /= /cif_guard sem_cif_in /=. exact guardJ_der.
-  Qed.
-
   (** The two constant judgments, unfolded *)
   Lemma idxborJ_sem {δ κ idx} {Px : cif CON Σ} :
     ⟦ idxbor_j κ idx Px ⟧(δ) ⊣⊢ idx_bor κ idx Px.
@@ -1103,8 +1134,14 @@ Section altSem.
   Proof. by rewrite in_js. Qed.
 
   Lemma cif_idxbor_sem {δ κ idx} {Px : cif CON Σ} :
-    ⟦ cif_idxbor κ idx Px ⟧ᶜ(δ) ⊣⊢ □ δ (idxbor_j κ idx Px).
+    ⟦ cif_idxbor κ idx Px ⟧ᶜ(δ) ⊣⊢
+      ∃ Px', □ δ (iff_j Px' Px) ∗ □ δ (idxbor_j κ idx Px').
   Proof. by rewrite /cif_idxbor sem_cif_in. Qed.
+
+  (** The alteration judgment, unfolded *)
+  Lemma iffJ_sem {δ} {Px Qx : cif CON Σ} :
+    ⟦ iff_j Px Qx ⟧(δ) ⊣⊢ □ (⟦ Px ⟧ᶜ(δ) ↔ ⟦ Qx ⟧ᶜ(δ)).
+  Proof. by rewrite in_js. Qed.
   Lemma cif_incl_sem {δ κ κ'} :
     ⟦ cif_incl κ κ' : cif CON Σ ⟧ᶜ(δ) ⊣⊢ □ δ (incl_j κ κ').
   Proof. by rewrite /cif_incl sem_cif_in. Qed.
@@ -1131,6 +1168,18 @@ Section altSem.
     - iIntros "#g". iDestruct (der_sound with "g") as "g'". by rewrite in_js.
     - iIntros "#b !>". by iApply inclJ_of.
   Qed.
+
+  Lemma alt_into_cif_here : alt_into_cif alt_amb alt_amb.
+  Proof.
+    split; [|split]; [| |done].
+    - move=> Px Qx. rewrite /cand_fun /= /cif_guard sem_cif_in /=.
+      exact guardJ_der.
+    - move=> κ idx Px. rewrite /cand_fun /= cif_idxbor_sem.
+      iIntros "(%Px' & #i & #b)". iExists Px'. iSplitR.
+      + iDestruct (der_sound with "i") as "i'". by rewrite in_js.
+      + rewrite -idxborJ_der. iApply "b".
+  Qed.
+
 
   (** Replace a candidate by the derivability predicate behind it *)
   Local Ltac alt_at H :=
@@ -1198,6 +1247,28 @@ Section altSem.
     The obligation it leaves is the guard at every candidate [δ'] the
     candidate maps into, and the [dinto] it hands out is exactly
     [alt_into]. *)
+  (** [dinto] between two good interpretations is [alt_into] between the
+    candidates they are.  The guard clause is [in_js]; the borrow clause
+    moves the alteration and the token judgment across and reads the first;
+    the inclusion clause re-stores, its semantics being interpretation-free. *)
+  Lemma alt_into_cif_of_dinto {S S' : Cand (cifOF CON) Σ} {δ δ'}
+    (Hδ : Deriv (λ _, True) δ) (Hδ' : Deriv (λ _, True) δ')
+    (HS : cand_asem S = AlerusSem_at δ) (HS' : cand_asem S' = AlerusSem_at δ')
+    (Hinto : dinto δ δ') : alt_into_cif S S'.
+  Proof.
+    have ? : Deriv (λ _, True) δ' := Hδ'. split; [|split].
+    - move=> Px' Qx'. rewrite /cand_fun /alt_WGuard /= HS HS' /=
+        /cif_guard sem_cif_in /=.
+      iIntros "#g". rewrite (Hinto (guard_j Px' Qx')) in_js //.
+    - move=> κ idx Px'. rewrite /cand_fun /= HS HS' /= cif_idxbor_sem.
+      iIntros "(%Px'' & #i & #b)". iExists Px''.
+      rewrite (Hinto (iff_j Px'' Px')) (Hinto (idxbor_j κ idx Px''))
+        !in_js /=. by iFrame "i b".
+    - move=> κ κ'. rewrite /cand_fun /= HS HS' /= !cif_incl_sem.
+      iIntros "#g !>". rewrite (Hinto (incl_j κ κ')) in_js.
+      by iApply inclJ_of.
+  Qed.
+
   Lemma guard_fml_sem_2_cif {S} (H : alt_sem_cif S) Px Qx :
     (∀ S', ⌜alt_sem_cif S'⌝ → ⌜alt_into_cif S S'⌝ →
       S' Px &&{alt_WGuard S'}&&> S' Qx) ⊢ S (cif_guard Px Qx).
@@ -1208,15 +1279,8 @@ Section altSem.
     rewrite in_js /=.
     iApply ("big" $! (MkCand (AlerusSem_at δ')) with "[%] [%]").
     { by exists δ'. }
-    { have ? : Deriv (λ _, True) δ' := Hδ'. split; [|split].
-      - move=> Px' Qx'. rewrite /cand_fun /= Heq /= /cif_guard sem_cif_in /=.
-        iIntros "#g". rewrite (Hinto (guard_j Px' Qx')) in_js //.
-      - move=> κ idx Px'. rewrite /cand_fun /= Heq /= !cif_idxbor_sem.
-        iIntros "#g !>". rewrite (Hinto (idxbor_j κ idx Px')) in_js.
-        by iApply idxborJ_of.
-      - move=> κ κ'. rewrite /cand_fun /= Heq /= !cif_incl_sem.
-        iIntros "#g !>". rewrite (Hinto (incl_j κ κ')) in_js.
-        by iApply inclJ_of. }
+    { eapply alt_into_cif_of_dinto;
+        [exact Hδ|exact Hδ'|exact Heq|done|exact Hinto]. }
   Qed.
 
   (** *** Persistence *)
@@ -1241,34 +1305,86 @@ Section altSem.
   Qed.
 
   (** *** The indexed borrow *)
-  Lemma idxbor_fml_sem_1_cif {κ idx} {Px : cif CON Σ} :
-    bor_sem (cif_idxbor κ idx Px) ⊢ idx_bor κ idx Px.
-  Proof. rewrite /bor_sem /= cif_idxbor_sem idxborJ_der //. Qed.
-  Lemma idxbor_fml_of_bor_cif {κ} {Px : cif CON Σ} :
-    full_bor κ Px ⊣⊢ ∃ idx, bor_sem (cif_idxbor κ idx Px) ∗ idx_bor_tok idx.
+  (** The alteration a stored borrow carries: the judgment itself, at the
+    ambient interpretation, so that it can be read *and* re-stored. *)
+  Definition dalter_cif (Px Qx : cif CON Σ) : iProp Σ :=
+    □ der (iff_j Px Qx).
+  #[export] Instance dalter_cif_persistent {Px Qx} :
+    Persistent (dalter_cif Px Qx) := _.
+  Lemma dalter_cif_refl {Px} : ⊢ dalter_cif Px Px.
   Proof.
-    rewrite (llftl_bor_idx (FML:=cifOF CON)). apply bi.exist_proper=> idx.
-    by rewrite /bor_sem /= cif_idxbor_sem idxborJ_der.
+    iIntros "!>". iApply Deriv_factor'. iIntros (δ' ? _ _).
+    rewrite iffJ_sem. iIntros "!>". iSplit; by iIntros "$".
   Qed.
-  Lemma idxbor_fml_into_cif {S S'} (H : alt_sem_cif S) (H' : alt_sem_cif S')
-    (Hi : alt_into_cif S S') κ idx (Px : cif CON Σ) :
-    S (cif_idxbor κ idx Px) ⊢ S' (cif_idxbor κ idx Px).
-  Proof. apply Hi. Qed.
+  Lemma dalter_cif_trans {Px Qx Rx} :
+    dalter_cif Px Qx -∗ dalter_cif Qx Rx -∗ dalter_cif Px Rx.
+  Proof.
+    iIntros "#i #i' !>". iApply (Deriv_map2 with "[] i i'").
+    iIntros (δ' ? _ _). rewrite !iffJ_sem. iIntros "#a #b !>".
+    iSplit; iIntros "P"; [iApply "b"; by iApply "a"|iApply "a"; by iApply "b"].
+  Qed.
+  Lemma dalter_cif_sem {Px Qx} :
+    dalter_cif Px Qx ⊢ □ (bor_sem Px ↔ bor_sem Qx).
+  Proof.
+    iIntros "#i". iDestruct (der_sound with "i") as "i'". by rewrite iffJ_sem.
+  Qed.
+
+  Lemma dalter_of_into_cif {Px Qx : cif CON Σ} :
+    □ (∀ S, ⌜alt_sem_cif S⌝ → ⌜alt_into_cif alt_amb S⌝ → S Px ∗-∗ S Qx) ⊢
+      dalter_cif Px Qx.
+  Proof.
+    iIntros "#eq !>". iApply Deriv_factor'. iIntros (δ' Hδ' _ Hinto).
+    rewrite iffJ_sem.
+    iDestruct ("eq" $! (MkCand (AlerusSem_at δ')) with "[%] [%]") as "[F B]".
+    { by exists δ'. }
+    { eapply alt_into_cif_of_dinto;
+        [exact der_Deriv|exact Hδ'|done|done|exact Hinto]. }
+    iIntros "!>". iSplit; iIntros "P"; by [iApply "F"|iApply "B"].
+  Qed.
+
+  (** *** The indexed borrow *)
+  Lemma idxbor_fml_sem_1_cif {κ idx} {Px : cif CON Σ} :
+    bor_sem (cif_idxbor κ idx Px) ⊢
+      ∃ Px', dalter_cif Px' Px ∗ idx_bor κ idx Px'.
+  Proof.
+    rewrite /bor_sem /= cif_idxbor_sem. iIntros "(%Px' & #i & #b)".
+    iExists Px'. iFrame "i". rewrite -idxborJ_der. iApply "b".
+  Qed.
+  Lemma idxbor_fml_alter_cif {κ idx} {Px Qx : cif CON Σ} :
+    dalter_cif Px Qx -∗
+    bor_sem (cif_idxbor κ idx Px) -∗ bor_sem (cif_idxbor κ idx Qx).
+  Proof.
+    rewrite /bor_sem /= !cif_idxbor_sem.
+    iIntros "#i (%Px' & #i' & #b)". iExists Px'. iFrame "b".
+    iApply (dalter_cif_trans with "i' i").
+  Qed.
   Lemma idxbor_fml_iff_at_cif {S} (H : alt_sem_cif S) κ idx
     (Px Qx : cif CON Σ) :
-    □ (∀ S' (_ : alt_any_cif S'), S' Px ∗-∗ S' Qx) -∗
+    □ (∀ S' (_ : alt_sem_cif S') (_ : alt_into_cif S S'), S' Px ∗-∗ S' Qx) -∗
     S (cif_idxbor κ idx Px) -∗ S (cif_idxbor κ idx Qx).
   Proof.
     move: (H)=> [δ[Hδ Heq]]. have ? : Deriv (λ _, True) δ := Hδ.
     rewrite /cand_fun /= Heq /= !cif_idxbor_sem.
-    iIntros "#eq #g !>". iApply (Deriv_map with "[] g").
-    iIntros (δ' ? _ _). rewrite !idxborJ_sem.
-    iApply llftl_idx_bor_iff. iIntros "!>" (δ'').
-    iDestruct ("eq" $! (MkCand (AlerusSem_at δ'')) with "[%]") as "[F B]".
-    { by exists δ''. }
-    iSplit; iIntros "P"; [by iApply "F"|by iApply "B"].
+    iIntros "#eq (%Px' & #i & #b)". iExists Px'. iFrame "b". iModIntro.
+    iApply (Deriv_map with "[] i"). iIntros (δ' Hδ' _ Hinto).
+    rewrite !iffJ_sem. iIntros "#a !>".
+    iDestruct ("eq" $! (MkCand (AlerusSem_at δ')) with "[%] [%]")
+      as "[F B]"; [by exists δ'| |].
+    { eapply alt_into_cif_of_dinto;
+        [exact Hδ|exact Hδ'|exact Heq|done|exact Hinto]. }
+    iSplit; iIntros "P".
+    - iApply "F". by iApply "a".
+    - iApply "a". by iApply "B".
   Qed.
 
+  Lemma idxbor_fml_of_bor_cif {κ} {Px : cif CON Σ} :
+    full_bor κ Px ⊢ ∃ idx, bor_sem (cif_idxbor κ idx Px) ∗ idx_bor_tok idx.
+  Proof.
+    rewrite (llftl_bor_idx (FML:=cifOF CON)).
+    iIntros "(%idx & #b & tok)". iExists idx. iFrame "tok".
+    rewrite /bor_sem /= cif_idxbor_sem. iExists Px.
+    iSplitR; [iApply dalter_cif_refl|]. by rewrite idxborJ_der.
+  Qed.
   (** *** The stored inclusion *)
   Lemma incl_fml_sem_1_cif {κ κ'} :
     bor_sem (cif_incl κ κ') ⊢ st_incl κ κ'.
@@ -1300,27 +1416,33 @@ Section altSem.
     candidate the ambient one maps into.  Reading it at the candidate itself
     would need soundness of that candidate, which only [der] has; going
     through [dinto] does not. *)
-  Lemma idxbor_fml_guard_into_cif {S'} (H' : alt_sem_cif S') κ idx
+  Lemma idxbor_fml_guard_into_cif {S'} (H' : alt_sem_cif S')
+    (Hi : alt_into_cif alt_amb S') κ idx
     (Px : cif CON Σ) (G : iProp Σ) :
     bor_sem (cif_idxbor κ idx Px) -∗
     (G &&{alt_WGuard S'}&&> @[κ]) -∗
     (G &&{alt_WGuard S'}&&> idx_bor_tok idx) -∗
     G &&{alt_WGuard S'}&&> (@[κ] ∗ S' Px).
   Proof.
-    move: (H')=> [δ'[Hδ' Heq']].
-    rewrite /bor_sem /= cif_idxbor_sem idxborJ_der.
-    rewrite /alt_WGuard /cand_fun /= Heq' /=.
-    exact (idxbor_guard_at δ' Hδ').
+    move: (H')=> [δ'[Hδ' Heq']]. iIntros "B #Gk #Gt".
+    iDestruct (proj1 (proj2 Hi) κ idx Px with "B") as "(%Px' & #iff & #b)".
+    iAssert (G &&{alt_WGuard S'}&&> (@[κ] ∗ S' Px'))%I as "#G'".
+    { rewrite /alt_WGuard /cand_fun /= Heq' /=.
+      iApply (idxbor_guard_at δ' Hδ' with "b Gk Gt"). }
+    iApply (guard_trans with "G'"). iApply guard_intro.
+    iIntros "!> [$ P]". iDestruct ("iff" with "P") as "$".
+    iIntros "[$ Q]". by iApply "iff".
   Qed.
+
   Lemma idxbor_fml_shorten_at_cif {S} (H : alt_sem_cif S) κ κ' idx
     (Px : cif CON Σ) :
     st_incl κ' κ -∗ S (cif_idxbor κ idx Px) -∗ S (cif_idxbor κ' idx Px).
   Proof.
     move: (H)=> [δ[Hδ Heq]]. have ? : Deriv (λ _, True) δ := Hδ.
     rewrite /cand_fun /= Heq /= !cif_idxbor_sem.
-    iIntros "#i #g !>". iApply (Deriv_map with "[] g").
-    iIntros (δ' ? _ _). rewrite !idxborJ_sem.
-    iApply (llftl_idx_shorten (FML:=cifOF CON) κ κ' idx Px with "i").
+    iIntros "#i (%Px' & #iff & #g)". iExists Px'. iFrame "iff". iModIntro.
+    iApply (Deriv_map with "[] g"). iIntros (δ' ? _ _). rewrite !idxborJ_sem.
+    iApply (llftl_idx_shorten (FML:=cifOF CON) κ κ' idx Px' with "i").
   Qed.
   Lemma Ltok_guard_frac_at_cif {S} (H : alt_sem_cif S) γ L q :
     frac_key_tok γ L ⊢ frac_tok γ q &&{alt_WGuard S}&&> llctx_interp L.
@@ -1429,11 +1551,17 @@ Section altSem.
     guard_fml_sem_2 := @guard_fml_sem_2_cif;
     guard_fml_pers_at_any := @guard_fml_pers_cif;
     idxbor_fml_pers_at_any := @idxbor_fml_pers_cif;
+    dalter := dalter_cif;
+    dalter_persistent := (λ _ _, _);
+    dalter_refl := @dalter_cif_refl;
+    dalter_trans := @dalter_cif_trans;
+    dalter_sem := @dalter_cif_sem;
+    dalter_of_into := @dalter_of_into_cif;
     idxbor_fml_sem_1 := @idxbor_fml_sem_1_cif;
+    idxbor_fml_alter := @idxbor_fml_alter_cif;
     idxbor_fml_of_bor := @idxbor_fml_of_bor_cif;
     idxbor_fml_iff_at := @idxbor_fml_iff_at_cif;
     bor_state_sem_at_any := @bor_state_sem_cif;
-    idxbor_fml_into := @idxbor_fml_into_cif;
     idxbor_fml_guard_into := @idxbor_fml_guard_into_cif;
     idxbor_fml_shorten_at := @idxbor_fml_shorten_at_cif;
     incl_fml_sem_1 := @incl_fml_sem_1_cif;

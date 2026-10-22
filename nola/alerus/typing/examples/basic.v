@@ -8,7 +8,8 @@
   rules themselves. *)
 
 From nola.alerus.lang Require Import notation proofmode.
-From nola.alerus.typing Require Export int programs.
+From nola.alerus.typing Require Export int programs own uninit.
+From nola.alerus.lang.lib Require Import new_delete.
 From nola.bi Require Import modw.
 Import ModwNotation WpwNotation.
 
@@ -75,6 +76,36 @@ Section basic.
           all: solve_typing. }
         all: solve_closed. }
       all: solve_closed. }
+    { by move=> *. }
+  Qed.
+  (** [let b = new 1 in delete 1 b; ()]: a box allocated, then freed.
+
+    Note the explicit [1] and ["b"].  [type_new]'s statement binds
+    [let n' := Z.to_nat n in] and uses [n'] in the continuation's type
+    context, so leaving [n] to unification makes the [iApply] diverge -
+    [Timeout 60] on it fails - while passing it is instant.  Upstream's
+    [typing/examples/] passes the size to [type_new_subtype] for the same
+    reason.
+
+    Note also that the [Closed] side conditions of [type_new] and
+    [type_delete] are discharged by type class resolution before the
+    brackets are reached, so a [solve_closed] branch would be applied to the
+    *next* goal instead; that is what the stray "No matching clauses for
+    match" was. *)
+  Definition box_roundtrip : expr :=
+    (let: "b" := new_delete.new [ #1 ] in
+     new_delete.delete [ #1; "b" ];; #☠)%E.
+
+  Lemma box_roundtrip_typed {𝔅} E L I (C: cctx 𝔅) :
+    ⊢ typed_body E L I C +[] box_roundtrip (λ _ _ _ _, True%type).
+  Proof.
+    rewrite /box_roundtrip.
+    iApply (typed_body_impl with "[]"); last first.
+    { iApply (type_new 1 "b"); [lia|].
+      iIntros (v). simpl_subst.
+      iApply (type_delete (↯ (Z.to_nat 1)) (Z.to_nat 1) 1 v);
+        [solve_typing|done|done|].
+      iApply (type_done _ _ _ _ _ (#☠ : val) (λ _ _ _ _, True%type)). }
     { by move=> *. }
   Qed.
 End basic.

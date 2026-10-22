@@ -938,35 +938,58 @@ Class AltSem (FML : oFunctor) Σ
     here; see the note in README.md. *)
   idxbor_fml_pers_at_any {sem} : alt_any sem → ∀ κ idx Px,
     Persistent (sem (idxbor_fml κ idx Px));
-  (** Eliminating a stored indexed borrow at the ambient interpretation.
-    [der_sound] in the model. *)
+  (** The alteration a stored borrow carries.
+
+    [nola/iris/borrow_deriv.v]'s relaxed borrower is
+    [bor δ α Px := ∃ Qx, □ δ (jbupd Px Qx) ∗ □ δ (jbupd Qx Px) ∗ bor_tok α Qx]
+    - the thesis's § 6.4 - and [nola/examples/rust_halt/]'s [ty_mutref]
+    stores exactly that, which is what gives it [subty_mutref] with a premise
+    restricted to the *good* candidates.  [dalter] is the pair of those two
+    judgments at the ambient interpretation: readable there, and - crucially
+    - re-storable, which the bare equivalence [□ (bor_sem Px ↔ bor_sem Qx)]
+    would not be. *)
+  dalter : FML $oi Σ → FML $oi Σ → iProp Σ;
+  #[global] dalter_persistent :: ∀ Px Qx, Persistent (dalter Px Qx);
+  dalter_refl {Px} : ⊢ dalter Px Px;
+  dalter_trans {Px Qx Rx} : dalter Px Qx -∗ dalter Qx Rx -∗ dalter Px Rx;
+  (** Reading one: [der_sound] in the model *)
+  dalter_sem {Px Qx} : dalter Px Qx ⊢ □ (bor_sem Px ↔ bor_sem Qx);
+  (** Building one: [Deriv_factor'] at the ambient interpretation, so the
+    equivalence is wanted only at the candidates it maps into. *)
+  dalter_of_into {Px Qx} :
+    □ (∀ sem, ⌜alt_sem sem⌝ → ⌜alt_into alt_amb sem⌝ → sem Px ∗-∗ sem Qx) ⊢
+      dalter Px Qx;
+  (** Eliminating a stored indexed borrow at the ambient interpretation,
+    together with the alteration it carries.  [der_sound] in the model. *)
   idxbor_fml_sem_1 {κ idx Px} :
-    bor_sem (idxbor_fml κ idx Px) ⊢ idx_bor κ idx Px;
+    bor_sem (idxbor_fml κ idx Px) ⊢ ∃ Px', dalter Px' Px ∗ idx_bor κ idx Px';
+  (** Re-storing one under an alteration *)
+  idxbor_fml_alter {κ idx Px Qx} :
+    dalter Px Qx -∗
+    bor_sem (idxbor_fml κ idx Px) -∗ bor_sem (idxbor_fml κ idx Qx);
   (** Introducing one.  Splitting a full borrow into an index and a token
     gives an indexed borrow whose [iff] is reflexivity and whose token does
     not mention the interpretation, so it holds at every candidate - this is
     where an indexed borrow can be stored in the first place. *)
   idxbor_fml_of_bor {κ Px} :
-    full_bor κ Px ⊣⊢ ∃ idx, bor_sem (idxbor_fml κ idx Px) ∗ idx_bor_tok idx;
+    full_bor κ Px ⊢ ∃ idx, bor_sem (idxbor_fml κ idx Px) ∗ idx_bor_tok idx;
   (** [idx_bor_iff] at a candidate: an indexed borrow only cares about the
     semantics of its contents. *)
+  (** [bor_wand] in the model: the alteration is read at the candidates the
+    storing one maps into, not at every interpretation whatsoever. *)
   idxbor_fml_iff_at {sem} : alt_sem sem → ∀ κ idx Px Qx,
-    □ (∀ sem' (_ : alt_any sem'), sem' Px ∗-∗ sem' Qx) -∗
+    □ (∀ sem' (_ : alt_sem sem') (_ : alt_into sem sem'),
+         sem' Px ∗-∗ sem' Qx) -∗
     sem (idxbor_fml κ idx Px) -∗ sem (idxbor_fml κ idx Qx);
   (** Borrow-state ownership means the same at every candidate.  This is
     what [idx_bor_tok] is made of. *)
   bor_state_sem_at_any {sem} : alt_any sem → ∀ sn bs,
     sem (bor_state_fml sn bs) ⊣⊢ bor_sem (bor_state_fml sn bs);
-  (** Reading a stored indexed borrow at a candidate the storing
-    interpretation maps into.  [Deriv_map] in the model, exactly as
-    [guard_fml_sem_into]. *)
-  idxbor_fml_into {sem sem'} :
-    alt_sem sem → alt_sem sem' → alt_into sem sem' → ∀ κ idx Px,
-    sem (idxbor_fml κ idx Px) ⊢ sem' (idxbor_fml κ idx Px);
-  (** [llftl_idx_bor_guard'] for a stored indexed borrow, at a candidate:
+  (** [dIdxBor_guard] for a stored indexed borrow, at a candidate:
     the lifetime logic's proof is parametric in [BorSem], so it replays at
     the candidate's own world satisfaction. *)
-  idxbor_fml_guard_into {sem} : alt_sem sem → ∀ κ idx Px (G : iProp Σ),
+  idxbor_fml_guard_into {sem} :
+    alt_sem sem → alt_into alt_amb sem → ∀ κ idx Px (G : iProp Σ),
     bor_sem (idxbor_fml κ idx Px) -∗
     (G &&{alt_WGuard sem}&&> @[κ]) -∗
     (G &&{alt_WGuard sem}&&> idx_bor_tok idx) -∗
@@ -1084,16 +1107,6 @@ Section alt_sem.
   #[export] Instance alt_sem_ne' {sem} `{Hs : !alt_sem sem} :
     NonExpansive sem := alt_sem_ne Hs.
 
-  (** Equal formulas mean the same at *every* interpretation, candidate or
-    not.  This is the one way to relate two stored judgments off the
-    candidates: [sem (idxbor_fml κ idx Px)] is [□ δ (idxbor_j κ idx Px)], and
-    at a non-candidate [δ] is an arbitrary predicate, so two of them are
-    relatable exactly when the judgments - hence the formulas - are equal.
-    See the note on [uniq_subtype] in [typing/uniq_bor.v]. *)
-  Lemma sem_proper_any {sem} (H : alt_any sem) {Px Qx} :
-    Px ≡ Qx → sem Px ⊣⊢ sem Qx.
-  Proof. move=> ?. have ? := alt_any_ne H. by f_equiv. Qed.
-
   (** ** A guard held *as a formula*
 
     Everything the development does with a stored guard goes through these.
@@ -1131,10 +1144,146 @@ Section alt_sem.
     Persistent (bor_sem (idxbor_fml κ idx Px)) :=
     idxbor_fml_pers_at alt_here _ _ _.
 
+  (** Reading the alteration a stored borrow carries *)
+  Lemma dalter_sem_1 {Px Qx : FML $oi Σ} :
+    dalter Px Qx -∗ bor_sem Px -∗ bor_sem Qx.
+  Proof.
+    iIntros "#a P". iDestruct (dalter_sem with "a") as "#[F _]".
+    by iApply "F".
+  Qed.
+  Lemma dalter_sem_2 {Px Qx : FML $oi Σ} :
+    dalter Px Qx -∗ bor_sem Qx -∗ bor_sem Px.
+  Proof.
+    iIntros "#a Q". iDestruct (dalter_sem with "a") as "#[_ Bk]".
+    by iApply "Bk".
+  Qed.
+
+  (** ** The relaxed borrow
+
+    [nola/iris/borrow_deriv.v] states the borrow API at
+    [bor δ α Px := ∃ Qx, □ δ (jbupd Px Qx) ∗ □ δ (jbupd Qx Px) ∗ bor_tok α Qx]
+    rather than at the token, which is what lets a stored borrow be altered
+    with a premise restricted to the good candidates.  This is that layer: a
+    borrow of [Px] up to the alteration a stored one carries.
+
+    Unlike upstream, the API does not have to be restated wholesale.
+    [dFullBor_exact] turns a relaxed full borrow back into an exact one
+    under an update - open it atomically, carry the contents across the
+    alteration, close - so every existing [full_bor] lemma applies
+    unchanged.  Only the lemmas that consume an [idx_bor] directly need a
+    transported form. *)
+  Definition dFullBor (κ : lft) (Px : FML $oi Σ) : iProp Σ :=
+    ∃ Px', dalter Px' Px ∗ full_bor κ Px'.
+  Definition dIdxBor (κ : lft) (idx : Idx) (Px : FML $oi Σ) : iProp Σ :=
+    ∃ Px', dalter Px' Px ∗ idx_bor κ idx Px'.
+
+  #[export] Instance dIdxBor_persistent {κ idx Px} :
+    Persistent (dIdxBor κ idx Px) := _.
+
+  Lemma dFullBor_of {κ Px} : full_bor κ Px ⊢ dFullBor κ Px.
+  Proof. iIntros "b". iExists Px. iFrame "b". iApply dalter_refl. Qed.
+  Lemma dIdxBor_of {κ idx Px} : idx_bor κ idx Px ⊢ dIdxBor κ idx Px.
+  Proof. iIntros "#b". iExists Px. iFrame "b". iApply dalter_refl. Qed.
+  Lemma dFullBor_alter {κ Px Qx} :
+    dalter Px Qx -∗ dFullBor κ Px -∗ dFullBor κ Qx.
+  Proof.
+    iIntros "#a (%Rx & #a' & b)". iExists Rx. iFrame "b".
+    iApply (dalter_trans with "a' a").
+  Qed.
+  Lemma dIdxBor_alter {κ idx Px Qx} :
+    dalter Px Qx -∗ dIdxBor κ idx Px -∗ dIdxBor κ idx Qx.
+  Proof.
+    iIntros "#a (%Rx & #a' & #b)". iExists Rx. iFrame "b".
+    iApply (dalter_trans with "a' a").
+  Qed.
+
+  (** A stored indexed borrow is a relaxed one *)
+  Lemma idxbor_fml_dIdxBor {κ idx Px} :
+    bor_sem (idxbor_fml κ idx Px) ⊢ dIdxBor κ idx Px.
+  Proof. exact idxbor_fml_sem_1. Qed.
+
+  Lemma dIdxBor_to_full {κ idx Px} :
+    dIdxBor κ idx Px -∗ idx_bor_tok idx -∗ dFullBor κ Px.
+  Proof.
+    iIntros "(%Px' & #a & #b) tok". iExists Px'. iFrame "a".
+    iApply (llftl_bor_idx_to_full with "b tok").
+  Qed.
+  Lemma dFullBor_idx {κ Px} :
+    dFullBor κ Px ⊢ ∃ idx, dIdxBor κ idx Px ∗ idx_bor_tok idx.
+  Proof.
+    iIntros "(%Px' & #a & b)". rewrite llftl_bor_idx.
+    iDestruct "b" as (idx) "[#b tok]". iExists idx. iFrame "tok".
+    iExists Px'. by iFrame "a b".
+  Qed.
+  Lemma dIdxBor_shorten {κ κ' idx Px} :
+    st_incl κ' κ -∗ dIdxBor κ idx Px -∗ dIdxBor κ' idx Px.
+  Proof.
+    iIntros "#i (%Px' & #a & #b)". iExists Px'. iFrame "a".
+    iApply (llftl_idx_shorten with "i b").
+  Qed.
+
+  (** Back to an exact borrow.  This is what keeps the rest of the borrow
+    API usable: open the borrow atomically, carry its contents across the
+    alteration, and close it at the formula we wanted. *)
+  Lemma dFullBor_exact {E κ Px} :
+    llft_ctx -∗ dFullBor κ Px -∗ |=[llft_wsat]{E}=> full_bor κ Px.
+  Proof.
+    iIntros "#ctx (%Px' & #a & b)". rewrite /modw. iIntros "W".
+    iMod (llftl_bor_acc_atomic E Px' κ with "ctx b W")
+      as "[[P back]|[W #dead]]".
+    - iDestruct (dalter_sem_1 with "a P") as "P".
+      iMod ("back" $! Px with "[] P") as "[$ $]"; [|done].
+      iIntros "[P _] !>". by iApply (dalter_sem_2 with "a P").
+    - iMod (llftl_bor_fake E κ Px with "ctx dead W") as "[$ $]". done.
+  Qed.
+
+  (** [llftl_idx_bor_unnest], transported *)
+  Lemma dIdxBor_unnest {E κ κ' idx Px} :
+    llft_ctx -∗ dIdxBor κ idx Px -∗
+    full_bor κ' (bor_state_fml idx.1
+      (ra.Borrow (set_map ra.LtAtomSwell idx.2) {[ra.default_dead]})) -∗
+    |=[llft_wsat]{E}=> dFullBor (κ ⊓ κ') Px.
+  Proof.
+    iIntros "#ctx (%Px' & #a & #b) f". rewrite /modw. iIntros "W".
+    iMod (llftl_idx_bor_unnest E κ κ' idx Px' with "ctx b f W") as "[$ b']".
+    iModIntro. iExists Px'. by iFrame "a b'".
+  Qed.
+
+  (** [llftl_idx_bor_guard'] and [llftl_bor_idx_acc_guarded], transported *)
+  Lemma dIdxBor_guard {κ idx Px G} :
+    llft_ctx -∗ dIdxBor κ idx Px -∗ (G &&{alerus_WGuard}&&> @[κ]) -∗
+    (G &&{alerus_WGuard}&&> idx_bor_tok idx) -∗
+    G &&{alerus_WGuard}&&> (@[κ] ∗ bor_sem Px).
+  Proof.
+    iIntros "#ctx (%Px' & #a & #b) #Gk #Gt".
+    iDestruct (llftl_idx_bor_guard' with "ctx b Gk Gt") as "#G".
+    iDestruct (dalter_sem with "a") as "#[F Bk]".
+    iApply (guard_trans with "G"). iApply guard_intro.
+    iIntros "!> [$ P]". iSplitL "P"; [by iApply "F"|].
+    iIntros "[$ Q]". by iApply "Bk".
+  Qed.
+  Lemma dIdxBor_acc_guarded {E Gx κ idx Px} :
+    llft_ctx -∗ dIdxBor κ idx Px -∗ idx_bor_tok idx -∗
+    (bor_sem Gx &&{alerus_WGuard}&&> @[κ]) -∗
+    bor_sem Gx -∗ |=[llft_wsat]{E}=>
+      bor_sem Px ∗ (bor_sem Px -∗
+        |=[llft_wsat]{↑NllftUsr ∪ ↑NllftUsr2}=> idx_bor_tok idx ∗ bor_sem Gx).
+  Proof.
+    iIntros "#ctx (%Px' & #a & #b) tok #Gk G".
+    iDestruct (llftl_bor_idx_acc_guarded with "ctx b tok Gk G") as "A".
+    rewrite /modw. iIntros "W". iMod ("A" with "W") as "[W [P back]]".
+    iDestruct (dalter_sem_1 with "a P") as "$". iFrame "W". iIntros "!> P".
+    iApply "back". by iApply (dalter_sem_2 with "a P").
+  Qed.
+
   (** A stored indexed borrow plus its token is a full borrow *)
   Lemma idxbor_fml_to_full {κ idx Px} :
-    bor_sem (idxbor_fml κ idx Px) -∗ idx_bor_tok idx -∗ full_bor κ Px.
-  Proof. rewrite idxbor_fml_sem_1. apply llftl_bor_idx_to_full. Qed.
+    bor_sem (idxbor_fml κ idx Px) -∗ idx_bor_tok idx -∗
+      ∃ Px', dalter Px' Px ∗ full_bor κ Px'.
+  Proof.
+    rewrite idxbor_fml_sem_1. iIntros "(%Px' & #a & b) tok". iExists Px'.
+    iFrame "a". iApply (llftl_bor_idx_to_full with "b tok").
+  Qed.
 
   (** Introduction *)
   Lemma dguard_of_all_at {sem} (H : alt_sem sem) {Px Qx} :
@@ -1677,7 +1826,7 @@ Notation "&{ κ }" := (full_bor κ) (format "&{ κ }") : bi_scope.
 Notation "&{ κ , i }" := (idx_bor κ i) (format "&{ κ , i }") : bi_scope.
 
 (** A short name for the world satisfaction every guard is taken over, so that
-  the typing layer can write [P &&{Wguard}&&> Q] where VerusBelt writes
+  the typing layer can write [P &&{alerus_WGuard}&&> Q] where VerusBelt writes
   [P &&{↑NllftG}&&> Q]. *)
 Notation Wguard := alerus_WGuard.
 

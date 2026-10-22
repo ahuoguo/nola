@@ -11,8 +11,8 @@ Everything ported builds green (`make -f Makefile.coq -j4`).
 
 The model is **done**: `nola/alerus/typing/model.v` builds the `cif` model
 of `typing/ctx.v`'s interface (`FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`,
-three judgments for the guard, the indexed borrow and the stored
-inclusion), `model_inst.v` bundles it into a `typeG` with the remaining
+four judgments - the guard, the indexed borrow, the stored inclusion and
+the borrow's alteration), `model_inst.v` bundles it into a `typeG` with the remaining
 formula-language classes, and `soundness.v` allocates the world
 satisfaction and proves both
 
@@ -27,7 +27,23 @@ The second is one the original cannot state: its weakest precondition is
 partial, because a guard there hands out a `▷` that only a later credit
 pays for.  `Print Assumptions` reports only `Eq_rect_eq` for both.
 
+`typing/inst.v` then builds a concrete `CON` and `JUDG` **with their
+semantics**, so neither theorem is vacuous; `alerus_type_soundness` and
+`alerus_type_safety` are the concrete forms, and `Print Assumptions` gives
+only `Eq_rect_eq` for those too.  Neither this development nor
+`nola/examples/rust_halt/` had ever instantiated `sigTCT`/`sigTO` before.
+
+Two checkable statements fix what is left:
+
+* **`FnFml` is the only class in `typing/` with no instance anywhere.**  Its
+  two fields, `fn_fml_sem_2` and `fn_incl_of_all`, are what an execution-level
+  stratification has to supply - item 2 below.
+* **`TypeContractive` has no instance either**, so `typing/fixpoint.v` is
+  inert: it is a correct construction with nothing to apply it to, and its
+  `Cofe (FML $oi Σ)` assumption is one the model cannot discharge - item 3.
+
 File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
+Performance traps, four of which present as a hang: `nola/alerus/PERF.md`.
 
 ## Not ported
 
@@ -70,63 +86,58 @@ that cost.
 
 ## Next
 
-0. ~~**Close the model.**~~  **Done**, in four steps; see
-   `nola/alerus/typing/inst.v` for the write-up.
+The model is closed and both of the blockers that were open after it are
+gone; what is written up in `nola/alerus/typing/inst.v` is the record of
+how.  What remains is one small item and two large ones, and the two large
+ones are large for reasons now understood rather than guessed at.
 
-   a. `st_incl` is a token - every atom of `κ'` is supplied by `κ` or covered
-      by one of a finite set of eternalized lifetimes - so it mentions no
-      interpretation and reads at every candidate for free, as Nola's
-      `lft_sincl` does.  `st_incl_of_all` moved to `FnFml` as
-      `fn_incl_of_all`: its one use creates a fresh lifetime whose aliveness
-      is guarded by the caller's context, which is neither shape a token
-      records, and `rust_halt` has no counterpart because it has no function
-      type.
-   b. `Sync` is an equation of *formulas*, as `rust_halt` states it.  Every
-      instance is then a congruence.  This is what (c) needs.
-   c. `st_iff` quantifies over every interpretation rather than over the good
-      ones, so `idx_bor` - which is `idxborJT_sem` - mentions no `Deriv`.
-      The interface gains `alt_any`; the definitional `AltSem` fields read
-      there.  The price is a premise on `uniq_subtype`.
-   d. `Csem` by `sigTCT_Csem`, `Jsem` by `sigT_dsem`, and the six `inCS` and
-      three `inJS` obligations with them.  `alerus_sem` bundles the four.
+1. **A worked example** (in progress).  `typing/examples/basic.v` types two
+   small programs against the rules, parametric in `CON`/`JUDG` exactly as
+   `rust_halt/verify/` is.  Worth extending to a program that allocates,
+   writes and frees a box, which exercises `own_ptr`, `type_assign` and
+   `type_deref`, and to one that uses `uniq_subtype`, which exercises the
+   relaxed borrow.  Beware the two traps in `nola/alerus/PERF.md`:
+   `type_val` cannot be applied to a concrete program, and transformers must
+   be built forward into an evar.
 
-   Restating `type_soundness`/`type_safety` concretely is **done** too, as
-   `alerus_type_soundness` and `alerus_type_safety`; `Print Assumptions`
-   gives only `Eq_rect_eq` for both.  What blocked it was a typeclass
-   resolution cycle, `typeG_cif → type_alerusGS → typeG_cif`, written up
-   with the other three traps in `nola/alerus/PERF.md`.
+2. **`fn` must be stratified by an execution level** (thesis § 5, and (5.4)).
+   `FnFml`'s `fn_fml_sem_2` and `fn_incl_of_all` have no model, so `fn` is
+   the one type former the model does not interpret - which is why
+   `soundness.v` is stated about a typing judgment, as `rust_halt`'s adequacy
+   is.
 
-   Also not removed: `uniq_subtype`'s premise.  It is reachable exactly when
-   the two ghost assertions agree *as formulas* - `uniq_ghox_any_of_eq`,
-   `uniq_subtype_eq`, `uniq_eqtype_eq` - and that is intrinsic, not a gap in
-   the proof: a stored borrow's semantics is `□ δ (idxbor_j κ idx Px)`, and
-   at a non-candidate `δ` is an arbitrary predicate.  Removing it means
-   moving the alteration into the judgment's semantics, as
-   `borrow_deriv.v`'s `bor` does over `bor_tok`, which needs `StBor` to lose
-   `st_iff` and `lifetime_full.v`'s `idx_bor` with it.
+   The device, from § 5.2: types carry a level `i`, and the function type's
+   interpretation is a total Hoare triple whose *world satisfaction mentions
+   only lower levels*,
 
-1. **`fn` must be stratified by an execution level** (thesis (5.4),
-   § 3.4.1).  `FnFml`'s `fn_fml_sem_2` has no model and must not be
-   discharged as it stands, so `fn` is the one type former the model does
-   not interpret - which is why `soundness.v` is stated about a typing
-   judgment, as `rust_halt`'s adequacy is.  `FML`, `bor_sem` and
-   `alerus_wsat` become level-indexed up to a fixed maximum `L`, and a
-   `type` carries the level of its ghost assertion.
-2. **`typing/fixpoint.v`** builds a recursive type as a COFE limit; a `cif`
+   > `⟦T →ⱼ U⟧ᵢ v ≜ ∀u. [⟦T⟧ᵢ u] v(u) [⟦U⟧ᵢ] ∗_{k<j} Winv_k ⟦⟧*_k`   (5.4)
+
+   which is well-formed because `k < j ≤ i`, so the recursion on the level
+   is well-founded.  That is exactly what `fn_fml_sem_2` lacks: `Deriv_factor'`
+   asks for `typed_body` at every candidate, and `typed_body` is stated at the
+   ambient interpretation.
+
+   The cost is the whole ghost-state layer: one copy of the formula
+   machinery (`sinv`, the box, the borrows) per level up to a fixed maximum
+   `L` - the thesis parameterises by `L` for the same reason, that Coq's
+   global camera is finite (§ 5.2 fn. 3) - plus `FML`, `bor_sem`,
+   `alerus_wsat` and `typed_body` indexed by level, and a level on every
+   type former.  This is weeks, not days.
+
+3. **`typing/fixpoint.v`** builds a recursive type as a COFE limit; a `cif`
    is complete as a `prost`, not an OFE, so it must move to
-   `profix`/`Productive` (cf. `rust_halt/rec.v`).  Until then it assumes
-   `Cofe (FML $oi Σ)`, which the model cannot discharge.
-3. ~~**A worked example**~~  **Started**:
-   `nola/alerus/typing/examples/basic.v` types two small programs against
-   the rules, parametric in `CON`/`JUDG` exactly as `rust_halt/verify/` is
-   (upstream never applies `type_total` there either).  What it found:
-   `programs.v`'s generic `type_val` cannot be applied to a concrete
-   program - its conclusion has `let: xb := v in e` for a *value*, so
-   unification has to invert `of_val ?v` against a literal and diverges.
-   Each type's own rule (`type_int`, `type_bool`) applies first-order.  The
-   same holds of any rule stated with `of_val`: pass the value explicitly
-   and `simpl_subst` after each binder.  Worth extending with a program that
-   allocates, writes and frees a box.
+   `profix`/`Productive` (cf. `rust_halt/rec.v`, which is 145 lines because
+   `ty` there is *pure data*).  Until then it assumes `Cofe (FML $oi Σ)`,
+   which the model cannot discharge.
+
+   The blocker is that `profix` needs `type 𝔄` to be a `prost`, and ours is a
+   record with eight law fields.  It has to be split into data plus a `Ty`
+   class, as `rust_halt` has it, which means rewriting every type former's
+   `Program Definition` and adding `!Ty ty` to every lemma that quantifies
+   over a type.  Note the file is currently inert: its own header records
+   that no type former here is `TypeContractive`, because later-free
+   `own_ptr` and `&shr` cannot hide a later.  So this buys recursive types,
+   not a fix to a live path.
 
 ## Rules this port had to learn
 

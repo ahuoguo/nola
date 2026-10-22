@@ -89,25 +89,29 @@ One-to-one, same names, for: `atomic_inv`, `base`, `base_type`, `bool`,
 `shr_bor`, `sum`, `tracked`, `type`, `type_context`, `type_sum`, `uninit`,
 `uniq_bor`, `uniq_cmra`, `uniq_util`.
 
-Three files are new here:
+`soundness.v` (100 upstream, 182 here) is ported, and proves *termination*
+as well as the original's safety.
+
+Five files are new here:
 
 | here | what |
 |---|---|
-| `ctx.v` (1606) | the interface the whole typing layer is parametric in: `alerusGS` (ghost state), `AlerusSem` (the interpretation), `TypeFml`, `GsrcSem`, `HeapSem`, and `AltSem` - the rules for stored guards, indexed borrows and inclusions at a derivability candidate |
-| `model.v` (1165) | the concrete model: `FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`, the three judgments, and the instances of the classes above |
+| `ctx.v` (1841) | the interface the whole typing layer is parametric in: `alerusGS` (ghost state), `AlerusSem` (the interpretation), `TypeFml`, `GsrcSem`, `HeapSem`, `AltSem` - the rules for stored guards, indexed borrows and inclusions at a derivability candidate - and the relaxed borrow (`dFullBor`, `dIdxBor`, `dalter`) |
+| `model.v` (1579) | the concrete model: `FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`, the four judgments, and the instances of the classes above |
+| `model_inst.v` (74) | the `typeG` bundle and the remaining formula-language classes |
+| `inst.v` (364) | a concrete `CON` and `JUDG` with their semantics, and the two soundness theorems at them |
 | `syn_type.v` (942) | a copy of `prophecy/syn_type.v` specialised to the typing layer |
 
-Three are missing:
+Two upstream files are missing:
 
 | upstream | why |
 |---|---|
 | `protocol.v` (1189) | needs `guarding/storage_protocol/` |
 | `spawn.v` (394) | `join` is a spin loop proved by `iLöb` |
-| `soundness.v` (100) | waits on the model |
 
 `examples/` (`assert`, `list`, `pcell_example`) are not ported;
-`typing/examples/basic.v` is new here, and is the first worked example in
-the tree.
+`typing/examples/basic.v` (111) is new here, and is the first worked example
+in the tree.
 
 ### What changed inside the ported typing files
 

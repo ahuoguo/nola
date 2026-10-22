@@ -49,13 +49,13 @@ Definition alerusCON : cifcon := sigTCT alerusCONF.
   TYPING_C _ _ _ _ _ _ _.
 
 (** ** The judgment type *)
-Variant alerus_jsel := ajs_guard | ajs_idxbor | ajs_incl.
+Variant alerus_jsel := ajs_guard | ajs_idxbor | ajs_incl | ajs_iff.
 
 Definition alerusJUDGF Σ (s : alerus_jsel) : ofe :=
   match s with
   | ajs_guard => guardJT (cifO alerusCON Σ)
   | ajs_idxbor => idxborJT (cifO alerusCON Σ)
-  | ajs_incl => inclJT
+  | ajs_incl => inclJT | ajs_iff => iffJT (cifO alerusCON Σ)
   end.
 
 Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
@@ -66,16 +66,22 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
   idxborJ (cifO alerusCON Σ) (alerusJUDG Σ) := sigT_inJ (a := ajs_idxbor).
 #[export] Instance inclJ_JUDG {Σ} : inclJ (alerusJUDG Σ) :=
   sigT_inJ (a := ajs_incl).
+#[export] Instance iffJ_JUDG {Σ} :
+  iffJ (cifO alerusCON Σ) (alerusJUDG Σ) := sigT_inJ (a := ajs_iff).
 
 #[export] Instance typingJ_JUDG {Σ} :
-  typingJ alerusCON (alerusJUDG Σ) Σ := TYPING_J _ _ _ _ _ _.
+  typingJ alerusCON (alerusJUDG Σ) Σ := TYPING_J _ _ _ _ _ _ _.
 
-(** ** The semantics, and the one thing that blocks them
+(** ** How the semantics came to exist
 
-  [Csem] is free of [Jsem]: no [Ecsem] quantifies the interpretation, so the
-  constructors' semantics mention [δ] only by applying it to a judgment.
-  [Jsem] is not free of *itself*, and the reason is a design choice of this
-  port rather than anything forced.
+  They do exist - [alerusCsem] and [alerusJsem] are below - but getting
+  there took two design changes, and the record of what blocked it is worth
+  keeping, because the obstacle looked structural twice and was not.
+
+  [Csem] was always free of [Jsem]: no [Ecsem] quantifies the
+  interpretation, so the constructors' semantics mention [δ] only by
+  applying it to a judgment.  [Jsem] was not free of *itself*, and the
+  reason was a design choice of this port rather than anything forced.
 
   *** The shape Nola requires
 
@@ -108,7 +114,8 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
   *** The fix, in two parts
 
   Both parts are Nola's own, and neither costs the development anything it
-  uses.
+  uses.  (A third change followed, on the stored borrow itself; see "The
+  relaxed borrow" below.)
 
   (1) [st_incl] becomes a **token**.  Nola's persistent lifetime inclusion is
   [lft_sincl α β := [†α] ∨ [∞ lft_diff β α]] ([nola/iris/lft.v]) - plain
@@ -165,41 +172,56 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
 
   *** What the two moves really depend on
 
-  Both are now done, and the semantics below are concrete.
+  Both are done, and the semantics below are concrete.  Move (1) made
+  [st_incl] a token; move (2) dropped [⌜Deriv (λ _, True) δ⌝] from [st_iff],
+  which is what takes [Deriv] - and with it [Jsem] - out of [idx_bor].
 
-  Move (1) made [st_incl] a token.  Move (2) needed less than it looked for
-  [Jsem] and more than it looked everywhere else.  For [Jsem] it was enough
-  that [st_iff] drop its [⌜Deriv (λ _, True) δ⌝]:
+  What (2) cost is on the *introduction* side: [AltSem]'s
+  [idxbor_fml_iff_at] wants the alteration at interpretations that are not
+  candidates.  [Sync] therefore became an equation of formulas, as
+  [nola/examples/rust_halt/type.v] has it, and [uniq_subtype] carries a
+  premise that is discharged exactly when the two ghost assertions agree as
+  formulas ([uniq_subtype_eq]).
 
-    [st_iff Px Qx := □ ∀ δ, ⟦ Px ⟧ᶜ(δ) ↔ ⟦ Qx ⟧ᶜ(δ)]
+  *** The relaxed borrow
 
-  mentions no [Deriv], so [idx_bor] - which is [idxborJT_sem] - mentions
-  none either.  Nothing is lost on the elimination side, since a borrow is
-  only ever opened at an interpretation that is a candidate anyway.
+  [idxbor_fml_iff_at] originally wanted its alteration at interpretations
+  that are not candidates, which an [eqtype] cannot supply, and
+  [uniq_subtype] carried a premise for it.  That was an artefact of how a
+  borrow was stored, not of storing one.
 
-  What it cost is on the introduction side: [AltSem]'s [idxbor_fml_iff_at]
-  wants the alteration at interpretations that are *not* candidates, and a
-  *semantic* family cannot supply one.  [Sync] therefore became an equation
-  of formulas, as [nola/examples/rust_halt/type.v] has it
+  Upstream has semantic subtyping of [&mut] -
+  [nola/examples/rust_halt/mutref.v]'s
 
-    [sync : ty_shr T t l α xπ ≡ ty_shr T t' l α xπ]
+    [subty_mutref : □ (∀ δ', ⌜Deriv ih δ'⌝ → ⌜ih δ'⌝ →
+       subty δ' T U id ∧ subty δ' U T id) ⊢ subty δ (ty_mutref α T) …]
 
-  which is strictly stronger and makes every instance a congruence, since
-  each type former builds its formula from its argument's by non-expansive
-  constructors.  [type_incl] could not follow: strengthening it propagates
-  into the [type] record's own depth laws, and [ty_gho_depth_mono_at] for
-  [&shr{κ} ty] genuinely needs [Deriv_map].  So the premise sits on the one
-  rule that needs it, [uniq_subtype], which now asks for its two ghost
-  assertions to agree off the candidates too.  That is the residual price,
-  and it is narrower than losing the semantic type equality outright, which
-  is what an earlier version of this comment predicted.
+  whose premise ranges over the *good* candidates only, and whose proof
+  alters the borrow with [pbor_wand], premised on
+  [⌜Deriv ih δ'⌝ → ⌜ih δ'⌝ → ⌜dinto δ δ'⌝].  The mechanism is the stored
+  constructor's [Ecsem]: [ty_mutref] stores [cif_pbor], and
+  [nola/iris/pborrow_deriv.v] interprets it as the *relaxed* borrower,
+  [∃ Qx, □ δ (jbupd Px Qx) ∗ □ δ (jbupd Qx Px) ∗ pbor_tok α Qx] - the
+  thesis's § 6.4 - so the alteration is read at [δ] and [Deriv_map] reaches
+  it.
+
+  [idxborCT_ecsem] now has that shape, [dalter] carries the alteration at
+  the ambient interpretation so it can be read *and* re-stored, and
+  [uniq_subtype] takes an [lctx_lft_incl] and an [eqtype], nothing more.
+
+  The borrow API did not have to be restated wholesale, as
+  [nola/iris/borrow_deriv.v] does.  [dFullBor_exact] turns a relaxed full
+  borrow back into an exact one under an update - open it atomically, carry
+  the contents across the alteration, close at the formula wanted - so every
+  existing [full_bor] lemma applies unchanged.  Only the lemmas that consume
+  an [idx_bor] directly needed transported forms.
 
   *** A caveat about parity
 
   [nola/examples/rust_halt/] is parametric in [CON] and [JUDG] exactly as
   this port is, and never instantiates them either: [sigTCT] and [sigTO] are
   used nowhere in [nola/examples/].  For [rust_halt] the instantiation is
-  mechanical, for the reason just given; here it took the two moves above.
+  mechanical, for the reason just given; here it took the changes above.
   With them done the gap is closed, and what follows is the instance. *)
 
 (** ** The semantics
@@ -251,7 +273,7 @@ Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
   (a : alerus_jsel) : Dsem (alerusJUDG Σ) (alerusJUDGF Σ a) (iProp Σ) :=
   match a with
   | ajs_guard => guardJT_dsem | ajs_idxbor => idxborJT_dsem
-  | ajs_incl => inclJT_dsem
+  | ajs_incl => inclJT_dsem | ajs_iff => iffJT_dsem
   end.
 
 #[export] Instance alerusJsem {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
@@ -268,6 +290,9 @@ Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
 #[export] Instance inclJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   inclJS alerusCON (alerusJUDG Σ) Σ :=
   sigT_inJS alerusJUDGF_dsem (a := ajs_incl).
+#[export] Instance iffJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  iffJS alerusCON (alerusJUDG Σ) Σ :=
+  sigT_inJS alerusJUDGF_dsem (a := ajs_iff).
 
 #[export] Instance typingCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   typingCS alerusCON (alerusJUDG Σ) Σ :=
@@ -275,7 +300,8 @@ Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
      typingCS_idxbor := _; typingCS_incl := _; typingCS_exs := _ |}.
 #[export] Instance typingJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   typingJS alerusCON (alerusJUDG Σ) Σ :=
-  {| typingJS_guard := _; typingJS_idxbor := _; typingJS_incl := _ |}.
+  {| typingJS_guard := _; typingJS_idxbor := _; typingJS_incl := _;
+     typingJS_iff := _ |}.
 
 
 (** ** Non-vacuity

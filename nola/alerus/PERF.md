@@ -108,7 +108,20 @@ The same holds of any rule stated with `of_val`, including `type_done` in
 `typing/examples/basic.v`: pass the value explicitly, and `simpl_subst` after
 each binder.
 
-## 4. Transformers must be built forward
+## 4. Size arguments must be passed, not unified
+
+`own.v`'s `type_new` binds `let n' := Z.to_nat n in` and uses `n'` in the
+continuation's type context, so leaving `n` to unification diverges —
+`Timeout 60` on the `iApply` fails.  Passing it (`type_new 1 "b"`) is
+instant, which is why upstream's `typing/examples/` passes the size to
+`type_new_subtype`.
+
+Related, and a cheap way to lose an hour: the `Closed` side conditions of
+`type_new` and `type_delete` are discharged by type class resolution before
+the goal brackets are reached, so a `solve_closed` branch lands on the
+*next* goal and fails there with a misleading error.
+
+## 5. Transformers must be built forward
 
 Stating a `typed_body` goal with its predicate transformer already reduced
 makes `iApply` solve for the continuation's transformer by higher-order

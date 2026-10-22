@@ -126,8 +126,8 @@ Section uniq_bor.
       iFrame. }
     iAssert (R &&{Wguard}&&> @[κ])%I as "#Rκ".
     { iApply (guard_trans with "Rk Inκ"). }
-    iDestruct (idxbor_fml_sem_1 with "Bor") as "#Bor1".
-    iDestruct (llftl_idx_bor_guard' κ idx _ R with "LFT Bor1 Rκ Rtok")
+    iDestruct (idxbor_fml_dIdxBor with "Bor") as "#Bor1".
+    iDestruct (dIdxBor_guard (κ:=κ) (idx:=idx) (G:=R) with "LFT Bor1 Rκ Rtok")
       as "#Ginner".
     iDestruct (guard_rhs_sep_r with "Ginner") as "#Ginner2".
     iDestruct (guard_rhs_iff (uniq_body_fml_sem ty x0 ξi tid l) with "Ginner2")
@@ -245,53 +245,19 @@ Section uniq_bor_sem.
     iModIntro. iApply proph_obs_eq; [|done]=> ? /=. by f_equal.
   Qed.
 
-  (** Discharging [uniq_subtype]'s extra premise from an equation of
-    *formulas*.
-
-    This is the whole of what is reachable.  A unique reference stores its
-    body as [idxbor_fml], whose semantics is [□ δ (idxbor_j κ idx Px)]; at an
-    interpretation that is not a candidate, [δ] is an arbitrary predicate, so
-    two stored bodies are relatable exactly when the judgments - hence the
-    formulas - are equal.  No amount of *semantic* agreement between [ty] and
-    [ty'] helps there, which is why an [eqtype] does not discharge the
-    premise and a nested [&uniq{κ} (&uniq{κ'} ty)] subtyping does not go
-    through.
-
-    Removing the restriction means moving the alteration out of [idx_bor] and
-    into the judgment's own semantics, as [nola/iris/borrow_deriv.v] does
-    ([bor δ α Px := ∃ Qx, □ δ (jbupd Px Qx) ∗ □ δ (jbupd Qx Px) ∗
-    bor_tok α Qx], the thesis's § 6.4).  The alteration would then be read at
-    [δ], [Deriv_map] would apply, and the premise would be the [alt_into]
-    family rather than the [alt_any] one.  That needs [StBor] to lose
-    [st_iff], and [lifetime_full.v]'s [idx_bor] with it - see
-    [typing/inst.v]. *)
-  Lemma uniq_ghox_any_of_eq {𝔄} (ty ty': type 𝔄) :
-    (∀ y e h t, ty.(ty_ghox) y e h t ≡ ty'.(ty_ghox) y e h t) →
-    ⊢ □ ∀ sem (_ : alt_any sem), ∀ y e h t,
-        sem (ty.(ty_ghox) y e h t) ∗-∗ sem (ty'.(ty_ghox) y e h t).
-  Proof.
-    move=> Heq. iIntros "!>" (sem H y e h t).
-    rewrite (sem_proper_any H (Heq y e h t)). iSplit; by iIntros "$".
-  Qed.
-
   (** Subtyping of a unique reference.
 
-    The extra premise is the price of the model (see [typing/inst.v]): the
-    borrowed body is altered *inside* a borrow, and the borrow's alteration
-    [st_iff] is read at every interpretation, not only at the candidates -
-    that is what takes [Deriv], and with it [Jsem], out of [idx_bor].  An
-    [eqtype] gives the equivalence at the candidates only, since its proof
-    for a type containing a judgment goes through [Deriv_map].  The premise
-    is discharged by [equiv_ghox_any] whenever the two ghost assertions are
-    equal as formulas, which covers every type former whose [ty_ghox] is
-    built definitionally. *)
+    Semantic, with no side condition beyond the [eqtype], which is what
+    [nola/examples/rust_halt/mutref.v]'s [subty_mutref] has.  It works
+    because a stored borrow is the *relaxed* borrower: the alteration is a
+    judgment read at the interpretation, so changing it is [Deriv_map] and
+    the equivalence is wanted only at the candidates the stored borrow maps
+    into - which an [eqtype] supplies.  See the note in [typing/inst.v]. *)
   Lemma uniq_subtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
     lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
-    (⊢ □ ∀ sem (_ : alt_any sem), ∀ y e h t,
-        sem (ty.(ty_ghox) y e h t) ∗-∗ sem (ty'.(ty_ghox) y e h t)) →
     subtype E L (&uniq{κ} ty) (&uniq{κ'} ty') idₛ.
   Proof.
-    move=> In Eqt HAny. rewrite -eqtype_id_unfold in Eqt. iIntros "L".
+    move=> In Eqt. rewrite -eqtype_id_unfold in Eqt. iIntros "L".
     iDestruct (Eqt with "L") as "#Eqt". iDestruct (In with "L") as "#In".
     iIntros "!> #E". iSplit; [done|].
     iDestruct ("Eqt" with "E")
@@ -300,11 +266,6 @@ Section uniq_bor_sem.
     (* the two ghost components, at every candidate interpretation *)
     have HPhys : ∀ y t, ty_phys ty y t = ty_phys ty' y t
       by move=> ??; apply EqPhys.
-    iAssert (□ ∀ t sem' (_ : alt_any sem'), ∀ y e h,
-      sem' (ty.(ty_ghox) y e h t) ∗-∗ sem' (ty'.(ty_ghox) y e h t))%I
-      as "#HGho".
-    { iDestruct HAny as "#H". iIntros "!>" (t sem' Hs y e h).
-      iApply ("H" $! sem' Hs). }
     have HDead : ∀ sem' (Hs : alt_sem sem'),
       dincl κ' κ -∗
       sem' (basically_dead_fml κ) -∗ sem' (basically_dead_fml κ').
@@ -333,7 +294,12 @@ Section uniq_bor_sem.
           by iApply "F". }
       iAssert (sem (idxbor_fml κ' idx (uniq_body_fml ty' x0 ξi tid l)))
         as "#Bor'".
-      { iDestruct ("HGho" $! tid) as "#HGho'".
+      { iAssert (□ ∀ sem' (_ : alt_sem sem') (_ : alt_into sem sem'), ∀ y e h,
+          sem' (ty.(ty_ghox) y e h tid) ∗-∗ sem' (ty'.(ty_ghox) y e h tid))%I
+          as "#HGho'".
+        { iIntros "!>" (sem' Hs _ y e h).
+          iDestruct ("EqOwn" $! sem' Hs y e h tid) as "[F B]".
+          iSplit; iIntros "x"; [by iApply "F"|by iApply "B"]. }
         iApply (incl_uniq_body_pers_component_at Hsem ty ty' x0 ξi idx κ κ'
           tid l (λ y, HPhys y tid) with "HGho' In Bor"). }
       iAssert (sem (incl_fml κ' (ty_lft ty'))) as "#Incl2".
@@ -359,7 +325,12 @@ Section uniq_bor_sem.
         + iLeft. iApply (HDead sem Hsem with "In Dead").
         + iRight. iDestruct ("EqPers" $! sem Hsem x0 d' g' tid) as "[F _]".
           by iApply "F".
-      - iDestruct ("HGho" $! tid) as "#HGho'".
+      - iAssert (□ ∀ sem' (_ : alt_sem sem') (_ : alt_into sem sem'), ∀ y e h,
+          sem' (ty.(ty_ghox) y e h tid) ∗-∗ sem' (ty'.(ty_ghox) y e h tid))%I
+          as "#HGho'".
+        { iIntros "!>" (sem' Hs _ y e h).
+          iDestruct ("EqOwn" $! sem' Hs y e h tid) as "[F B]".
+          iSplit; iIntros "x"; [by iApply "F"|by iApply "B"]. }
         iApply (incl_uniq_body_pers_component_at Hsem ty ty' x0 ξi idx κ κ'
           tid l (λ y, HPhys y tid) with "HGho' In Bor"). }
     { iPureIntro. by move=> [[[[[??]?]?]?]?] ?. }
@@ -367,34 +338,24 @@ Section uniq_bor_sem.
 
   Lemma uniq_eqtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
     lctx_lft_eq E L κ κ' → eqtype E L ty ty' idₛ idₛ →
-    (⊢ □ ∀ sem (_ : alt_any sem), ∀ y e h t,
-        sem (ty.(ty_ghox) y e h t) ∗-∗ sem (ty'.(ty_ghox) y e h t)) →
     eqtype E L (&uniq{κ} ty) (&uniq{κ} ty') idₛ idₛ.
-  Proof.
-    move=> [??][??] HAny.
-    have HAny' : ⊢ □ ∀ sem (_ : alt_any sem), ∀ y e h t,
-      sem (ty'.(ty_ghox) y e h t) ∗-∗ sem (ty.(ty_ghox) y e h t).
-    { iDestruct HAny as "#H". iIntros "!>" (sem Hs y e h t).
-      iDestruct ("H" $! sem Hs y e h t) as "[F B]".
-      iSplit; iIntros "x"; [by iApply "B"|by iApply "F"]. }
-    by split; apply uniq_subtype.
-  Qed.
+  Proof. move=> [??][??]. by split; apply uniq_subtype. Qed.
 
-  (** Hence subtyping and type equality of unique references whose bodies
-    agree as formulas, which is what the [&uniq] rules in the development
-    actually use. *)
-  Lemma uniq_subtype_eq {𝔄} E L κ κ' (ty ty': type 𝔄) :
+  (** Nesting.
+
+    This is the rule the model could not give before the stored borrow
+    became the relaxed borrower: the outer [uniq_subtype] needs its two
+    bodies to agree at the candidates it maps into, and the bodies are
+    themselves unique references, whose agreement is a [Deriv_map] rather
+    than an equation of formulas.  It now follows from the two rules above
+    with nothing extra. *)
+  Lemma uniq_uniq_subtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
     lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
-    (∀ y e h t, ty.(ty_ghox) y e h t ≡ ty'.(ty_ghox) y e h t) →
-    subtype E L (&uniq{κ} ty) (&uniq{κ'} ty') idₛ.
-  Proof. move=> ?? Heq. by apply uniq_subtype, uniq_ghox_any_of_eq. Qed.
-
-  Lemma uniq_eqtype_eq {𝔄} E L κ κ' (ty ty': type 𝔄) :
-    lctx_lft_eq E L κ κ' → eqtype E L ty ty' idₛ idₛ →
-    (∀ y e h t, ty.(ty_ghox) y e h t ≡ ty'.(ty_ghox) y e h t) →
-    eqtype E L (&uniq{κ} ty) (&uniq{κ} ty') idₛ idₛ.
+    subtype E L (&uniq{κ} (&uniq{κ} ty)) (&uniq{κ'} (&uniq{κ} ty')) idₛ.
   Proof.
-    move=> ?? Heq. by apply (uniq_eqtype _ _ κ κ'), uniq_ghox_any_of_eq.
+    move=> In Eqt. apply uniq_subtype; [done|].
+    apply (uniq_eqtype _ _ κ κ); [|done].
+    split; apply lctx_lft_incl_refl.
   Qed.
 
   (** Accessors on a unique reference's refinement *)
@@ -437,8 +398,9 @@ Section uniq_bor_sem.
     iAssert (bor_sem (gsrc_fml (GFrac γ (q/2))) &&{Wguard}&&> @[κ])%I as "#Gκ'".
     { iApply (guard_lhs_iff (gsrc_fml_sem (GFrac γ (q/2)))). iApply "Gκ". }
     iDestruct (Ltok_split_1 with "[$key $f]") as "[[_ fa] [_ fb]]".
-    iDestruct (idxbor_fml_sem_1 with "Bor") as "#Bor1".
-    iDestruct (llftl_bor_idx_acc_guarded ⊤ (gsrc_fml (GFrac γ (q/2))) κ idx
+    iDestruct (idxbor_fml_dIdxBor with "Bor") as "#Bor1".
+    iDestruct (dIdxBor_acc_guarded (E:=⊤) (Gx:=gsrc_fml (GFrac γ (q/2)))
+      (κ:=κ) (idx:=idx)
       with "LFT Bor1 Tok Gκ' [fa]") as "A";
       [by iApply (gsrc_fml_sem_2 (s := GFrac γ (q/2)))|].
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "A") as "A'";
@@ -519,8 +481,8 @@ Section uniq_bor_sem.
     iAssert (bor_sem Hx &&{Wguard}&&> .VO[ξ] x0 (d', g'))%I as "#HGvo".
     { iApply (guard_lhs_iff HxS). iApply guard_intro.
       iIntros "!> (A & B & C)". iFrame "A". iIntros "A". iFrame. }
-    iDestruct (idxbor_fml_sem_1 with "Bor") as "#Bor1".
-    iDestruct (llftl_idx_bor_guard' κ idx _ (bor_sem Hx)
+    iDestruct (idxbor_fml_dIdxBor with "Bor") as "#Bor1".
+    iDestruct (dIdxBor_guard (κ:=κ) (idx:=idx) (G:=bor_sem Hx)
       with "LFT Bor1 HGκ HGtok") as "#Ginner".
     iDestruct (guard_rhs_sep_r with "Ginner") as "#Ginner2".
     iDestruct (guard_rhs_iff (uniq_body_fml_sem ty x0 ξi tid l) with "Ginner2")
@@ -586,7 +548,11 @@ Section uniq_bor_typing.
     move=> tid tid' [[[[[l x0] ξi] d'] g'] idx] d g G κs.
     iIntros "#LFT #UNIQ lfts #gs K gho W". rewrite uniq_bor_gho.
     iDestruct "gho" as "(#Incl & %Hle & (ξVo & Tok & #Bor) & #PtBase & #Pers)".
-    iDestruct (idxbor_fml_to_full with "Bor Tok") as "Bor2".
+    iDestruct (idxbor_fml_to_full with "Bor Tok") as "Bor0".
+    iDestruct (dFullBor_exact (E:=NalerusE) with "LFT Bor0") as "Ex".
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat_core) (E':=NalerusE) with "Ex")
+      as "Ex'"; [done|].
+    iMod ("Ex'" with "W") as "[W Bor2]".
     iDestruct (llftl_bor_acc NalerusE _ static with "LFT Bor2 []") as "A";
       [iApply llftl_tok_unit|].
     iDestruct (fupdw_incl_mask (W:=alerus_wsat_core) (E':=NalerusE) with "A")

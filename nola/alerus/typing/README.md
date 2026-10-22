@@ -3,6 +3,15 @@
 A later-free, total-correctness port of AlerusBelt/VerusBelt's
 `src/lambda_verus/typing/` (MIT; Hance, Elbeheiry, Matsushita, Dreyer).
 
+**The model is concrete.**  `typing/inst.v` builds a `CON`, a `JUDG` and
+their semantics, so `typing/soundness.v`'s two theorems are not vacuous;
+`alerus_type_soundness` and `alerus_type_safety` are the concrete forms, and
+`Print Assumptions` gives only `Eq_rect_eq` for both.  Several sections
+below were written while that was still open and described obstacles that
+turned out to be artefacts of how a borrow was stored; each now says so
+where it was wrong, rather than being deleted, since the wrong turn is the
+useful part.
+
 Two things change globally:
 
 * **No `▷`.**  Ghost assertions are *formulas* (`FML $oi Σ`) interpreted by
@@ -256,28 +265,27 @@ thesis's `δ ⇝ δ'`, not the `δ' J` one).  So anything that has to be
 only ever arise from such a build - must be held as a **family**, one
 member per candidate, from the moment it is created.
 
-That is now how inclusions work: `dguard_all Px Qx` is
-`□ ∀ sem, alt_sem sem → sem (guard_fml Px Qx)`, `dincl` is its
-lifetime-token case, `dincl_at` reads the member at a candidate and
-`dincl_dguard` at the ambient one.  Everything that creates one creates
-the whole family (`dincl_of_incl` replays a closed lifetime-logic fact at
-each candidate; `dincl_eternalize`'s and `guard_fml_borrow_shared`'s
-tokens mention no interpretation).  `&uniq{κ} ty`'s *own* inclusion
-component stays a plain `dguard` - it is one formula at one
+That is how stored *guards* work: `dguard_all Px Qx` is
+`□ ∀ sem, alt_sem sem → sem (guard_fml Px Qx)`, created whole by
+`guard_fml_borrow_shared` and `guard_fml_of_bor`, whose tokens mention no
 interpretation.
 
-**Still open, and the same shape: the indexed borrow.**
+`dincl` was a family of this shape too, and is **no longer one**: it is
+`st_incl`, a token (below).  A token is strictly better than a family here,
+because it needs no `Deriv` to state and so does not drag `Jsem` into its
+own definition - which is what the family did, and what kept the model from
+being concrete.
+
+**Resolved, and not by a family: the indexed borrow.**
 `idxbor_fml_into : sem (idxbor_fml κ idx Px) ⊢ sem' (idxbor_fml κ idx Px)`
-is not realisable, for exactly the reason above.  Its one consumer is
-`dguard_inner_from_guard_uniq_body`, which turns `&uniq`'s indexed borrow
-into a guard at a candidate (`idxbor_fml_guard_at`) in order to build
-`&shr`'s ghost assertion - so `type_deref_shr_uniq` really does need the
-indexed borrow at every candidate.  The fix is the same move
-(`idxbor_fml_of_bor` yields a family, `uniq_body_pers_component` becomes
-one), but unlike the inclusion case it does not fit behind the existing
-formula: `uniq_body_fmlx` holds a single `idxbor_fml`, so
-`uniq_body_fmlx_sem` would no longer relate the formula to the family.
-Deciding where that family lives is the next piece of design.
+is indeed not realisable, for exactly the reason above - and the conclusion
+drawn here, that the indexed borrow therefore had to become a family too,
+was wrong.  What it had to become is the *relaxed* borrow (below): the
+alteration read at the interpretation over an interpretation-free token.
+`alt_into`'s borrow clause is then *eliminating* rather than *moving* -
+`sem (idxbor_fml κ idx Px) ⊢ ∃ Px', □ (sem' Px' ↔ sem' Px) ∗ idx_bor κ idx Px'`
+- which is all its one consumer, `dguard_inner_from_guard_uniq_body`, ever
+needed.  `idxbor_fml_into` is gone.
 
 **`alt_into` should be defined by what it is used for.**  In the model a
 candidate is a function `FML $oi Σ → iProp Σ`, and nothing recovers the
@@ -437,7 +445,7 @@ paradox of § 3.4.1 unaddressed.  `rust_halt` keeps its typing judgment at
 the ambient interpretation (`type_def` uses `WP[rust_halt_wsat]` with
 `⟦⟧ᶜ = ⟦⟧ᶜ(der)`, `type.v:910-932`) precisely because it never stores one.
 
-## The last obstacle in the model: a full borrow is not storable
+## The last obstacle in the model: a full borrow was not storable
 
 Building the `AltSem` instance turns every field into one of two shapes.
 
@@ -447,10 +455,11 @@ hands out: a judgment held at the ambient interpretation can be read as its
 *semantics* at any candidate the ambient one maps into.  Every `dguard_*_at`
 lemma in `ctx.v` is of this shape, and all of them are fine.
 
-*Introduction at every candidate* - the families `dguard_all`, `dincl`,
-`dincl_eternalize_all`, `guard_fml_borrow_shared` - needs the ingredient to
-be interpretation-independent.  `sinv_tok`, `eternal_tok` and `OwnBorState`
-are plain ghost state, so those four are fine too.
+*Introduction at every candidate* - the families `dguard_all`,
+`guard_fml_borrow_shared` - needs the ingredient to be
+interpretation-independent.  `sinv_tok`, `eternal_tok` and `OwnBorState` are
+plain ghost state, so those are fine too.  (`dincl` was listed here as a
+family; it is a token now, which is the same observation taken further.)
 
 Two fields are neither: `idxbor_fml_of_bor` and `guard_fml_of_bor` start
 from a `full_bor κ Px`, and
@@ -466,15 +475,22 @@ mentions the interpretation **twice** in a way that does not transport:
 `box_wsat bor_sem`; and the `□ (bor_sem Px' ↔ bor_sem Px)` is the borrow's
 semantic alteration.  Neither is a judgment held at `der`, so `dinto der δ'`
 does not move them, and neither is ghost state, so they do not hold at every
-candidate either.  A full borrow is therefore *not storable*: no amount of
-rephrasing on the `typing/` side can store one in a formula.
+candidate either.
 
-This is exactly the point where Nola's own lifetime logic differs.  In
+**Both are now fixed, by the same two observations Nola makes.**  In
 `nola/iris/lft.v` lifetime inclusion is **pure** (`lft_incl`, inclusion of
-multisets) or a **persistent token** (`⊑□`), and `bor_tok` is ghost state;
-that is why `rust_halt` can write `cif_bor κ Px` as a leaf and why
-`bor_tok_bor` holds at every `δ`.  Leaf's inclusion is a guard, and that is
-the one place where keeping Leaf's guarding logic costs something.
+multisets) or a **persistent token** (`lft_sincl`, `⊑□`); `st_incl` is now
+the second of those, so the first occurrence is ghost state and holds at
+every candidate.  And in `nola/iris/borrow_deriv.v` the alteration does not
+sit inside the token at all - `bor_tok` carries the formula exactly, and
+`bor δ` wraps it in two `□ δ (jbupd …)`; the stored indexed borrow is now
+that relaxed form, so the second occurrence is a judgment read at `δ`.
+
+Keeping Leaf's guarding logic therefore costs nothing here after all.  What
+it did cost was the detour: a guard is not ghost state, so the first
+instinct - hold the inclusion as a family over the candidates - looks right
+and is what the rest of this file originally described.  It is a token that
+was wanted.
 
 ### The fix: a storable inclusion and a storable alteration
 
@@ -493,9 +509,8 @@ elimination rules `st_incl κ κ' ⊢ κ ⊑ κ'` and
 `st_iff Px Qx ⊢ □ (bor_sem Px ↔ bor_sem Qx)`.  `idx_bor_def` and
 `full_bor_def` use `st_incl`/`st_iff` in place of the two occurrences above.
 
-In the model both are the *plain-`iProp` family*, which is available because
-`idx_bor` is an `iProp` and not a formula - so no judgment, and hence no
-family rule, is involved:
+Both were first given in the model as *families* over the good
+interpretations:
 
 ```coq
 st_incl κ κ' := □ ∀ δ' (_ : Deriv (λ _, True) δ'),
@@ -504,13 +519,53 @@ st_iff Px Qx := □ ∀ δ' (_ : Deriv (λ _, True) δ'),
                   ⟦ Px ⟧ᶜ(δ') ∗-∗ ⟦ Qx ⟧ᶜ(δ')
 ```
 
-Each eliminates at *every* good `δ`, so a full borrow becomes
-interpretation-independent and `idxbor_fml_of_bor` goes through by
-`Deriv_factor'`.  `st_iff` is the shape `AltSem`'s `idxbor_fml_iff_at`
-already asks for, and `st_incl` is `dincl`'s content with the stored guard
-replaced by the guard itself - note it is *not* `dincl`: a formula-level
-inclusion stays a `guard_fml` judgment, eliminated at candidates by
-`dinto der δ'` as before.
+**Both of those are gone, and for the same reason: they mention `Deriv`,
+which is defined from `Jsem`, while `idx_bor` *is* `idxborJT_sem`.**  That
+is what kept the model from being concrete, and closing it took two moves.
+
+`st_incl` became a token, as Nola's `lft_sincl α β := [†α] ∨ [∞ lft_diff β α]`
+is - every atom of `κ'` supplied by `κ` or covered by one of a finite set of
+eternalized lifetimes.  It mentions no interpretation, so it reads at every
+candidate for free, and `st_incl_at` is derived by replaying
+`llftl_incl_sub` and `eternal_tok_guard` at the candidate's own world
+satisfaction, both being parametric in `BorSem`.
+
+`st_iff` lost its `Deriv` restriction, quantifying over every interpretation
+instead.  That alone made `Jsem` definable, but it moved the cost to
+introduction: `idxbor_fml_iff_at` then wanted its alteration off the
+candidates, which no `eqtype` supplies.  So the *stored borrow* changed
+shape instead - see "The relaxed borrow" below - and `idxbor_fml_iff_at` is
+back to `Deriv_map`'s premise.
+
+### The relaxed borrow
+
+A stored indexed borrow is now what `nola/iris/borrow_deriv.v` calls the
+relaxed borrower and what `nola/iris/pborrow_deriv.v` gives `cif_pbor` as
+its `Ecsem` - the alteration as a judgment read *at* the interpretation,
+over a judgment whose semantics is interpretation-free:
+
+```coq
+⟦ cif_idxbor κ idx Px ⟧ᶜ(δ) = ∃ Px', □ δ (iff_j Px' Px) ∗ □ δ (idxbor_j κ idx Px')
+```
+
+the thesis's § 6.4.  Changing the alteration is then `Deriv_map`, so
+`idxbor_fml_iff_at` asks for the equivalence only at the candidates the
+stored borrow maps into - which is exactly `rust_halt`'s
+`subty_mutref`/`pbor_wand` premise - and `uniq_subtype` needs nothing beyond
+an `eqtype`.  `uniq_uniq_subtype` is the nested case, which the previous
+shape could not give at all.
+
+The borrow API did **not** have to be restated wholesale, as upstream's
+`borrow_deriv.v` does.  `dFullBor_exact` turns a relaxed full borrow back
+into an exact one under an update - open it atomically, carry the contents
+across the alteration, close at the formula wanted - so every existing
+`full_bor` lemma applies unchanged, and only those consuming an `idx_bor`
+directly needed transported forms (`dIdxBor_guard`, `dIdxBor_acc_guarded`,
+`dIdxBor_shorten`, `dIdxBor_unnest`, `dIdxBor_to_full`, `dFullBor_idx`).
+
+One rule was lost rather than transported: `alt_into`'s borrow clause is now
+*eliminating* rather than *moving*, since a stored borrow cannot be carried
+from one candidate to another.  `idxbor_fml_into` went with it, unused.
 
 `llftl_bor_shorten` and `llftl_idx_shorten` take an `st_incl` after this
 change; the one call site outside the lifetime logic (`borrow.v`) passes a
