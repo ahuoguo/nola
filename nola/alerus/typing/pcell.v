@@ -193,10 +193,9 @@ Section points_to.
     Sync ty → Sync (cell_points_to_ty ty).
   Proof.
     move=> HSync tid tid' x d g. split; [done|].
-    destruct d as [|d']; [by split=> sem Hsem|].
-    have [Hp [Hg Hgp]] := HSync tid tid' x.2 d' g. split=> sem Hsem.
-    - rewrite /= !(sep_sem_at Hsem) Hp (Hg _ Hsem) //.
-    - rewrite /= !(sep_sem_at Hsem) (Hgp _ Hsem) //.
+    destruct d as [|d']; [done|].
+    have [Hp [Hg Hgp]] := HSync tid tid' x.2 d' g.
+    split=>/=; [rewrite Hp Hg|rewrite Hgp]; done.
   Qed.
 End points_to.
 

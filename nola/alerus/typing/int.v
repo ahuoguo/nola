@@ -38,7 +38,10 @@ Section int.
   Lemma int_stack_okay : StackOkay int.
   Proof. done. Qed.
   
-  Global Instance int_send: Send bool_ty.
+  (** Upstream ([typing/int.v]) states these two about [bool_ty], which
+    [typing/bool.v] already has, so [int] is left without either.  Carried
+    over as a fix rather than as written. *)
+  Global Instance int_send: Send int.
   Proof.
     intros. split; trivial.
      - intros. unfold syn_abstract in H. subst x'. trivial.
@@ -47,7 +50,7 @@ Section int.
        iSplit; [by iApply empty_fml_sem_2|done].
   Qed.
 
-  Global Instance int_sync: Sync bool_ty.
+  Global Instance int_sync: Sync int.
   Proof. move=> *. split; [done|]. split; reflexivity. Qed.
 
   Lemma int_resolve E L : resolve E L int (const (const True)).

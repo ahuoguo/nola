@@ -163,11 +163,9 @@ Section own.
   Global Instance own_sync {𝔄} n (ty: type 𝔄) : Sync ty → Sync (own_ptr n ty).
   Proof.
     move=> HSync tid tid' x d g. split; [done|].
-    destruct d as [|d]; [split=> sem Hsem; reflexivity|].
+    destruct d as [|d]; [done|].
     destruct (HSync tid tid' (snd x) d g) as [Hp [Hg Hgp]].
-    split=> sem Hsem.
-    - rewrite /= !(sep_sem_at Hsem) /mapsto_fml Hp (Hg _ Hsem) //.
-    - rewrite /= (Hgp _ Hsem) //.
+    split=>/=; [rewrite /mapsto_fml Hp Hg|rewrite Hgp]; done.
   Qed.
 
   Global Instance own_just_loc {𝔄} n (ty: type 𝔄) : JustLoc (own_ptr n ty).

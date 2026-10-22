@@ -289,9 +289,8 @@ Section typing.
     move=> S1 S2 tid tid' x d g.
     destruct (S1 tid tid' (fst x) d g) as [S1p [S1g S1gp]].
     destruct (S2 tid tid' (snd x) d g) as [S2p [S2g S2gp]].
-    split; [by rewrite /= S1p S2p|]. split=> sem Hsem.
-    - rewrite /= !(sep_sem_at Hsem). by rewrite (S1g _ Hsem) (S2g _ Hsem).
-    - rewrite /= !(sep_sem_at Hsem). by rewrite (S1gp _ Hsem) (S2gp _ Hsem).
+    split; [by rewrite /= S1p S2p|].
+    split=>/=; (apply equiv_dist=> n; f_equiv; apply equiv_dist); done.
   Qed.
 
   Global Instance xprod_copy {𝔄l} (tyl: typel 𝔄l) : ListCopy tyl → Copy (Π! tyl).

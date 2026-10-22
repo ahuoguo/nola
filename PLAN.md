@@ -14,13 +14,18 @@ of `typing/ctx.v`'s interface (`FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`,
 three judgments for the guard, the indexed borrow and the stored
 inclusion), `model_inst.v` bundles it into a `typeG` with the remaining
 formula-language classes, and `soundness.v` allocates the world
-satisfaction and proves
+satisfaction and proves both
 
-> a closed, semantically well-typed program **terminates**
+> a closed, semantically well-typed program has no data race and no thread
+> gets stuck  (`type_safety`, the original's conclusion)
 
-which the original cannot state: its weakest precondition is partial,
-because a guard there hands out a `▷` that only a later credit pays for.
-`Print Assumptions` reports only `Eq_rect_eq`.
+and
+
+> it **terminates**  (`type_soundness`)
+
+The second is one the original cannot state: its weakest precondition is
+partial, because a guard there hands out a `▷` that only a later credit
+pays for.  `Print Assumptions` reports only `Eq_rect_eq` for both.
 
 File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
 
@@ -38,41 +43,67 @@ later/`iLöb`/`pers` machinery disappears.  Nothing in the tree waits on a
 missing guarding lemma, so pull in `storage_protocol/` when starting
 `protocol.v`, not before.
 
-## The one open hole: is the model concrete?
+## Is the model concrete?  Yes, as of `af5aee0`
 
-`model.v` gives the interpretation *parametrically* in `CON` and `JUDG`,
-with constraint classes - exactly as `nola/examples/rust_halt/` does.
-`typing/inst.v` tries to build the smallest `CON` and `JUDG` that satisfy
-them.  The constructor signature and the judgment type come out fine, and
-`Csem` is now free of `Jsem` (no `Ecsem` quantifies the interpretation).
-`Jsem` is not free of *itself*:
+`model.v` gives the interpretation parametrically in `CON` and `JUDG`, as
+`nola/examples/rust_halt/` does; `typing/inst.v` now builds the smallest
+`CON` and `JUDG` satisfying the constraints **and their semantics**.
+Neither development had ever instantiated `sigTCT`/`sigTO` before - they
+appear nowhere in `nola/examples/`.
 
-> `idxborJT_sem` is `idx_bor`, which carries `StBor`'s `st_incl` and
-> `st_iff`, and both are families over the **good** derivability
-> predicates.  `Deriv` is defined from `Jsem`.
+The obstruction was that `Jsem` would have had to be defined from itself.
+Nola's construction order (thesis Def. 4.1) is
 
-Dropping the goodness restriction is the obvious next move, and every
-closure rule survives it - `llftl_incl_sub`, `eternal_tok_guard`,
-`sinv_tok_guard`, `guard_trans` all hold at every interpretation.  One
-source does not: `AltSem`'s `idxbor_fml_iff_at` takes an alteration that
-holds at every *candidate*, and its callers get it from a type's subtyping,
-whose proof for `&uniq{κ}` has to produce `δ J` and so needs `δ` to be
-good.
+> `Csem` (from the `Ecsem`s) → `Jsem` (**applying** δ) → `Deriv`, `der`
 
-Two routes out, written up in `inst.v`:
+and upstream holds to it everywhere: `⟦Px ⇒ Qx⟧δ = ⟦Px⟧δ -∗ |⇛ ⟦Qx⟧δ`
+(§ 6.4).  The quantification over interpretations lives in the *lemmas* -
+`Deriv_factor'`, `Deriv_map`, `bor_wand` - never inside the semantics.
+`guardJT_sem` here already had that shape; `idxborJT_sem` and `inclJT_sem`
+were instead made **constant** in δ, and the only way to make a guard
+constant in δ is to quantify over every δ - which has to be restricted to
+the *good* ones, which is `Deriv`, which is defined from `Jsem`.
 
-* make lifetime inclusion and the borrow's alteration **tokens**, as Nola's
-  own lifetime logic does (`nola/iris/lft.v`: `lft_incl` is pure and `⊑□` a
-  persistent token).  Every inclusion this model *creates* is structural or
-  eternal - both token-shaped - except the one `type_call_iris'` builds
-  from a shared borrow of a fraction;
-* stratify, so that a judgment whose semantics quantifies over
-  interpretations lives below the ones quantified over.
-
-Until one is done the development is at parity with `rust_halt`: sound and
-parametric, with the satisfiability of its constraints open.
+Both offenders are gone: `st_incl` is a token, and `st_iff` quantifies over
+every interpretation rather than the good ones.  See step 0 below for what
+that cost.
 
 ## Next
+
+0. ~~**Close the model.**~~  **Done**, in four steps; see
+   `nola/alerus/typing/inst.v` for the write-up.
+
+   a. `st_incl` is a token - every atom of `κ'` is supplied by `κ` or covered
+      by one of a finite set of eternalized lifetimes - so it mentions no
+      interpretation and reads at every candidate for free, as Nola's
+      `lft_sincl` does.  `st_incl_of_all` moved to `FnFml` as
+      `fn_incl_of_all`: its one use creates a fresh lifetime whose aliveness
+      is guarded by the caller's context, which is neither shape a token
+      records, and `rust_halt` has no counterpart because it has no function
+      type.
+   b. `Sync` is an equation of *formulas*, as `rust_halt` states it.  Every
+      instance is then a congruence.  This is what (c) needs.
+   c. `st_iff` quantifies over every interpretation rather than over the good
+      ones, so `idx_bor` - which is `idxborJT_sem` - mentions no `Deriv`.
+      The interface gains `alt_any`; the definitional `AltSem` fields read
+      there.  The price is a premise on `uniq_subtype`.
+   d. `Csem` by `sigTCT_Csem`, `Jsem` by `sigT_dsem`, and the six `inCS` and
+      three `inJS` obligations with them.  `alerus_sem` bundles the four.
+
+   Restating `type_soundness`/`type_safety` concretely is **done** too, as
+   `alerus_type_soundness` and `alerus_type_safety`; `Print Assumptions`
+   gives only `Eq_rect_eq` for both.  What blocked it was a typeclass
+   resolution cycle, `typeG_cif → type_alerusGS → typeG_cif`, written up
+   with the other three traps in `nola/alerus/PERF.md`.
+
+   Also not removed: `uniq_subtype`'s premise.  It is reachable exactly when
+   the two ghost assertions agree *as formulas* - `uniq_ghox_any_of_eq`,
+   `uniq_subtype_eq`, `uniq_eqtype_eq` - and that is intrinsic, not a gap in
+   the proof: a stored borrow's semantics is `□ δ (idxbor_j κ idx Px)`, and
+   at a non-candidate `δ` is an arbitrary predicate.  Removing it means
+   moving the alteration into the judgment's semantics, as
+   `borrow_deriv.v`'s `bor` does over `bor_tok`, which needs `StBor` to lose
+   `st_iff` and `lifetime_full.v`'s `idx_bor` with it.
 
 1. **`fn` must be stratified by an execution level** (thesis (5.4),
    § 3.4.1).  `FnFml`'s `fn_fml_sem_2` has no model and must not be
@@ -85,8 +116,17 @@ parametric, with the satisfiability of its constraints open.
    is complete as a `prost`, not an OFE, so it must move to
    `profix`/`Productive` (cf. `rust_halt/rec.v`).  Until then it assumes
    `Cofe (FML $oi Σ)`, which the model cannot discharge.
-3. **A worked example**, the way `rust_halt/verify/` has one: a concrete
-   `CON`/`JUDG` and a small typed program run through `type_soundness`.
+3. ~~**A worked example**~~  **Started**:
+   `nola/alerus/typing/examples/basic.v` types two small programs against
+   the rules, parametric in `CON`/`JUDG` exactly as `rust_halt/verify/` is
+   (upstream never applies `type_total` there either).  What it found:
+   `programs.v`'s generic `type_val` cannot be applied to a concrete
+   program - its conclusion has `let: xb := v in e` for a *value*, so
+   unification has to invert `of_val ?v` against a literal and diverges.
+   Each type's own rule (`type_int`, `type_bool`) applies first-order.  The
+   same holds of any rule stated with `of_val`: pass the value explicitly
+   and `simpl_subst` after each binder.  Worth extending with a program that
+   allocates, writes and frees a box.
 
 ## Rules this port had to learn
 

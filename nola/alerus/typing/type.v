@@ -1136,30 +1136,44 @@ Global Instance: Params (@Send) 5 := {}.
 
 Notation ListSend := (TCHForall (λ 𝔄, @Send _ _ _ 𝔄)).
 
-(** [Sync] at every candidate interpretation.
+(** [Sync]: a type's ghost assertion does not depend on the thread id.
 
-  [&shr{κ} ty] stores [ty_ghox ty … tid] as the right-hand side of a guard,
-  and rebuilding that guard at another thread id means transforming it - so
-  this law, like the depth laws of [type], has to hold at every candidate
-  ([AltSem] in [typing/ctx.v]).  [sync_tid] below is the instance at the
-  ambient interpretation. *)
+  This is an equation of *formulas*, not of their interpretations, exactly as
+  [nola/examples/rust_halt/type.v] states it
+  ([sync : ty_shr T t l α xπ ≡ ty_shr T t' l α xπ]).  The semantic version,
+  [∀ sem, alt_sem sem → sem … ⊣⊢ sem …], is not enough: [&uniq{κ} ty] stores
+  the body as an indexed borrow and [&shr{κ} ty] as a guard, and rebuilding
+  either at another thread id is [Deriv_map] in the model, which is available
+  only at a candidate - while what consumes this law needs it at every
+  interpretation, candidate or not (see [typing/inst.v]).  With an equation
+  of formulas every instance is a congruence, because each type former builds
+  its formula from its argument's by non-expansive constructors.
+
+  [sync_tid] below is the semantic consequence at the ambient
+  interpretation, and [sync_sem_at] the one at a candidate. *)
 Class Sync `{!typeG FML Σ} {𝔄} (ty: type 𝔄) :=
   sync_change_tid tid tid' x d g :
     (ty.(ty_phys) x tid = ty.(ty_phys) x tid') ∧
-    (∀ sem, alt_sem sem →
-      sem (ty.(ty_ghox) x d g tid) ⊣⊢ sem (ty.(ty_ghox) x d g tid')) ∧
-    (∀ sem, alt_sem sem →
-      sem (ty.(ty_gho_persx) x d g tid) ⊣⊢ sem (ty.(ty_gho_persx) x d g tid')).
+    (ty.(ty_ghox) x d g tid ≡ ty.(ty_ghox) x d g tid') ∧
+    (ty.(ty_gho_persx) x d g tid ≡ ty.(ty_gho_persx) x d g tid').
 Global Instance: Params (@Sync) 5 := {}.
+
+Lemma sync_sem_at `{!typeG FML Σ} {𝔄} {ty: type 𝔄} `{!Sync ty} {sem}
+    (H : alt_sem sem) tid tid' x d g :
+  (ty.(ty_phys) x tid = ty.(ty_phys) x tid') ∧
+  (sem (ty.(ty_ghox) x d g tid) ⊣⊢ sem (ty.(ty_ghox) x d g tid')) ∧
+  (sem (ty.(ty_gho_persx) x d g tid) ⊣⊢ sem (ty.(ty_gho_persx) x d g tid')).
+Proof.
+  have ? := alt_sem_ne H.
+  have [Hp [Hg Hgp]] := sync_change_tid (ty:=ty) tid tid' x d g.
+  split; [done|]. split; by f_equiv.
+Qed.
 
 Lemma sync_tid `{!typeG FML Σ} {𝔄} {ty: type 𝔄} `{!Sync ty} tid tid' x d g :
   (ty.(ty_phys) x tid = ty.(ty_phys) x tid') ∧
   (ty_gho ty x d g tid ⊣⊢ ty_gho ty x d g tid') ∧
   (ty_gho_pers ty x d g tid ⊣⊢ ty_gho_pers ty x d g tid').
-Proof.
-  have [Hp [Hg Hgp]] := sync_change_tid (ty:=ty) tid tid' x d g.
-  split; [done|]. split; [exact: (Hg _ alt_here)|exact: (Hgp _ alt_here)].
-Qed.
+Proof. exact: (sync_sem_at alt_here). Qed.
 
 Notation ListSync := (TCHForall (λ 𝔄, @Sync _ _ _ 𝔄)).
 
@@ -1198,11 +1212,7 @@ Section traits.
     move=> ?? [_ _ _ Eqv Eqv2 Eqv3] Hyp. rewrite /Sync=> t t' x d g.
     have [Hp [Hg Hgp]] := Hyp t t' x d g. split.
     - rewrite -!Eqv3. apply Hp.
-    - split=> sem Hsem;
-        have Hne := alt_sem_ne Hsem;
-        have ? : Proper ((≡) ==> (≡)) sem := ne_proper _.
-      + rewrite -!(Eqv _ _ _ _). by apply Hg.
-      + rewrite -!(Eqv2 _ _ _ _). by apply Hgp.
+    - split; [rewrite -!(Eqv _ _ _ _)|rewrite -!(Eqv2 _ _ _ _)]; done.
   Qed.
 
   (* VerusBelt: this doesn't work anymore; Sync is proved on a per-type basis

@@ -223,25 +223,13 @@ Section uniq_bor_sem.
     have Hp : ∀ y, ty_phys ty y tid = ty_phys ty y tid'.
     { move=> y. by have [? _] := SyncTy tid tid' y 0 0. }
     have [_ [_ Hps]] := SyncTy tid tid' x0 d' g'.
-    (* the borrowed body only differs in the thread id, and an indexed
-      borrow only cares about the semantics of its contents *)
-    have Hbody : ∀ sem, alt_sem sem →
-      sem (idxbor_fml κ idx (uniq_body_fml ty x0 ξi tid l)) ⊣⊢
-      sem (idxbor_fml κ idx (uniq_body_fml ty x0 ξi tid' l)).
-    { have Hb : ∀ sem', alt_sem sem' →
-        sem' (uniq_body_fml ty x0 ξi tid l) ⊣⊢
-        sem' (uniq_body_fml ty x0 ξi tid' l).
-      { move=> sem' Hs.
-        apply (uniq_body_fml_sem_tid_at Hs ty x0 ξi tid tid' l); [|done].
-        move=> y e h. have [_ [Hg _]] := SyncTy tid tid' y e h. by apply Hg. }
-      move=> sem Hsem. apply bi.equiv_entails; split; iIntros "B";
-        iApply (idxbor_fml_iff_at Hsem with "[] B");
-        iIntros "!>" (sem' Hs); rewrite (Hb _ Hs); iSplit; iIntros "$". }
-    split; [done|]. split=> sem Hsem.
-    - rewrite /= /uniq_body_fmlx !(sep_sem_at Hsem) !(or_sem_at Hsem)
-        (Hps _ Hsem) (Hbody _ Hsem) //.
-    - rewrite /= !(sep_sem_at Hsem) !(or_sem_at Hsem)
-        (Hps _ Hsem) (Hbody _ Hsem) //.
+    (* the borrowed body differs only in the thread id, and [Sync] is now an
+      equation of formulas, so the indexed borrow of it is too *)
+    have Hbody : uniq_body_fml ty x0 ξi tid l ≡ uniq_body_fml ty x0 ξi tid' l.
+    { apply uniq_body_fml_tid; [|done]=> y e h.
+      by have [_ [? _]] := SyncTy tid tid' y e h. }
+    split; [done|].
+    split=>/=; rewrite /uniq_body_fmlx Hbody Hps //.
   Qed.
 
   Lemma uniq_resolve {𝔄} E L κ (ty: type 𝔄) :
@@ -257,11 +245,53 @@ Section uniq_bor_sem.
     iModIntro. iApply proph_obs_eq; [|done]=> ? /=. by f_equal.
   Qed.
 
+  (** Discharging [uniq_subtype]'s extra premise from an equation of
+    *formulas*.
+
+    This is the whole of what is reachable.  A unique reference stores its
+    body as [idxbor_fml], whose semantics is [□ δ (idxbor_j κ idx Px)]; at an
+    interpretation that is not a candidate, [δ] is an arbitrary predicate, so
+    two stored bodies are relatable exactly when the judgments - hence the
+    formulas - are equal.  No amount of *semantic* agreement between [ty] and
+    [ty'] helps there, which is why an [eqtype] does not discharge the
+    premise and a nested [&uniq{κ} (&uniq{κ'} ty)] subtyping does not go
+    through.
+
+    Removing the restriction means moving the alteration out of [idx_bor] and
+    into the judgment's own semantics, as [nola/iris/borrow_deriv.v] does
+    ([bor δ α Px := ∃ Qx, □ δ (jbupd Px Qx) ∗ □ δ (jbupd Qx Px) ∗
+    bor_tok α Qx], the thesis's § 6.4).  The alteration would then be read at
+    [δ], [Deriv_map] would apply, and the premise would be the [alt_into]
+    family rather than the [alt_any] one.  That needs [StBor] to lose
+    [st_iff], and [lifetime_full.v]'s [idx_bor] with it - see
+    [typing/inst.v]. *)
+  Lemma uniq_ghox_any_of_eq {𝔄} (ty ty': type 𝔄) :
+    (∀ y e h t, ty.(ty_ghox) y e h t ≡ ty'.(ty_ghox) y e h t) →
+    ⊢ □ ∀ sem (_ : alt_any sem), ∀ y e h t,
+        sem (ty.(ty_ghox) y e h t) ∗-∗ sem (ty'.(ty_ghox) y e h t).
+  Proof.
+    move=> Heq. iIntros "!>" (sem H y e h t).
+    rewrite (sem_proper_any H (Heq y e h t)). iSplit; by iIntros "$".
+  Qed.
+
+  (** Subtyping of a unique reference.
+
+    The extra premise is the price of the model (see [typing/inst.v]): the
+    borrowed body is altered *inside* a borrow, and the borrow's alteration
+    [st_iff] is read at every interpretation, not only at the candidates -
+    that is what takes [Deriv], and with it [Jsem], out of [idx_bor].  An
+    [eqtype] gives the equivalence at the candidates only, since its proof
+    for a type containing a judgment goes through [Deriv_map].  The premise
+    is discharged by [equiv_ghox_any] whenever the two ghost assertions are
+    equal as formulas, which covers every type former whose [ty_ghox] is
+    built definitionally. *)
   Lemma uniq_subtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
     lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
+    (⊢ □ ∀ sem (_ : alt_any sem), ∀ y e h t,
+        sem (ty.(ty_ghox) y e h t) ∗-∗ sem (ty'.(ty_ghox) y e h t)) →
     subtype E L (&uniq{κ} ty) (&uniq{κ'} ty') idₛ.
   Proof.
-    move=> In Eqt. rewrite -eqtype_id_unfold in Eqt. iIntros "L".
+    move=> In Eqt HAny. rewrite -eqtype_id_unfold in Eqt. iIntros "L".
     iDestruct (Eqt with "L") as "#Eqt". iDestruct (In with "L") as "#In".
     iIntros "!> #E". iSplit; [done|].
     iDestruct ("Eqt" with "E")
@@ -270,12 +300,11 @@ Section uniq_bor_sem.
     (* the two ghost components, at every candidate interpretation *)
     have HPhys : ∀ y t, ty_phys ty y t = ty_phys ty' y t
       by move=> ??; apply EqPhys.
-    iAssert (□ ∀ t sem' (_ : alt_sem sem'), ∀ y e h,
+    iAssert (□ ∀ t sem' (_ : alt_any sem'), ∀ y e h,
       sem' (ty.(ty_ghox) y e h t) ∗-∗ sem' (ty'.(ty_ghox) y e h t))%I
       as "#HGho".
-    { iIntros "!>" (t sem' Hs y e h).
-      iDestruct ("EqOwn" $! sem' Hs y e h t) as "[F B]".
-      iSplit; iIntros "x"; [by iApply "F"|by iApply "B"]. }
+    { iDestruct HAny as "#H". iIntros "!>" (t sem' Hs y e h).
+      iApply ("H" $! sem' Hs). }
     have HDead : ∀ sem' (Hs : alt_sem sem'),
       dincl κ' κ -∗
       sem' (basically_dead_fml κ) -∗ sem' (basically_dead_fml κ').
@@ -338,8 +367,35 @@ Section uniq_bor_sem.
 
   Lemma uniq_eqtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
     lctx_lft_eq E L κ κ' → eqtype E L ty ty' idₛ idₛ →
+    (⊢ □ ∀ sem (_ : alt_any sem), ∀ y e h t,
+        sem (ty.(ty_ghox) y e h t) ∗-∗ sem (ty'.(ty_ghox) y e h t)) →
     eqtype E L (&uniq{κ} ty) (&uniq{κ} ty') idₛ idₛ.
-  Proof. move=> [??][??]. by split; apply uniq_subtype. Qed.
+  Proof.
+    move=> [??][??] HAny.
+    have HAny' : ⊢ □ ∀ sem (_ : alt_any sem), ∀ y e h t,
+      sem (ty'.(ty_ghox) y e h t) ∗-∗ sem (ty.(ty_ghox) y e h t).
+    { iDestruct HAny as "#H". iIntros "!>" (sem Hs y e h t).
+      iDestruct ("H" $! sem Hs y e h t) as "[F B]".
+      iSplit; iIntros "x"; [by iApply "B"|by iApply "F"]. }
+    by split; apply uniq_subtype.
+  Qed.
+
+  (** Hence subtyping and type equality of unique references whose bodies
+    agree as formulas, which is what the [&uniq] rules in the development
+    actually use. *)
+  Lemma uniq_subtype_eq {𝔄} E L κ κ' (ty ty': type 𝔄) :
+    lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
+    (∀ y e h t, ty.(ty_ghox) y e h t ≡ ty'.(ty_ghox) y e h t) →
+    subtype E L (&uniq{κ} ty) (&uniq{κ'} ty') idₛ.
+  Proof. move=> ?? Heq. by apply uniq_subtype, uniq_ghox_any_of_eq. Qed.
+
+  Lemma uniq_eqtype_eq {𝔄} E L κ κ' (ty ty': type 𝔄) :
+    lctx_lft_eq E L κ κ' → eqtype E L ty ty' idₛ idₛ →
+    (∀ y e h t, ty.(ty_ghox) y e h t ≡ ty'.(ty_ghox) y e h t) →
+    eqtype E L (&uniq{κ} ty) (&uniq{κ} ty') idₛ idₛ.
+  Proof.
+    move=> ?? Heq. by apply (uniq_eqtype _ _ κ κ'), uniq_ghox_any_of_eq.
+  Qed.
 
   (** Accessors on a unique reference's refinement *)
   Definition uniq_bor_loc {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : cloc :=

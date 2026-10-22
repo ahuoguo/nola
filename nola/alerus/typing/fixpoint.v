@@ -403,29 +403,21 @@ Section fix_ty.
       (λ p : prodO (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ)
                    (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ),
         ty_phys (Tn T 0) x tid = ty_phys (Tn T 0) x tid' ∧
-        (∀ sem, alt_sem sem →
-          sem (p.1 x d g tid) ⊣⊢ sem (p.1 x d g tid')) ∧
-        (∀ sem, alt_sem sem →
-          sem (p.2 x d g tid) ⊣⊢ sem (p.2 x d g tid')))
+        p.1 x d g tid ≡ p.1 x d g tid' ∧
+        p.2 x d g tid ≡ p.2 x d g tid')
       _ (gho_chain T)).
       + apply limit_preserving_and; [|apply limit_preserving_and].
         * do 2 (rewrite <- ty_phys_eq2). apply limit_preserving_const.
-        * apply limit_preserving_forall=> sem.
-          apply limit_preserving_forall=> Hsem.
-          have Hne := alt_sem_ne Hsem.
-          apply (limit_preserving_equiv
+        * apply (limit_preserving_equiv
             (A:=prodO (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ)
                       (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ))
-            (λ p, sem (p.1 x d g tid)) (λ p, sem (p.1 x d g tid')))
-            => ??? [Eq _]; f_equiv; apply Eq.
-        * apply limit_preserving_forall=> sem.
-          apply limit_preserving_forall=> Hsem.
-          have Hne := alt_sem_ne Hsem.
-          apply (limit_preserving_equiv
+            (λ p, p.1 x d g tid) (λ p, p.1 x d g tid'))
+            => ??? [Eq _]; apply Eq.
+        * apply (limit_preserving_equiv
             (A:=prodO (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ)
                       (~~𝔄 -d> nat -d> nat -d> thread_id -d> FML $oi Σ))
-            (λ p, sem (p.2 x d g tid)) (λ p, sem (p.2 x d g tid')))
-            => ??? [_ Eq]; f_equiv; apply Eq.
+            (λ p, p.2 x d g tid) (λ p, p.2 x d g tid'))
+            => ??? [_ Eq]; apply Eq.
       + intros. split.
         * do 2 (rewrite <- ty_phys_eq2). done.
         * apply sync_change_tid.

@@ -756,6 +756,25 @@ Section type_fml.
     by apply equiv_dist.
   Qed.
 
+  (** [≡]-properness of every formula constructor, so that [Sync] - which is
+    an equation of formulas (see [typing/type.v]) - can be proved by plain
+    [rewrite]. *)
+  #[export] Instance sep_fml_proper :
+    Proper ((≡) ==> (≡) ==> (≡)) (bor_sep (FML:=FML) (Σ:=Σ)) :=
+    ne_proper_2 _.
+  #[export] Instance or_fml_proper : Proper ((≡) ==> (≡) ==> (≡)) or_fml :=
+    ne_proper_2 _.
+  #[export] Instance guard_fml_proper :
+    Proper ((≡) ==> (≡) ==> (≡)) guard_fml := ne_proper_2 _.
+  #[export] Instance idxbor_fml_proper {κ idx} :
+    Proper ((≡) ==> (≡)) (idxbor_fml κ idx) := ne_proper _.
+  #[export] Instance exs_fml_proper' {𝔄} :
+    Proper (pointwise_relation (~~𝔄) (≡) ==> (≡)) (@exs_fml _ _ _ _ _ 𝔄).
+  Proof.
+    move=> ?? eq. apply equiv_dist=> n. apply exs_fml_ne=> a.
+    by apply equiv_dist.
+  Qed.
+
   (** Persistence, so that the [Persistent] obligations of the type formers
     are discharged by type class search as they were before. *)
   #[export] Instance false_fml_persistent : Persistent (bor_sem false_fml).
@@ -859,33 +878,46 @@ Class AltSem (FML : oFunctor) Σ
     candidates [δ'] with [dinto der δ'], which [Deriv_factor']'s induction
     hypothesis carries along. *)
 
-  alt_sem_ne {sem} : alt_sem sem → NonExpansive sem;
+  (** [alt_any sem]: [sem] is *some* interpretation, good or not.  In the
+    model [∃ δ, cand_asem sem = AlerusSem_at δ], with no [Deriv].
+
+    The constructors whose semantics is definitional mean the same at every
+    interpretation, not just at every candidate, and [idxbor_fml_iff_at]
+    needs exactly that: with [st_iff] no longer restricted to the good
+    interpretations - which is what takes [Deriv], and so [Jsem], out of
+    [idx_bor] - the alteration it asks for has to hold off the candidates
+    too.  See [typing/inst.v]. *)
+  alt_any : Cand FML Σ → Prop;
+  alt_sem_any {sem} : alt_sem sem → alt_any sem;
+
+  alt_any_ne {sem} : alt_any sem → NonExpansive sem;
+
   (** The non-judgment constructors mean the same at every candidate *)
-  sep_sem_at {sem} : alt_sem sem → ∀ Px Qx,
+  sep_sem_at_any {sem} : alt_any sem → ∀ Px Qx,
     sem (bor_sep Px Qx) ⊣⊢ sem Px ∗ sem Qx;
-  false_sem_at {sem} : alt_sem sem → sem false_fml ⊣⊢ False;
-  empty_sem_at {sem} : alt_sem sem → sem empty_fml ⊣⊢ True;
-  pure_sem_at {sem} : alt_sem sem → ∀ φ, sem (pure_fml φ) ⊣⊢ ⌜φ⌝;
-  ex_sem_at {sem} : alt_sem sem → ∀ A (Φ : A → FML $oi Σ),
+  false_sem_at_any {sem} : alt_any sem → sem false_fml ⊣⊢ False;
+  empty_sem_at_any {sem} : alt_any sem → sem empty_fml ⊣⊢ True;
+  pure_sem_at_any {sem} : alt_any sem → ∀ φ, sem (pure_fml φ) ⊣⊢ ⌜φ⌝;
+  ex_sem_at_any {sem} : alt_any sem → ∀ A (Φ : A → FML $oi Σ),
     sem (ex_fml Φ) ⊣⊢ ∃ a : A, sem (Φ a);
-  exs_sem_at {sem} : alt_sem sem → ∀ 𝔄 (Φ : (~~𝔄) → FML $oi Σ),
+  exs_sem_at_any {sem} : alt_any sem → ∀ 𝔄 (Φ : (~~𝔄) → FML $oi Σ),
     sem (exs_fml Φ) ⊣⊢ ∃ a : ~~𝔄, sem (Φ a);
-  or_sem_at {sem} : alt_sem sem → ∀ Px Qx,
+  or_sem_at_any {sem} : alt_any sem → ∀ Px Qx,
     sem (or_fml Px Qx) ⊣⊢ sem Px ∨ sem Qx;
-  alive_sem_at {sem} : alt_sem sem → ∀ κ, sem (alive_fml κ) ⊣⊢ @[κ];
-  dead_sem_at {sem} : alt_sem sem → ∀ κ, sem (dead_fml κ) ⊣⊢ [†κ];
-  cells_sem_at {sem} : alt_sem sem → ∀ l cs fv,
+  alive_sem_at_any {sem} : alt_any sem → ∀ κ, sem (alive_fml κ) ⊣⊢ @[κ];
+  dead_sem_at_any {sem} : alt_any sem → ∀ κ, sem (dead_fml κ) ⊣⊢ [†κ];
+  cells_sem_at_any {sem} : alt_any sem → ∀ l cs fv,
     sem (cells_fml l cs fv) ⊣⊢ l ↦[^ cs ]!∗ fv;
-  ccells_sem_at {sem} : alt_sem sem → ∀ l fv,
+  ccells_sem_at_any {sem} : alt_any sem → ∀ l fv,
     sem (ccells_fml l fv) ⊣⊢ l #↦!∗ fv;
-  cmapstoany_sem_at {sem} : alt_sem sem → ∀ l,
+  cmapstoany_sem_at_any {sem} : alt_any sem → ∀ l,
     sem (cmapstoany_fml l) ⊣⊢ l #↦∗_;
-  freeable_sem_at {sem} : alt_sem sem → ∀ n sz l,
+  freeable_sem_at_any {sem} : alt_any sem → ∀ n sz l,
     sem (freeable_fml n sz l) ⊣⊢ freeable_sz n sz l;
-  vo_sem_at {sem} : alt_sem sem → ∀ ξ x d, sem (vo_fml ξ x d) ⊣⊢ .VO[ξ] x d;
-  pc_sem_at {sem} : alt_sem sem → ∀ ξ x vπ d,
+  vo_sem_at_any {sem} : alt_any sem → ∀ ξ x d, sem (vo_fml ξ x d) ⊣⊢ .VO[ξ] x d;
+  pc_sem_at_any {sem} : alt_any sem → ∀ ξ x vπ d,
     sem (pc_fml ξ x vπ d) ⊣⊢ .PC[ξ] x vπ d;
-  gsrc_sem_at {sem} : alt_sem sem → ∀ s,
+  gsrc_sem_at_any {sem} : alt_any sem → ∀ s,
     sem (gsrc_fml s) ⊣⊢ gsrc_interp s;
   (** Reading a guard stored at [sem], at a candidate [sem] maps into.  In
     the model this is [dinto δ δ'] applied to the guard judgment. *)
@@ -898,13 +930,13 @@ Class AltSem (FML : oFunctor) Σ
       sem' Px &&{alt_WGuard sem'}&&> sem' Qx) ⊢ sem (guard_fml Px Qx);
 
   (** A stored guard is persistent.  In the model [δ J] is under a [□]. *)
-  guard_fml_pers_at {sem} : alt_sem sem → ∀ Px Qx,
+  guard_fml_pers_at_any {sem} : alt_any sem → ∀ Px Qx,
     Persistent (sem (guard_fml Px Qx));
   (** An indexed borrow stored at a candidate is persistent.  [idx_bor] is a
     judgment in the same sense as [guard_fml] - it carries
     [□ (bor_sem Px' ↔ bor_sem Px)] - so only its persistence is available
     here; see the note in README.md. *)
-  idxbor_fml_pers_at {sem} : alt_sem sem → ∀ κ idx Px,
+  idxbor_fml_pers_at_any {sem} : alt_any sem → ∀ κ idx Px,
     Persistent (sem (idxbor_fml κ idx Px));
   (** Eliminating a stored indexed borrow at the ambient interpretation.
     [der_sound] in the model. *)
@@ -919,11 +951,11 @@ Class AltSem (FML : oFunctor) Σ
   (** [idx_bor_iff] at a candidate: an indexed borrow only cares about the
     semantics of its contents. *)
   idxbor_fml_iff_at {sem} : alt_sem sem → ∀ κ idx Px Qx,
-    □ (∀ sem' (_ : alt_sem sem'), sem' Px ∗-∗ sem' Qx) -∗
+    □ (∀ sem' (_ : alt_any sem'), sem' Px ∗-∗ sem' Qx) -∗
     sem (idxbor_fml κ idx Px) -∗ sem (idxbor_fml κ idx Qx);
   (** Borrow-state ownership means the same at every candidate.  This is
     what [idx_bor_tok] is made of. *)
-  bor_state_sem_at {sem} : alt_sem sem → ∀ sn bs,
+  bor_state_sem_at_any {sem} : alt_any sem → ∀ sn bs,
     sem (bor_state_fml sn bs) ⊣⊢ bor_sem (bor_state_fml sn bs);
   (** Reading a stored indexed borrow at a candidate the storing
     interpretation maps into.  [Deriv_map] in the model, exactly as
@@ -956,7 +988,7 @@ Class AltSem (FML : oFunctor) Σ
   incl_fml_sem_1 {κ κ'} : bor_sem (incl_fml κ κ') ⊢ st_incl κ κ';
   incl_fml_of_incl {sem} : alt_sem sem → ∀ κ κ',
     st_incl κ κ' ⊢ sem (incl_fml κ κ');
-  incl_fml_pers_at {sem} : alt_sem sem → ∀ κ κ',
+  incl_fml_pers_at_any {sem} : alt_any sem → ∀ κ κ',
     Persistent (sem (incl_fml κ κ'));
   (** An inclusion stored at a candidate is monotone in both arguments.
     [Deriv_map] in the model: the stored inclusion's semantics does not
@@ -969,12 +1001,6 @@ Class AltSem (FML : oFunctor) Σ
     mentions no interpretation, so it replays at every candidate.  Every
     inclusion the typing layer creates from nothing is of this shape. *)
   st_incl_of_sub {κ κ'} : κ' ⊆ κ → ⊢ st_incl κ κ';
-  (** An inclusion that holds at *every* candidate is a storable one.  This
-    is the only way to build one from scratch; in the model both sides are
-    the same family. *)
-  st_incl_of_all {κ κ'} :
-    (□ ∀ sem (_ : alt_sem sem), @[κ] &&{alt_WGuard sem}&&> @[κ']) ⊢
-      st_incl κ κ';
   (** The storable inclusion eliminates at *every* candidate - that is what
     it is for.  In the model it is the family
     [□ ∀ δ good, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']], and this field
@@ -1019,6 +1045,36 @@ Class AltSem (FML : oFunctor) Σ
 (** [alt_sem] is a class, so that a hypothesis [alt_sem sem] in the context
   makes [sem] non-expansive for [setoid_rewrite] and [f_equiv]. *)
 Existing Class alt_sem.
+Existing Class alt_any.
+
+(** The definitional constructors, and the persistence of the judgment
+  ones, hold at every interpretation; these are the instances at a
+  candidate, under the names the development already uses. *)
+Section alt_any.
+  Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
+    StBor0 : !StBor FML Σ, StBorSem0 : !StBorSem, !AltSem FML Σ}.
+  Definition sep_sem_at {sem} (H : alt_sem sem) := sep_sem_at_any (alt_sem_any H).
+  Definition false_sem_at {sem} (H : alt_sem sem) := false_sem_at_any (alt_sem_any H).
+  Definition empty_sem_at {sem} (H : alt_sem sem) := empty_sem_at_any (alt_sem_any H).
+  Definition pure_sem_at {sem} (H : alt_sem sem) := pure_sem_at_any (alt_sem_any H).
+  Definition ex_sem_at {sem} (H : alt_sem sem) := ex_sem_at_any (alt_sem_any H).
+  Definition exs_sem_at {sem} (H : alt_sem sem) := exs_sem_at_any (alt_sem_any H).
+  Definition or_sem_at {sem} (H : alt_sem sem) := or_sem_at_any (alt_sem_any H).
+  Definition alive_sem_at {sem} (H : alt_sem sem) := alive_sem_at_any (alt_sem_any H).
+  Definition dead_sem_at {sem} (H : alt_sem sem) := dead_sem_at_any (alt_sem_any H).
+  Definition cells_sem_at {sem} (H : alt_sem sem) := cells_sem_at_any (alt_sem_any H).
+  Definition ccells_sem_at {sem} (H : alt_sem sem) := ccells_sem_at_any (alt_sem_any H).
+  Definition cmapstoany_sem_at {sem} (H : alt_sem sem) := cmapstoany_sem_at_any (alt_sem_any H).
+  Definition freeable_sem_at {sem} (H : alt_sem sem) := freeable_sem_at_any (alt_sem_any H).
+  Definition vo_sem_at {sem} (H : alt_sem sem) := vo_sem_at_any (alt_sem_any H).
+  Definition pc_sem_at {sem} (H : alt_sem sem) := pc_sem_at_any (alt_sem_any H).
+  Definition gsrc_sem_at {sem} (H : alt_sem sem) := gsrc_sem_at_any (alt_sem_any H).
+  Definition bor_state_sem_at {sem} (H : alt_sem sem) := bor_state_sem_at_any (alt_sem_any H).
+  Definition guard_fml_pers_at {sem} (H : alt_sem sem) := guard_fml_pers_at_any (alt_sem_any H).
+  Definition idxbor_fml_pers_at {sem} (H : alt_sem sem) := idxbor_fml_pers_at_any (alt_sem_any H).
+  Definition incl_fml_pers_at {sem} (H : alt_sem sem) := incl_fml_pers_at_any (alt_sem_any H).
+  Definition alt_sem_ne {sem} (H : alt_sem sem) := alt_any_ne (alt_sem_any H).
+End alt_any.
 
 Section alt_sem.
   Context `{!alerusGS FML Σ, !AlerusSem FML Σ, !GsrcSem FML Σ, !TypeFml FML Σ,
@@ -1027,6 +1083,16 @@ Section alt_sem.
 
   #[export] Instance alt_sem_ne' {sem} `{Hs : !alt_sem sem} :
     NonExpansive sem := alt_sem_ne Hs.
+
+  (** Equal formulas mean the same at *every* interpretation, candidate or
+    not.  This is the one way to relate two stored judgments off the
+    candidates: [sem (idxbor_fml κ idx Px)] is [□ δ (idxbor_j κ idx Px)], and
+    at a non-candidate [δ] is an arbitrary predicate, so two of them are
+    relatable exactly when the judgments - hence the formulas - are equal.
+    See the note on [uniq_subtype] in [typing/uniq_bor.v]. *)
+  Lemma sem_proper_any {sem} (H : alt_any sem) {Px Qx} :
+    Px ≡ Qx → sem Px ⊣⊢ sem Qx.
+  Proof. move=> ?. have ? := alt_any_ne H. by f_equiv. Qed.
 
   (** ** A guard held *as a formula*
 
@@ -1464,16 +1530,6 @@ Section alt_sem.
     rewrite (alive_sem_at Hs) (alive_sem_at Hs).
     by iApply (dincl_guard_at Hs).
   Qed.
-  Lemma dincl_fguardx {κ κ'} :
-    dincl κ κ' ⊣⊢ fguardx (alive_fml κ) (alive_fml κ').
-  Proof.
-    iSplit.
-    - iIntros "#In". iApply fguardx_of_all. iIntros "!>" (sem H).
-      rewrite !(alive_sem_at H). by iApply (dincl_guard_at H).
-    - iIntros "#g". iApply st_incl_of_all. iIntros "!>" (sem H).
-      rewrite -!(alive_sem_at H). by iApply (fguardx_at H).
-  Qed.
-
   Lemma incl_fml_sem {κ κ'} : bor_sem (incl_fml κ κ') ⊣⊢ dincl κ κ'.
   Proof.
     apply bi.equiv_entails; split;

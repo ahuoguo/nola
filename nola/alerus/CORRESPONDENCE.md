@@ -105,7 +105,9 @@ Three are missing:
 | `spawn.v` (394) | `join` is a spin loop proved by `iLöb` |
 | `soundness.v` (100) | waits on the model |
 
-`examples/` (`assert`, `list`, `pcell_example`) are not ported.
+`examples/` (`assert`, `list`, `pcell_example`) are not ported;
+`typing/examples/basic.v` is new here, and is the first worked example in
+the tree.
 
 ### What changed inside the ported typing files
 
@@ -119,3 +121,6 @@ Three are missing:
   itself no longer mentions the interpretation.
 * `⧖d`/`⧗d`/`£n` and the steps that pay for laters are gone throughout; the
   depth indices `d`, `g` survive as plain numbers.
+
+Performance traps this port hit, and why two of them do not arise
+upstream: `nola/alerus/PERF.md`.
