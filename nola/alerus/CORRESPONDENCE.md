@@ -121,3 +121,6 @@ the tree.
   itself no longer mentions the interpretation.
 * `⧖d`/`⧗d`/`£n` and the steps that pay for laters are gone throughout; the
   depth indices `d`, `g` survive as plain numbers.
+
+Performance traps this port hit, and why two of them do not arise
+upstream: `nola/alerus/PERF.md`.

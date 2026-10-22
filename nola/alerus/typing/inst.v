@@ -302,26 +302,42 @@ Proof.
   move=> big. by exists alerusCsem, alerusJsem, typingCS_CON, typingJS_JUDG.
 Qed.
 
-(** Restating [type_soundness] and [type_safety] concretely is still left
-  out, and what blocks it is now pinned down.  Measured, each under a hard
-  memory cap:
+(** ** Soundness with the constraints discharged
 
-  - elaborating [type_soundness (CON := alerusCON) (JUDG := alerusJUDG Σ)]
-    is instant - the *statement* is not the problem;
-  - [refine] in place of [apply] is likewise instant, so [apply]'s conversion
-    heuristics are one cost but not the only one;
-  - [alerus_sem_intro] above, whose existential is written out at the
-    concrete signature, costs 487MB - the same as merely importing the
-    typing layer.  Supplying the four semantics is cheap.
+  The same two statements for the concrete [CON] and [JUDG] above, with
+  their semantics supplied, so that neither is vacuous. *)
+Theorem alerus_type_soundness {Σ} `{!alerusGpreS (cifOF alerusCON) Σ}
+    {𝔅} (e : expr) (tr : predl_trans' [] 𝔅) :
+  (∀ post xl mask π, tr post xl mask π) →
+  (∀ H : alerusGS (cifOF alerusCON) Σ,
+    ⊢ typed_body [] [] (InvCtx [] static AtomicClosed) ([] : cctx 𝔅)
+        +[] e tr) →
+  sn erased_step ([e], (∅, false)).
+Proof.
+  move=> Htr big.
+  refine (type_soundness (CON := alerusCON) (JUDG := alerusJUDG Σ) e tr Htr _).
+  move=> H. exists alerusCsem, alerusJsem, typingCS_CON, typingJS_JUDG.
+  exact: big.
+Qed.
 
-  What is not cheap is *connecting* the two: discharging [type_soundness]'s
-  own existential, whether by [exists], by [ex_intro] under [refine], or by
-  [exact]ing [alerus_sem_intro] into it.  That reached 9.1GB after 25 minutes
-  without finishing, so the two existential types are not syntactically equal
-  and conversion between them unfolds the whole [typeG].  [Strategy opaque]
-  on the signature, on the judgment type and on [typeG_cif] changes nothing.
+Theorem alerus_type_safety {Σ} `{!alerusGpreS (cifOF alerusCON) Σ}
+    {𝔅} (e : expr) (tr : predl_trans' [] 𝔅) t σ :
+  (∀ post xl mask π, tr post xl mask π) →
+  (∀ H : alerusGS (cifOF alerusCON) Σ,
+    ⊢ typed_body [] [] (InvCtx [] static AtomicClosed) ([] : cctx 𝔅)
+        +[] e tr) →
+  rtc erased_step ([e], (∅, false)) (t, σ) →
+  nonracing_threadpool t σ ∧
+    (∀ e', e' ∈ t → is_Some (to_val e') ∨ reducible e' σ).
+Proof.
+  move=> Htr big.
+  refine (type_safety (CON := alerusCON) (JUDG := alerusJUDG Σ) e tr t σ
+    Htr _).
+  move=> H. exists alerusCsem, alerusJsem, typingCS_CON, typingJS_JUDG.
+  exact: big.
+Qed.
 
-  A client wanting [sn erased_step] for a concrete program therefore applies
-  [type_soundness] and hits the same wall.  Making the two terms equal by
-  construction - having [soundness.v] name [typeG_cif] explicitly rather than
-  re-resolving it under the existential - is the next thing to try. *)
+(** Both rest on nothing but the axiom Iris itself uses, now at a concrete
+  constructor signature, judgment type and semantics. *)
+Print Assumptions alerus_type_soundness.
+Print Assumptions alerus_type_safety.

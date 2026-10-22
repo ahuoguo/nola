@@ -90,19 +90,11 @@ that cost.
    d. `Csem` by `sigTCT_Csem`, `Jsem` by `sigT_dsem`, and the six `inCS` and
       three `inJS` obligations with them.  `alerus_sem` bundles the four.
 
-   **Not** done: restating `type_soundness`/`type_safety` concretely.
-   Measured, each under a hard memory cap: the statement elaborates at the
-   concrete `CON`/`JUDG` instantly; `refine` in place of `apply` is also
-   instant; and `alerus_sem_intro`, whose existential is written out at the
-   concrete signature, costs 487MB - so *supplying* the four semantics is
-   cheap.  What is not is connecting the two, by `exists`, by `ex_intro`
-   under `refine`, or by `exact`: that reached 9.1GB after 25 minutes
-   without finishing, so the two existential types are not syntactically
-   equal and conversion unfolds the whole `typeG`.  `Strategy opaque` on the
-   signature, the judgment type and `typeG_cif` changes nothing.  Next thing
-   to try: have `soundness.v` name `typeG_cif` explicitly rather than
-   re-resolve it under the existential, so the terms are equal by
-   construction.
+   Restating `type_soundness`/`type_safety` concretely is **done** too, as
+   `alerus_type_soundness` and `alerus_type_safety`; `Print Assumptions`
+   gives only `Eq_rect_eq` for both.  What blocked it was a typeclass
+   resolution cycle, `typeG_cif → type_alerusGS → typeG_cif`, written up
+   with the other three traps in `nola/alerus/PERF.md`.
 
    Also not removed: `uniq_subtype`'s premise.  It is reachable exactly when
    the two ghost assertions agree *as formulas* - `uniq_ghox_any_of_eq`,

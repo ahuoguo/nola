@@ -55,3 +55,20 @@ Section typeG.
   Next Obligation. move=> *. exact cif_cna_inv_sem. Qed.
   Next Obligation. move=> *. exact cif_cna_otok_sem. Qed.
 End typeG.
+
+(** [typeG_cif] needs an [alerusGS], and [typeG]'s first field projects one
+  back out, so typeclass resolution can cycle
+
+    [typeG ?FML ?Σ --typeG_cif--> alerusGS … --type_alerusGS--> typeG … --…]
+
+  deepening forever.  It only bites once [typeG_cif] is in scope as a global
+  instance - that is, in [typing/inst.v] and anything downstream - and there
+  it is fatal: a single [exists] against a goal mentioning [typed_body] ran
+  to 9.1GB over 25 minutes without finishing.  Cutting the cycle is enough;
+  finding an [alerusGS] in the local context is not an instance application
+  and is unaffected.  The other seven projections are cut too, since each
+  would close a longer cycle the same way. *)
+Global Hint Cut [ _* typeG_cif
+  (type_alerusGS | type_alerusSem | type_heapSem | type_gsrcSem |
+   type_typeFml | type_stBor | type_stBorSem | type_altSem) ]
+  : typeclass_instances.
