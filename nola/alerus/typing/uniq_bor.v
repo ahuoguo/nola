@@ -245,6 +245,35 @@ Section uniq_bor_sem.
     iModIntro. iApply proph_obs_eq; [|done]=> ? /=. by f_equal.
   Qed.
 
+  (** Discharging [uniq_subtype]'s extra premise from an equation of
+    *formulas*.
+
+    This is the whole of what is reachable.  A unique reference stores its
+    body as [idxbor_fml], whose semantics is [□ δ (idxbor_j κ idx Px)]; at an
+    interpretation that is not a candidate, [δ] is an arbitrary predicate, so
+    two stored bodies are relatable exactly when the judgments - hence the
+    formulas - are equal.  No amount of *semantic* agreement between [ty] and
+    [ty'] helps there, which is why an [eqtype] does not discharge the
+    premise and a nested [&uniq{κ} (&uniq{κ'} ty)] subtyping does not go
+    through.
+
+    Removing the restriction means moving the alteration out of [idx_bor] and
+    into the judgment's own semantics, as [nola/iris/borrow_deriv.v] does
+    ([bor δ α Px := ∃ Qx, □ δ (jbupd Px Qx) ∗ □ δ (jbupd Qx Px) ∗
+    bor_tok α Qx], the thesis's § 6.4).  The alteration would then be read at
+    [δ], [Deriv_map] would apply, and the premise would be the [alt_into]
+    family rather than the [alt_any] one.  That needs [StBor] to lose
+    [st_iff], and [lifetime_full.v]'s [idx_bor] with it - see
+    [typing/inst.v]. *)
+  Lemma uniq_ghox_any_of_eq {𝔄} (ty ty': type 𝔄) :
+    (∀ y e h t, ty.(ty_ghox) y e h t ≡ ty'.(ty_ghox) y e h t) →
+    ⊢ □ ∀ sem (_ : alt_any sem), ∀ y e h t,
+        sem (ty.(ty_ghox) y e h t) ∗-∗ sem (ty'.(ty_ghox) y e h t).
+  Proof.
+    move=> Heq. iIntros "!>" (sem H y e h t).
+    rewrite (sem_proper_any H (Heq y e h t)). iSplit; by iIntros "$".
+  Qed.
+
   (** Subtyping of a unique reference.
 
     The extra premise is the price of the model (see [typing/inst.v]): the
@@ -349,6 +378,23 @@ Section uniq_bor_sem.
       iDestruct ("H" $! sem Hs y e h t) as "[F B]".
       iSplit; iIntros "x"; [by iApply "B"|by iApply "F"]. }
     by split; apply uniq_subtype.
+  Qed.
+
+  (** Hence subtyping and type equality of unique references whose bodies
+    agree as formulas, which is what the [&uniq] rules in the development
+    actually use. *)
+  Lemma uniq_subtype_eq {𝔄} E L κ κ' (ty ty': type 𝔄) :
+    lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
+    (∀ y e h t, ty.(ty_ghox) y e h t ≡ ty'.(ty_ghox) y e h t) →
+    subtype E L (&uniq{κ} ty) (&uniq{κ'} ty') idₛ.
+  Proof. move=> ?? Heq. by apply uniq_subtype, uniq_ghox_any_of_eq. Qed.
+
+  Lemma uniq_eqtype_eq {𝔄} E L κ κ' (ty ty': type 𝔄) :
+    lctx_lft_eq E L κ κ' → eqtype E L ty ty' idₛ idₛ →
+    (∀ y e h t, ty.(ty_ghox) y e h t ≡ ty'.(ty_ghox) y e h t) →
+    eqtype E L (&uniq{κ} ty) (&uniq{κ} ty') idₛ idₛ.
+  Proof.
+    move=> ?? Heq. by apply (uniq_eqtype _ _ κ κ'), uniq_ghox_any_of_eq.
   Qed.
 
   (** Accessors on a unique reference's refinement *)

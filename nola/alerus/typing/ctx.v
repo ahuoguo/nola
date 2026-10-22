@@ -1084,6 +1084,16 @@ Section alt_sem.
   #[export] Instance alt_sem_ne' {sem} `{Hs : !alt_sem sem} :
     NonExpansive sem := alt_sem_ne Hs.
 
+  (** Equal formulas mean the same at *every* interpretation, candidate or
+    not.  This is the one way to relate two stored judgments off the
+    candidates: [sem (idxbor_fml κ idx Px)] is [□ δ (idxbor_j κ idx Px)], and
+    at a non-candidate [δ] is an arbitrary predicate, so two of them are
+    relatable exactly when the judgments - hence the formulas - are equal.
+    See the note on [uniq_subtype] in [typing/uniq_bor.v]. *)
+  Lemma sem_proper_any {sem} (H : alt_any sem) {Px Qx} :
+    Px ≡ Qx → sem Px ⊣⊢ sem Qx.
+  Proof. move=> ?. have ? := alt_any_ne H. by f_equiv. Qed.
+
   (** ** A guard held *as a formula*
 
     Everything the development does with a stored guard goes through these.
