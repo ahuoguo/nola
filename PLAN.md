@@ -90,10 +90,28 @@ that cost.
    d. `Csem` by `sigTCT_Csem`, `Jsem` by `sigT_dsem`, and the six `inCS` and
       three `inJS` obligations with them.  `alerus_sem` bundles the four.
 
-   **Not** done: restating `type_soundness`/`type_safety` concretely.  The
-   statement elaborates, but `apply` rebuilds `typeG_cif` symbolically under
-   four existentials and ran past 3.5GB.  A client applies the parametric
-   theorem and supplies `alerus_sem`.
+   **Not** done: restating `type_soundness`/`type_safety` concretely.
+   Measured, each under a hard memory cap: the statement elaborates at the
+   concrete `CON`/`JUDG` instantly; `refine` in place of `apply` is also
+   instant; and `alerus_sem_intro`, whose existential is written out at the
+   concrete signature, costs 487MB - so *supplying* the four semantics is
+   cheap.  What is not is connecting the two, by `exists`, by `ex_intro`
+   under `refine`, or by `exact`: that reached 9.1GB after 25 minutes
+   without finishing, so the two existential types are not syntactically
+   equal and conversion unfolds the whole `typeG`.  `Strategy opaque` on the
+   signature, the judgment type and `typeG_cif` changes nothing.  Next thing
+   to try: have `soundness.v` name `typeG_cif` explicitly rather than
+   re-resolve it under the existential, so the terms are equal by
+   construction.
+
+   Also not removed: `uniq_subtype`'s premise.  It is reachable exactly when
+   the two ghost assertions agree *as formulas* - `uniq_ghox_any_of_eq`,
+   `uniq_subtype_eq`, `uniq_eqtype_eq` - and that is intrinsic, not a gap in
+   the proof: a stored borrow's semantics is `□ δ (idxbor_j κ idx Px)`, and
+   at a non-candidate `δ` is an arbitrary predicate.  Removing it means
+   moving the alteration into the judgment's semantics, as
+   `borrow_deriv.v`'s `bor` does over `bor_tok`, which needs `StBor` to lose
+   `st_iff` and `lifetime_full.v`'s `idx_bor` with it.
 
 1. **`fn` must be stratified by an execution level** (thesis (5.4),
    § 3.4.1).  `FnFml`'s `fn_fml_sem_2` has no model and must not be
