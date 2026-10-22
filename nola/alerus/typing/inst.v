@@ -12,6 +12,9 @@
   and gives every instance the typing layer asks for. *)
 
 From nola.alerus.typing Require Export soundness.
+From nola.alerus.typing Require Import function programs product base_type
+  type_context.
+From nola.alerus.lang Require Import races notation.
 From nola.util Require Import tagged.
 From nola.bi Require Import deriv.
 From iris.proofmode Require Import proofmode.
@@ -286,13 +289,39 @@ Definition alerus_sem {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   typingCS alerusCON (alerusJUDG Σ) Σ * typingJS alerusCON (alerusJUDG Σ) Σ :=
   (alerusCsem, alerusJsem, typingCS_CON, typingJS_JUDG).
 
-(** Restating the two theorems concretely - [apply]ing [type_soundness] at
-  this [CON] and [JUDG] - is left out on purpose.  It is not that it fails:
-  the *statement* elaborates (a [Check] of the [typed_body] in it costs about
-  500MB), but [apply] has to elaborate [type_soundness]'s hypothesis, in
-  which the four semantics are *bound* rather than resolved, so [typeG_cif]
-  and the whole record under it are rebuilt symbolically under four
-  existentials.  That ran past 3.5GB here and was killed; [Strategy opaque]
-  on the signature and the judgment type does not help.  Nothing is lost -
-  a client applies [type_soundness] and supplies [alerus_sem]'s four
-  components - but it is worth knowing before trying it again. *)
+(** Supplying the four semantics to a typing derivation: the non-vacuity of
+  [typing/soundness.v]'s two theorems, in the form a client needs it. *)
+Lemma alerus_sem_intro {Σ} `{!alerusGS (cifOF alerusCON) Σ}
+    {𝔅} (e : expr) (tr : predl_trans' [] 𝔅) :
+  (⊢ typed_body [] [] (InvCtx [] static AtomicClosed) ([] : cctx 𝔅) +[] e tr) →
+  ∃ (_ : Csem alerusCON (alerusJUDG Σ) Σ) (_ : Jsem (alerusJUDG Σ) (iProp Σ))
+    (_ : typingCS alerusCON (alerusJUDG Σ) Σ)
+    (_ : typingJS alerusCON (alerusJUDG Σ) Σ),
+  ⊢ typed_body [] [] (InvCtx [] static AtomicClosed) ([] : cctx 𝔅) +[] e tr.
+Proof.
+  move=> big. by exists alerusCsem, alerusJsem, typingCS_CON, typingJS_JUDG.
+Qed.
+
+(** Restating [type_soundness] and [type_safety] concretely is still left
+  out, and what blocks it is now pinned down.  Measured, each under a hard
+  memory cap:
+
+  - elaborating [type_soundness (CON := alerusCON) (JUDG := alerusJUDG Σ)]
+    is instant - the *statement* is not the problem;
+  - [refine] in place of [apply] is likewise instant, so [apply]'s conversion
+    heuristics are one cost but not the only one;
+  - [alerus_sem_intro] above, whose existential is written out at the
+    concrete signature, costs 487MB - the same as merely importing the
+    typing layer.  Supplying the four semantics is cheap.
+
+  What is not cheap is *connecting* the two: discharging [type_soundness]'s
+  own existential, whether by [exists], by [ex_intro] under [refine], or by
+  [exact]ing [alerus_sem_intro] into it.  That reached 9.1GB after 25 minutes
+  without finishing, so the two existential types are not syntactically equal
+  and conversion between them unfolds the whole [typeG].  [Strategy opaque]
+  on the signature, on the judgment type and on [typeG_cif] changes nothing.
+
+  A client wanting [sn erased_step] for a concrete program therefore applies
+  [type_soundness] and hits the same wall.  Making the two terms equal by
+  construction - having [soundness.v] name [typeG_cif] explicitly rather than
+  re-resolving it under the existential - is the next thing to try. *)
