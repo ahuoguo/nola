@@ -321,15 +321,22 @@ Section type_sum.
     iMod (proph_obs_sat with "PROPH Obs") as %[π0 X]; [solve_ndisj|].
     destruct X as [x0 [Heqx _]]. subst x.
     iDestruct "p" as (v d) "[%Ev [gho %phys]]". inversion phys. subst v.
-    destruct d as [|d'];
-      [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
-    rewrite shr_bor_gho /=. iDestruct "gho" as "#(Gpt & Ggho & Pers)".
+    iDestruct (shr_bor_gho_elim with "gho") as (dd gg Hdd Hgg)
+      "#(Gpt & Ggho & StPers)".
     iDestruct (dguard_rhs_iff
       (λ sem' Hs, split_pt_xsum_cells_at Hs i tyl x0 pad tid cl.1 cl.2)
       with "Gpt") as "#Gpt2".
     iDestruct (dguard_rhs_sep_r with "Gpt2") as "#Grest".
     iDestruct (dguard_rhs_sep_l with "Grest") as "#Gmain".
+    (* Open the sum's stored persistent part at the injected variant, and
+       park the variant's own for the shared borrow built below. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (acc_ty_gho_pers with "StPers") as "#Acc".
+    iDestruct ("Acc" with "Wg") as "[Wg #Pers]".
     rewrite xsum_ghox_pinj xsum_gho_pers_pinj.
+    iMod (store_ty_gho_pers (tyl +!! i) x0 dd gg tid with "Pers Wg")
+      as "[Wg #St]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iDestruct "Ggho" as "#Ggho2".
     iModIntro. iFrame "W tok".
     iExists ((cloc_take (cloc_skip cl 1) (ty_size (tyl +!! i)), x0) -:: xl).
@@ -337,9 +344,11 @@ Section type_sum.
     { iApply (proph_obs_impl with "Obs")=> π [xi [Heq Ha]].
       apply pinj_Inj in Heq. by subst xi. }
     destruct cl as [cl1 cells].
-    iExists _, (S d'). iSplit; [by rewrite /= Ev|].
-    rewrite /ty_own shr_bor_gho /=. iSplit; [|done].
-    by iFrame "Gmain Ggho2 Pers".
+    iExists _, (S (dd + gg)). iSplit; [by rewrite /= Ev|].
+    rewrite /ty_own. iSplit; [|done].
+    iApply (shr_bor_gho_intro_st κ (tyl +!! i)
+      (cloc_take (cloc_skip (cl1, cells) 1) (ty_size (tyl +!! i)), x0)
+      _ _ dd gg with "Gmain Ggho2 St"); lia.
   Qed.
 
   Lemma type_case_shr_outer {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
@@ -361,10 +370,9 @@ Section type_sum.
       last by rewrite semi_iso'.
     refine (match to_xsum x with xinj i x0 => _ end).
     wp_bind p. iApply (twp_hasty with "p"). iIntros (v d) "%Hpath [gho %phys]".
-    inversion phys. subst v.
-    destruct d as [|d'];
-      [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
-    rewrite shr_bor_gho /=. iDestruct "gho" as "#(Gpt & Ggho & Pers)".
+    inversion phys. subst v. simpl.
+    iDestruct (shr_bor_gho_elim with "gho") as (dd gg Hdd Hgg)
+      "#(Gpt & Ggho & Pers)".
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (dguard_alive_sem' (cells_fml_sem _ _ _) with "Gpt") as "#Gpt0".
     iDestruct (guard_trans with "Alv Gpt0") as "#GptL".
@@ -393,8 +401,10 @@ Section type_sum.
     iApply ("el" $! _ (_ -:: _) with "LFT PROPH UNIQ E L I C [-] []");
       last first.
     { iApply (proph_obs_impl with "Obs")=> ?. by rewrite to_xsum_pinj. }
-    iFrame "T". iExists #l.1, (S d'). iSplit; [done|].
-    rewrite /ty_own shr_bor_gho /=. by iFrame "Gpt Ggho Pers".
+    iFrame "T". iExists #l.1, (S (dd + gg)). iSplit; [done|].
+    rewrite /ty_own. iSplit; [|done].
+    iApply (shr_bor_gho_intro_st κ (Σ! tyl) (l, (pinj i x0, pad)) _ _ dd gg
+      with "Gpt Ggho Pers"); lia.
   Qed.
 
   Lemma type_case_shr {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
@@ -810,7 +820,7 @@ Section type_sum.
     { iExists (FVal #i :: FVal vb :: fmap FVal vlc).
       rewrite !heap_mapsto_cloc_fancy_vec_cons /ty_own xsum_gho_pinj.
       iFrame "↦1 ↦2 ↦3". iSplitL.
-      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]"; [lia|lia]. }
+      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "$"; [lia|lia]. }
       iPureIntro. rewrite /ty_phys /xsum_ty /= to_xsum_pinj tyb'_phys /=.
       apply pad_length'. rewrite /= length_fmap Hlen3.
       rewrite Eq in Sz. simpl in Sz. simpl. lia. }
@@ -819,7 +829,7 @@ Section type_sum.
     iExists -[z]. iFrame "L I". iSplitR "Obs".
     - rewrite right_id tctx_hasty_val'; [|done].
       iExists (S (d' `max` db)). iDestruct "ty'" as "[gho phys]". iFrame.
-      iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; [lia|lia].
+      iDestruct (ty_gho_depth_mono with "gho") as "$"; [lia|lia].
     - iCombine "Obs Obs'" as "Obs2".
       iApply (proph_obs_impl with "Obs2")=>/= ?[Ha Imp].
       generalize Hz. generalize z. apply Imp. apply Ha.
@@ -902,7 +912,7 @@ Section type_sum.
     iExists -[z]. iFrame "L I". iSplitR "Obs".
     - rewrite right_id tctx_hasty_val'; [|done].
       iExists (S d'). iDestruct "ty'" as "[gho phys]". iFrame.
-      iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; [lia|lia].
+      iDestruct (ty_gho_depth_mono with "gho") as "$"; [lia|lia].
     - iCombine "Obs Obs'" as "Obs2".
       iApply (proph_obs_impl with "Obs2")=>/= ?[Ha Imp].
       generalize Hz. generalize z. apply Imp. apply Ha.
@@ -1023,7 +1033,7 @@ Section type_sum.
         heap_cloc_mapsto_fancy_vec_app /ty_own xsum_gho_pinj.
       rewrite -heap_complete_mapsto_fancy_fmap_eq.
       iFrame "↦1 ↦2 ↦3". iSplitL.
-      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]"; [lia|lia]. }
+      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "$"; [lia|lia]. }
       iPureIntro. rewrite /ty_phys /xsum_ty /= to_xsum_pinj tyb'_phys.
       apply pad_length'. rewrite /= length_app length_fmap Hvlen3 length_drop.
       rewrite Eq in Sz. simpl in Sz. lia. }
@@ -1034,7 +1044,7 @@ Section type_sum.
     iExists -[z; zr]. iFrame "L I". iSplit; [rewrite right_id|].
     - iSplitL "tyw'"; (rewrite tctx_hasty_val'; [|done]).
       + iExists (S d' `max` S db). iDestruct "tyw'" as "[gho phys]". iFrame.
-        iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; [lia|lia].
+        iDestruct (ty_gho_depth_mono with "gho") as "$"; [lia|lia].
       + iExists db. iFrame "tyr'".
     - iCombine "Obs Obs'" as "Obs2".
       iApply (proph_obs_impl with "Obs2")=>/= ?[Ha Imp].

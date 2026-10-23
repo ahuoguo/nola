@@ -81,10 +81,8 @@ Section uniq_bor.
     have ? := basically_dead_pers_at H. have ? := or_pers_at H.
     have ? := pure_pers_at H.
     rewrite !(sep_sem_at H) !(pure_sem_at H).
-    iIntros "(#A & %B & (C1 & C2 & #C3) & #D & #E)". iSplitL.
-    - iFrame "E A D C1 C2 C3". iPureIntro. lia.
-    - iIntros "(_ & _ & (C1 & C2 & _) & _ & _)". iFrame "E A D C1 C2 C3".
-      iPureIntro. lia.
+    iIntros "(#A & %B & (C1 & C2 & #C3) & #D & #E)".
+    iFrame "E A D C1 C2 C3". iPureIntro. lia.
   Qed.
   Next Obligation.
     move=> 𝔄 κ ty sem H d0 g0 d1 g1 [[[[[l x0] ξi] d'] g'] idx] tid ??.
@@ -96,7 +94,7 @@ Section uniq_bor.
     iIntros "(%B & #E & #F)". iFrame "E F". iPureIntro. lia.
   Qed.
   Next Obligation.
-    move=> 𝔄 κ ty κ0 [[[[[l x0] ξi] d'] g'] idx] d g tid ξ R Hin. rewrite /=.
+    move=> 𝔄 κ ty κ0 [[[[[l x0] ξi] d'] g'] idx] d g tid R. rewrite /=.
     rewrite !bor_sep_sem !pure_fml_sem !or_fml_sem !basically_dead_fml_sem
       ?alive_fml_sem ?cmapstoany_fml_sem
       !vo_fml_sem !idx_bor_tok_fml_sem.
@@ -107,6 +105,7 @@ Section uniq_bor.
     { iApply (guard_trans with "Incl1 []"). iApply llftl_intersect_incl_r. }
     iDestruct "Pers" as "[bd|InnerPers]".
     { (* The lifetime is already dead, so [@[κ0]] is absurd. *)
+      iModIntro. iIntros (ξ _).
       iDestruct "bd" as (κ') "[#Incl0 #†κ']".
       iDestruct (dincl_sem with "Incl0") as "#Incl'". iApply guard_false.
       iApply (guard_trans with "Rk []").
@@ -134,6 +133,13 @@ Section uniq_bor.
       as "#Ginner3".
     iDestruct (guard_exist_eq x0 d' g' _ _ _
       (uniq_body_at_agree ty x0 ξi d' g' tid l) with "Rvo Ginner3") as "#Gin".
+    (* The borrowed type's law is applied once, before the prophecy variable
+      is quantified, so its world satisfaction is opened once. *)
+    iMod (ty_guard_proph _ ty κ0 x0 d' g' tid R
+      with "LFT Inty InnerPers Rk []") as "#Hinner".
+    { iDestruct (guard_rhs_sep_r with "Gin") as "#Gin2".
+      iApply (guard_rhs_sep_l with "Gin2"). }
+    iModIntro. iIntros (ξ Hin).
     rewrite elem_of_cons in Hin. destruct Hin as [->|Hin].
     - (* the unique reference's own prophecy variable *)
       iApply (guard_and (P:=R) with "Rvo Gin"). iIntros "And".
@@ -141,10 +147,7 @@ Section uniq_bor.
         (PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi) x0 (vπ x0) (d', g')).
       iSplit; [by iDestruct "And" as "[_ [$ _]]"|by iDestruct "And" as "[$ _]"].
     - (* a prophecy variable of the borrowed type *)
-      iApply (ty_guard_proph _ ty κ0 x0 d' g' tid ξ R Hin
-        with "LFT Inty InnerPers Rk").
-      iDestruct (guard_rhs_sep_r with "Gin") as "#Gin2".
-      iApply (guard_rhs_sep_l with "Gin2").
+      iApply "Hinner". by iPureIntro.
   Qed.
   Next Obligation.
     move=> 𝔄 κ ty sem H [[[[[l x0] ξi] d'] g'] idx] d g tid.
@@ -416,7 +419,7 @@ Section uniq_bor_sem.
     { iExists (ty_phys ty x0 tid). iFrame "pt". rewrite /ty_own.
       iSplit; [|done].
       by iDestruct (ty_gho_depth_mono ty d' g' d (S d) x0 tid with "gho")
-        as "[$ _]"; [lia|lia]. }
+        as "$"; [lia|lia]. }
     iSplitL "fb"; [by iApply (gsrc_fml_sem_2 (s := GFrac γ (q/2)))|].
     iDestruct (dguard_alive_sem with "PtBase") as "#PtBase'".
     iSplit; [iApply (guard_trans with "Gκ' [PtBase']")|].
@@ -516,7 +519,7 @@ Section uniq_bor_sem.
     iSplit. { iPureIntro=> _. rewrite fmap_to_concrete //. }
     iSplitR.
     { iSplit; [|done].
-      iDestruct (ty_gho_depth_mono ty d' g' d d x0 tid with "T") as "[$ _]";
+      iDestruct (ty_gho_depth_mono ty d' g' d d x0 tid with "T") as "$";
         lia. }
     iIntros "Hx W". iEval (rewrite HxS) in "Hx".
     iDestruct "Hx" as "(ξVo & f & Tok)".

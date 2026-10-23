@@ -564,17 +564,20 @@ Section lemmas.
     (* The original builds this under [▷^(d*(d+1))] and then strips the
       laters with the credits [⧗1] bought; here the guards compose
       directly. *)
-    iAssert (∀ ζ, ⌜ζ ∈ ξl x'⌝ -∗
-      ((Ltok γ L (q/2) ∗ ty_gho ty x' d d tid) &&{Wguard}&&> 1:[ζ]))%I
-      as "#Hallζ".
-    { iIntros (ζ) "%Hin".
-      iApply (ty_guard_proph _ ty (foldr meet static (ty_lfts ty))%I x' d d
-        tid ζ (Ltok γ L (q/2) ∗ ty_gho ty x' d d tid) Hin
-        with "LFT [] ghoPers").
+    (* The law hands the whole family out under [Wguard], so it is opened
+      once here rather than per prophecy variable. *)
+    iAssert (|->[Wguard] (∀ ζ, ⌜ζ ∈ ξl x'⌝ -∗
+      ((Ltok γ L (q/2) ∗ ty_gho ty x' d d tid) &&{Wguard}&&> 1:[ζ])))%I
+      as "Hall0".
+    { iApply (ty_guard_proph _ ty (foldr meet static (ty_lfts ty))%I x' d d
+        tid (Ltok γ L (q/2) ∗ ty_gho ty x' d d tid) with "LFT [] ghoPers").
       - iApply guard_refl.
       - iApply guard_lhs_sep_l. iApply (guard_trans with "[] Lkg").
         iApply (Ltok_guard with "ktok").
       - iApply guard_sep_r. }
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct ("Hall0" with "Wg") as "[Wg #Hallζ]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iMod (proph_eqz_to_obs_with_guard (W:=alerus_wsat) (WG:=Wguard)
       with "Hallζ [$t2 $gho] Eqz W") as "[W [#Obs [t2 gho]]]";
       [solve_ndisj|apply syn_indep|].

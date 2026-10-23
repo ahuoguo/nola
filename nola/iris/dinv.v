@@ -50,6 +50,14 @@ Section dinv.
   Local Lemma dinv_wsat_unseal : dinv_wsat = dinv_wsat_def.
   Proof. exact: seal_eq. Qed.
 
+  (** [dinv_wsat] is a [sinv_wsat] whose interpretation ignores the index.
+
+    Exposed so that a development which already owns a simple-invariant
+    family can allocate this one with [sinv_wsat_alloc_name] - see
+    [nola/alerus/typing/ctx.v]'s [alerus_store_wsat]. *)
+  Lemma dinv_wsat_sinv {sm} : dinv_wsat sm ⊣⊢ sinv_wsat (λ _, sm).
+  Proof. by rewrite dinv_wsat_unseal. Qed.
+
   (** [dinv_wsat] is non-expansive *)
   #[export] Instance dinv_wsat_ne : NonExpansive dinv_wsat.
   Proof. rewrite dinv_wsat_unseal. solve_proper. Qed.

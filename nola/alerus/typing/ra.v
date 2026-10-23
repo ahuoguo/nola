@@ -344,10 +344,8 @@ Section RA_type.
     iDestruct "H" as "(%pl' & %d & % & Hown & %Hphys)".
     simpl in Hphys.
     injection Hphys => ? /=; subst pl'.
-    destruct d as [|d];
-      [by iDestruct (false_fml_sem_1 with "Hown") as "[]"|].
-    rewrite ?own_ptr_gho /= ?ra_ty_gho.
-    iDestruct "Hown" as "(? & #Hshr & _)".
+    iDestruct (shr_bor_gho_elim with "Hown") as (dd gg Hdd Hgg) "#(_ & Hshr & _)".
+    iClear "Hown".
     (* iMod (proph_obs_sat with "PROPH Obs") as "(%π & %Alv & _)" => //=. *)
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (dguard_alive_sem with "Hshr") as "#Hshr0".
@@ -385,12 +383,10 @@ Section RA_type.
     simpl in Hphys1, Hphys2.
     injection Hphys1 => ? /=; subst pl1'.
     injection Hphys2 => ? /=; subst pl2'.
-    destruct d1 as [|d1];
-      [by iDestruct (false_fml_sem_1 with "Hown1") as "[]"|].
-    destruct d2 as [|d2];
-      [by iDestruct (false_fml_sem_1 with "Hown2") as "[]"|].
-    iDestruct "Hown1" as "(_ & #Hshr1' & _)".
-    iDestruct "Hown2" as "(_ & #Hshr2' & _)".
+    iDestruct (shr_bor_gho_elim with "Hown1") as (dd1 gg1 Hdd1 Hgg1)
+      "#(_ & Hshr1' & _)".
+    iDestruct (shr_bor_gho_elim with "Hown2") as (dd2 gg2 Hdd2 Hgg2)
+      "#(_ & Hshr2' & _)".
     iDestruct (guard_rhs_iff (ra_ty_gho _ _ _ _ _) with "Hshr1'") as "#Hshr1".
     iDestruct (guard_rhs_iff (ra_ty_gho _ _ _ _ _) with "Hshr2'") as "#Hshr2".
     iDestruct (Alv with "L E") as "#Alv".
@@ -433,12 +429,10 @@ Section RA_type.
     simpl in Hphys1, Hphys2.
     injection Hphys1 => ? /=; subst pl1'.
     injection Hphys2 => ? /=; subst pl2'.
-    destruct d1 as [|d1];
-      [by iDestruct (false_fml_sem_1 with "Hown1") as "[]"|].
-    destruct d2 as [|d2];
-      [by iDestruct (false_fml_sem_1 with "Hown2") as "[]"|].
-    iDestruct "Hown1" as "(_ & #Hshr1' & _)".
-    iDestruct "Hown2" as "(_ & #Hshr2' & _)".
+    iDestruct (shr_bor_gho_elim with "Hown1") as (dd1 gg1 Hdd1 Hgg1)
+      "#(_ & Hshr1' & _)".
+    iDestruct (shr_bor_gho_elim with "Hown2") as (dd2 gg2 Hdd2 Hgg2)
+      "#(_ & Hshr2' & _)".
     iDestruct (Alv with "L E") as "#Alv".
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hy & _)" => //.
@@ -448,6 +442,13 @@ Section RA_type.
       as "#Hshr3".
     { iIntros "H". iApply (and_own_discrete_ucmra_specific with "H").
       move => w Hvalid Hincl1 Hincl2. by apply Hy. }
+    (* [ra_ty]'s persistent part is [True]; it still has to be parked, since
+       the shared borrow holds that slot behind a judgment. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iMod (store_ty_gho_pers (ra_ty 𝔄_const) (γ1, y) 0 0 tid with "[] Wg")
+      as "[Wg #StE]".
+    { by iApply empty_fml_sem_2. }
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iModIntro. iFrame "W".
     iApply (twp_new 0); [lia|done|]. iIntros (l) "(† & ↦)".
     iExists -[((l, []), (γ1, y))].
@@ -455,9 +456,12 @@ Section RA_type.
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
     iSplitL.
     + iSplitL; [|done]. iExists _, 1%nat; iSplitR => //=.
-      rewrite shr_bor_gho /=. iSplitR; [|done].
-      iSplitR; [iApply dguard_cells_nil|].
-      iSplitR; [|by iApply empty_fml_sem_2]. iApply "Hshr3".
+      iSplitR; [|done].
+      iApply (shr_bor_gho_intro_st κ (ra_ty 𝔄_const) ((l, []), (γ1, y))
+        _ _ 0 0); [lia|lia| | |].
+      { iApply dguard_cells_nil. }
+      { iApply "Hshr3". }
+      { iApply "StE". }
     + iApply (proph_obs_impl with "Obs").
       intros π' [_ [? ?] ].
       apply H2.
@@ -482,10 +486,8 @@ Section RA_type.
     iDestruct "H" as "(%pl' & %d & % & Hown & %Hphys)".
     simpl in Hphys.
     injection Hphys => ? /=; subst pl'.
-    destruct d as [|d];
-      [by iDestruct (false_fml_sem_1 with "Hown") as "[]"|].
-    rewrite ?own_ptr_gho /= ?ra_ty_gho.
-    iDestruct "Hown" as "(_ & #Hshr0 & _)".
+    iDestruct (shr_bor_gho_elim with "Hown") as (dd gg Hdd Hgg)
+      "#(_ & Hshr0 & _)".
     iDestruct (Alv with "L E") as "#Alv".
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & %Hincl & _)" => //.
@@ -494,6 +496,13 @@ Section RA_type.
       iApply (and_own_discrete_ucmra_specific with "H").
       move => w Hvalid Hincl1 Hincl2.
       by etransitivity. }
+    (* [ra_ty]'s persistent part is [True]; it still has to be parked, since
+       the shared borrow holds that slot behind a judgment. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iMod (store_ty_gho_pers (ra_ty 𝔄_const) (γ, y) 0 0 tid with "[] Wg")
+      as "[Wg #StE]".
+    { by iApply empty_fml_sem_2. }
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iModIntro. iFrame "W".
     iApply (twp_new 0); [lia|done|]. iIntros (l) "(† & ↦)".
     iExists -[((l, []), (γ, y))].
@@ -501,9 +510,12 @@ Section RA_type.
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
     iSplitL.
     + iSplitL; [|done]. iExists _, 1%nat; iSplitR => //=.
-      rewrite shr_bor_gho /=. iSplitR; [|done].
-      iSplitR; [iApply dguard_cells_nil|].
-      iSplitR; [|by iApply empty_fml_sem_2]. iApply "Hshr'".
+      iSplitR; [|done].
+      iApply (shr_bor_gho_intro_st κ (ra_ty 𝔄_const) ((l, []), (γ, y))
+        _ _ 0 0); [lia|lia| | |].
+      { iApply dguard_cells_nil. }
+      { iApply "Hshr'". }
+      { iApply "StE". }
     + iApply (proph_obs_impl with "Obs").
       intros π' [_ ? ].
       apply H0.
@@ -531,11 +543,10 @@ Section RA_type.
     injection Hphys2 => ? /=; subst pl2'.
     destruct d1 as [|d1];
       [by iDestruct (false_fml_sem_1 with "Hown1") as "[]"|].
-    destruct d2 as [|d2];
-      [by iDestruct (false_fml_sem_1 with "Hown2") as "[]"|].
     rewrite ?own_ptr_gho /= ?ra_ty_gho.
     iDestruct "Hown1" as "(_ & _ & Hx)".
-    iDestruct "Hown2" as "(_ & #Hy0 & _)".
+    iDestruct (shr_bor_gho_elim with "Hown2") as (dd2 gg2 Hdd2 Hgg2)
+      "#(_ & Hy0 & _)".
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (dguard_alive_sem' (ra_fml_sem _ _) with "Hy0") as "#Hy".
     iDestruct (guard_trans with "Alv Hy") as "#G1".
@@ -585,11 +596,10 @@ Section RA_type.
     injection Hphys2 => ? /=; subst pl2'.
     destruct d1 as [|d1];
       [by iDestruct (false_fml_sem_1 with "Hown1") as "[]"|].
-    destruct d2 as [|d2];
-      [by iDestruct (false_fml_sem_1 with "Hown2") as "[]"|].
     rewrite ?own_ptr_gho /= ?ra_ty_gho.
     iDestruct "Hown1" as "(_ & _ & Hx)".
-    iDestruct "Hown2" as "(_ & #Hy0 & _)".
+    iDestruct (shr_bor_gho_elim with "Hown2") as (dd2 gg2 Hdd2 Hgg2)
+      "#(_ & Hy0 & _)".
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (dguard_alive_sem' (ra_fml_sem _ _) with "Hy0") as "#Hy".
     iDestruct (guard_trans with "Alv Hy") as "#G1".

@@ -176,7 +176,7 @@ Section S.
     move=> n sem H. apply (ty_gho_pers_depth_mono_at (Tn n) sem H).
   Qed.
   Next Obligation.
-    move=> n *. iIntros "#LFT #?". iApply (ty_guard_proph with "LFT"); [done|].
+    move=> n *. iIntros "#LFT #?". iApply (ty_guard_proph with "LFT").
     have Hc : ⊢ dincl (ty_lft (Tn 0)) (ty_lft (Tn n))
       by iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
     have Hc' : ⊢ llft_incl (ty_lft (Tn 0)) (ty_lft (Tn n)).

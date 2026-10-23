@@ -13,7 +13,8 @@
 
 From nola.alerus.typing Require Export soundness.
 From nola.alerus.typing Require Import function programs product base_type
-  type_context.
+  type_context shr_bor.
+From nola.util Require Import productive cit.
 From nola.alerus.lang Require Import races notation.
 From nola.util Require Import tagged.
 From nola.bi Require Import deriv.
@@ -22,12 +23,14 @@ Import iPropAppNotation.
 
 (** ** The constructor signature *)
 Variant alerus_consel :=
-| acs_alerus | acs_naInv | acs_guard | acs_idxbor | acs_incl | acs_exs.
+| acs_alerus | acs_naInv | acs_guard | acs_idxbor | acs_incl | acs_exs
+| acs_pstore.
 
 Definition alerusCONF (s : alerus_consel) : cifcon :=
   match s with
   | acs_alerus => alerusCT | acs_naInv => naInvCT | acs_guard => guardCT
   | acs_idxbor => idxborCT | acs_incl => inclCT | acs_exs => exsCT
+  | acs_pstore => pstoreCT
   end.
 
 Definition alerusCON : cifcon := sigTCT alerusCONF.
@@ -44,18 +47,22 @@ Definition alerusCON : cifcon := sigTCT alerusCONF.
   sigTCT_inC (a := acs_incl).
 #[export] Instance exsC_CON : exsC alerusCON :=
   sigTCT_inC (a := acs_exs).
+#[export] Instance pstoreC_CON : pstoreC alerusCON :=
+  sigTCT_inC (a := acs_pstore).
 
 #[export] Instance typingC_CON : typingC alerusCON :=
-  TYPING_C _ _ _ _ _ _ _.
+  TYPING_C _ _ _ _ _ _ _ _.
 
 (** ** The judgment type *)
-Variant alerus_jsel := ajs_guard | ajs_idxbor | ajs_incl | ajs_iff.
+Variant alerus_jsel :=
+  ajs_guard | ajs_idxbor | ajs_incl | ajs_iff | ajs_pstore.
 
 Definition alerusJUDGF Σ (s : alerus_jsel) : ofe :=
   match s with
   | ajs_guard => guardJT (cifO alerusCON Σ)
   | ajs_idxbor => idxborJT (cifO alerusCON Σ)
   | ajs_incl => inclJT | ajs_iff => iffJT (cifO alerusCON Σ)
+  | ajs_pstore => pstoreJT (cifO alerusCON Σ)
   end.
 
 Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
@@ -68,9 +75,11 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
   sigT_inJ (a := ajs_incl).
 #[export] Instance iffJ_JUDG {Σ} :
   iffJ (cifO alerusCON Σ) (alerusJUDG Σ) := sigT_inJ (a := ajs_iff).
+#[export] Instance pstoreJ_JUDG {Σ} :
+  pstoreJ (cifO alerusCON Σ) (alerusJUDG Σ) := sigT_inJ (a := ajs_pstore).
 
 #[export] Instance typingJ_JUDG {Σ} :
-  typingJ alerusCON (alerusJUDG Σ) Σ := TYPING_J _ _ _ _ _ _ _.
+  typingJ alerusCON (alerusJUDG Σ) Σ := TYPING_J _ _ _ _ _ _ _ _.
 
 (** ** How the semantics came to exist
 
@@ -239,6 +248,7 @@ Definition alerusCONF_ecsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
   | acs_alerus => alerusCT_ecsem | acs_naInv => naInvCT_ecsem
   | acs_guard => guardCT_ecsem | acs_idxbor => idxborCT_ecsem
   | acs_incl => inclCT_ecsem | acs_exs => exsCT_ecsem
+  | acs_pstore => pstoreCT_ecsem
   end.
 
 #[export] Instance alerusCsem {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
@@ -264,6 +274,9 @@ Definition alerusCONF_ecsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
 #[export] Instance exsCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   exsCS alerusCON (alerusJUDG Σ) Σ :=
   sigTCT_inCS (semec := alerusCONF_ecsem) (a := acs_exs).
+#[export] Instance pstoreCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  pstoreCS alerusCON (alerusJUDG Σ) Σ :=
+  sigTCT_inCS (semec := alerusCONF_ecsem) (a := acs_pstore).
 
 (** The judgments' semantics, by cases on the judgment type.  Each one
   *applies* the interpretation - [guardJT_sem] to the two sub-formulas,
@@ -274,6 +287,7 @@ Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
   match a with
   | ajs_guard => guardJT_dsem | ajs_idxbor => idxborJT_dsem
   | ajs_incl => inclJT_dsem | ajs_iff => iffJT_dsem
+  | ajs_pstore => pstoreJT_dsem
   end.
 
 #[export] Instance alerusJsem {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
@@ -293,15 +307,19 @@ Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
 #[export] Instance iffJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   iffJS alerusCON (alerusJUDG Σ) Σ :=
   sigT_inJS alerusJUDGF_dsem (a := ajs_iff).
+#[export] Instance pstoreJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  pstoreJS alerusCON (alerusJUDG Σ) Σ :=
+  sigT_inJS alerusJUDGF_dsem (a := ajs_pstore).
 
 #[export] Instance typingCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   typingCS alerusCON (alerusJUDG Σ) Σ :=
   {| typingCS_alerus := _; typingCS_naInv := _; typingCS_guard := _;
-     typingCS_idxbor := _; typingCS_incl := _; typingCS_exs := _ |}.
+     typingCS_idxbor := _; typingCS_incl := _; typingCS_exs := _;
+     typingCS_pstore := _ |}.
 #[export] Instance typingJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   typingJS alerusCON (alerusJUDG Σ) Σ :=
   {| typingJS_guard := _; typingJS_idxbor := _; typingJS_incl := _;
-     typingJS_iff := _ |}.
+     typingJS_iff := _; typingJS_pstore := _ |}.
 
 
 (** ** Non-vacuity
@@ -367,3 +385,61 @@ Qed.
   constructor signature, judgment type and semantics. *)
 Print Assumptions alerus_type_soundness.
 Print Assumptions alerus_type_safety.
+
+(** ** [&shr{κ}] is productive
+
+  This is the property the shared borrow was rebuilt for.  A recursive type
+  guarded by [&shr{κ}] is [profix] of a map that must be [Productive], and
+  over [cif] that is a *syntactic* condition: [proeqv] at level [k] compares
+  a constructor's selector and data by equality, its [idom] children at
+  level [k], and only its [cdom] children at level [< k].  So every mention
+  of the borrowed type has to be a [cdom] child, and a [cdom] child is one an
+  [Ecsem] may hand to [δ] as a judgment but never take the semantics of.
+
+  [&shr{κ} ty] mentions [ty] in exactly two places, and after the rebuild
+  each is in the right position: [ty_ghox] under [cif_guard] and
+  [ty_gho_persx] under [cif_pstore].  The physical contents used to be a
+  third, in [cif_cells]' *selector* - which [cit] compares by equality at
+  every level, so it would have been fatal - and the definition writes
+  [syn_phys] there instead, which [ty_phys_eq2] says is the same thing.
+
+  This statement is at the concrete [alerusCON] because [cif] is where the
+  [prost] lives; the development's [FML] is an abstract [oFunctor] and has
+  none.  [nola/examples/rust_halt/rec.v] is specialised the same way. *)
+Section productive.
+  Context {Σ} `{!alerusGS (cifOF alerusCON) Σ}.
+
+  Local Lemma proeqv_later_refl {PR : prost} k (a : PR) : proeqv_later k a a.
+  Proof. destruct k as [|k]=>//=. Qed.
+
+  (** [Citg] with no coinductive children and trivial data *)
+  Local Ltac citg_ind :=
+    apply Citg_preserv_productive;
+      [|apply proeqv_later_refl|done].
+
+  Lemma shr_bor_ghox_productive {𝔄} κ (ty ty' : type 𝔄) k x d g tid :
+    (∀ y dd gg t,
+      proeqv_later k (ty.(ty_ghox) y dd gg t) (ty'.(ty_ghox) y dd gg t)) →
+    (∀ y dd gg t,
+      proeqv_later k (ty.(ty_gho_persx) y dd gg t)
+        (ty'.(ty_gho_persx) y dd gg t)) →
+    proeqv k (st_ghox (shr_bor_st κ ty) x d g tid)
+      (st_ghox (shr_bor_st κ ty') x d g tid).
+  Proof.
+    move=> Hgho Hpers. rewrite /= /by_ltx /by_lex.
+    citg_ind. move=> dd /=.
+    citg_ind. move=> b. destruct b=>/=; [reflexivity|].
+    citg_ind. move=> gg /=.
+    citg_ind. move=> b. destruct b=>/=; [reflexivity|].
+    citg_ind. move=> ? /=.
+    citg_ind. move=> b. destruct b=>/=.
+    - reflexivity.
+    - citg_ind. move=> b. destruct b=>/=.
+      + apply cif_guard_productive; [apply proeqv_later_refl|]. apply Hgho.
+      + apply cif_pstore_productive. apply Hpers.
+  Qed.
+End productive.
+
+(** Productivity, like the two soundness theorems above, rests on nothing but
+  [Eq_rect_eq] - which [sigTCT]/[sigTO] need for their dependent matches. *)
+Print Assumptions shr_bor_ghox_productive.

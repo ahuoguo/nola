@@ -30,9 +30,9 @@ Section product.
   Next Obligation. iIntros (??). trivial. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> *. iIntros "$". by iIntros "$". Qed.
   Next Obligation. move=> *. by iIntros "$". Qed.
-  Next Obligation. intros. set_solver. Qed.
+  Next Obligation. move=> *. by iIntros "$". Qed.
+  Next Obligation. iIntros "* _ _ _ _ _ !>" (ξ) "%Hin". set_solver. Qed.
   Next Obligation. move=> sem H *. rewrite (empty_sem_at H). exact _. Qed.
   Next Obligation. move=> *. by iIntros "$". Qed.
 
@@ -76,12 +76,9 @@ Section product.
     rewrite !(sep_sem_at H).
     iIntros "[A B]".
     iDestruct ((ty_gho_depth_mono_at tty sem H d g d' g') with "A")
-      as "[A A']"; trivial.
+      as "A"; trivial.
     iDestruct ((ty_gho_depth_mono_at tty' sem H d g d' g') with "B")
-      as "[B B']"; trivial.
-    iFrame. iIntros "[x y]".
-    iDestruct ("A'" with "x") as "A'".
-    iDestruct ("B'" with "y") as "B'".
+      as "B"; trivial.
     iFrame.
   Qed.
   Next Obligation. intros ty ty' tty tty' sem H d g d' g'. move=>/= *.
@@ -93,19 +90,22 @@ Section product.
       as "B'"; trivial.
     iFrame.
   Qed.
-  Next Obligation. intros 𝔄 𝔅 ty ty' κ x d g tid ξ R Hin. fml_simpl.
-    iIntros "LFT #Incl [Gho1 Gho2] #Rk #Rgho".
-    rewrite elem_of_app in Hin. destruct Hin as [Hin|Hin].
-    - iApply (ty_guard_proph 𝔄 ty κ (fst x) d g tid ξ R with "LFT [] Gho1 Rk").
-      { apply Hin. }
-      { rewrite lft_intersect_list_app. iApply (guard_trans with "Incl []").
-        iApply llftl_intersect_incl_l. }
-      iApply guard_rhs_sep_l. iFrame "Rgho".
-    - iApply (ty_guard_proph 𝔅 ty' κ (snd x) d g tid ξ R with "LFT [] Gho2 Rk").
-      { apply Hin. }
-      { rewrite lft_intersect_list_app. iApply (guard_trans with "Incl []").
-        iApply llftl_intersect_incl_r. }
-      iApply guard_rhs_sep_r. iFrame "Rgho".
+  Next Obligation. intros 𝔄 𝔅 ty ty' κ x d g tid R.
+    have ? := ty_gho_pers_pers_at ty _ alt_here.
+    have ? := ty_gho_pers_pers_at ty' _ alt_here.
+    fml_simpl. iIntros "#LFT #Incl #[Gho1 Gho2] #Rk #Rgho".
+    iMod (ty_guard_proph 𝔄 ty κ (fst x) d g tid R with "LFT [] Gho1 Rk []")
+      as "H1".
+    { rewrite lft_intersect_list_app. iApply (guard_trans with "Incl []").
+      iApply llftl_intersect_incl_l. }
+    { iApply guard_rhs_sep_l. iFrame "Rgho". }
+    iMod (ty_guard_proph 𝔅 ty' κ (snd x) d g tid R with "LFT [] Gho2 Rk []")
+      as "H2".
+    { rewrite lft_intersect_list_app. iApply (guard_trans with "Incl []").
+      iApply llftl_intersect_incl_r. }
+    { iApply guard_rhs_sep_r. iFrame "Rgho". }
+    iModIntro. iIntros (ξ Hin). rewrite elem_of_app in Hin.
+    destruct Hin as [Hin|Hin]; [iApply "H1"|iApply "H2"]; by iPureIntro.
   Qed.
   Next Obligation.
     intros 𝔄 𝔅 ty ty' sem H x d g tid.
@@ -278,8 +278,8 @@ Section typing.
           as "($ & %x'2 & %off2 & gho2 & %s2 & lfts & tok)".
         iModIntro. iExists (x'1, x'2), (off1 `max` off2)%nat.
         iFrame "lfts tok".
-        iDestruct (ty_gho_depth_mono with "gho1") as "[$ _]". { lia. } { lia. }
-        iDestruct (ty_gho_depth_mono with "gho2") as "[$ _]". { lia. } { lia. }
+        iDestruct (ty_gho_depth_mono with "gho1") as "$". { lia. } { lia. }
+        iDestruct (ty_gho_depth_mono with "gho2") as "$". { lia. } { lia. }
         iPureIntro. destruct x. simpl. rewrite s1. rewrite s2. done.
   Qed.
 

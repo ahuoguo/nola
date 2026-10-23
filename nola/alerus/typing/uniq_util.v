@@ -270,7 +270,7 @@ Section uniq_util.
     iMod (uniq_update (PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi) x (vπ x) (d', g')
       with "UNIQ ξVo ξPc") as "[ξVo ξPc]"; [solve_ndisj|].
     iDestruct (ty_gho_depth_mono ty d g d' g' x tid with "Gho")
-      as "[Gho _]"; [done|done|].
+      as "Gho"; [done|done|].
     iDestruct ("Back" with "[ξPc Gho Phys]") as "B".
     { iExists x, d', g'. iFrame. }
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=E) with "B") as "B'";
@@ -360,14 +360,16 @@ Section uniq_util.
     subst d1 g1.
     (* Resolve. *)
     iDestruct (ty_gho_pers_impl with "Gho") as "#GhoPers".
-    iAssert (∀ ζ, ⌜ζ ∈ ξl x⌝ -∗
-      ((frac_tok γ (q/2) ∗ ty_gho ty x d g tid) &&{Wguard}&&> 1:[ζ]))%I
-      as "#Hallζ".
-    { iIntros (ζ) "%Hin".
-      iApply (ty_guard_proph _ ty κ x d g tid ζ
-        (frac_tok γ (q/2) ∗ ty_gho ty x d g tid) Hin with "LFT In GhoPers").
+    iAssert (|->[Wguard] (∀ ζ, ⌜ζ ∈ ξl x⌝ -∗
+      ((frac_tok γ (q/2) ∗ ty_gho ty x d g tid) &&{Wguard}&&> 1:[ζ])))%I
+      as "Hall0".
+    { iApply (ty_guard_proph _ ty κ x d g tid
+        (frac_tok γ (q/2) ∗ ty_gho ty x d g tid) with "LFT In GhoPers").
       - iApply (guard_trans with "[] Gκ"). iApply guard_sep_l.
       - iApply guard_sep_r. }
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct ("Hall0" with "Wg") as "[Wg #Hallζ]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iMod (uniq_resolve_guarded (W:=alerus_wsat)
       (PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi) (ξl x) x (d, g) x (vπ x) (d, g)
       with "Hallζ UNIQ PROPH ξVo ξPc [$fb $Gho] W")

@@ -682,6 +682,24 @@ Variant iffJT_id := .
 Definition iffJT (FM : ofe) : ofe := tagged iffJT_id (FM * FM).
 Notation iffJ FM := (inJ (iffJT FM)).
 
+(** [pstoreJT]: a *persistently stored* formula, as a judgment.
+
+  [&shr{κ} ty] has to hold the borrowed type's persistent ghost part, and if
+  it holds it as a visible child then [λ T, &shr{κ} T] is not [Productive]:
+  [cit] compares [idom] children at [≡[k]≡] and only [cdom] children at
+  [≡[<k]≡], and a [cdom] child is one an [Ecsem] may hand to [δ] as a
+  judgment but never take the semantics of.  So the persistent part goes
+  behind a judgment, exactly as [nola/examples/rust_halt/shrref.v]'s
+  [ty_shrref] puts [ty_shr T] behind [cif_store].
+
+  Unlike [nola/iris/store_deriv.v]'s [store], the content here is
+  persistent, so reading it needs neither an update nor an [◇] - only the
+  world satisfaction, which [alerus_store_wsat] sits inside and which a
+  guard's body is handed. *)
+Variant pstoreJT_id := .
+Definition pstoreJT (FM : ofe) : ofe := tagged pstoreJT_id FM.
+Notation pstoreJ FM := (inJ (pstoreJT FM)).
+
 (** [inclJT]: a storable lifetime inclusion, as a judgment.
 
   [st_incl κ κ'] quantifies the guarding world satisfaction, so like a guard
@@ -713,6 +731,17 @@ Section judg.
   Proof. move=> ?[[??]][[??]][/=??]. solve_proper. Qed.
   #[export] Instance guardJT_dsem
     : Dsem JUDG (guardJT (cifO CON Σ)) (iProp Σ) := DSEM guardJT_sem _.
+
+  (** Semantics of the stored-formula judgment: an accessor over the
+    candidate's own guarding world satisfaction.  No update and no [◇]: the
+    content is persistent, so [dinv_tok_acc_persistent] gives it back
+    untouched. *)
+  Definition pstoreJT_sem δ (J : pstoreJT (cifO CON Σ)) : iProp Σ :=
+    |->[alerus_WGuard_at δ] ⟦ J.(untag) ⟧ᶜ(δ).
+  #[export] Instance pstoreJT_sem_ne {δ} : NonExpansive (pstoreJT_sem δ).
+  Proof. move=> ????. rewrite /pstoreJT_sem /modw. solve_proper. Qed.
+  #[export] Instance pstoreJT_dsem
+    : Dsem JUDG (pstoreJT (cifO CON Σ)) (iProp Σ) := DSEM pstoreJT_sem _.
 
   (** Semantics of the alteration judgment: the equivalence at the
     candidate's own interpretation *)
@@ -771,6 +800,8 @@ Section judg2.
 End judg2.
 
 (** Semantics of the two judgment types registered *)
+Notation pstoreJS CON JUDG Σ :=
+  (inJS (pstoreJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation guardJS CON JUDG Σ := (inJS (guardJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation idxborJS CON JUDG Σ := (inJS (idxborJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation inclJS CON JUDG Σ := (inJS inclJT JUDG (iProp Σ)).
@@ -787,6 +818,13 @@ Definition guardCT : cifcon :=
   Cifcon guardCT_id unit (λ _, Empty_set) (λ _, bool) (λ _, unitO) _.
 Notation guardC := (inC guardCT).
 
+(** [pstoreCT]: the persistently stored formula.  Its one child is a [cdom]
+  child - the productive position - which is the whole point. *)
+Variant pstoreCT_id := .
+Definition pstoreCT : cifcon :=
+  Cifcon pstoreCT_id unit (λ _, Empty_set) (λ _, unit) (λ _, unitO) _.
+Notation pstoreC := (inC pstoreCT).
+
 Variant inclCT_id := .
 Definition inclCT : cifcon :=
   Cifcon inclCT_id (lft * lft)%type (λ _, Empty_set) (λ _, Empty_set)
@@ -800,9 +838,11 @@ Definition idxborCT : cifcon :=
 Notation idxborC := (inC idxborCT).
 
 Section judgC.
-  Context `{!guardC CON, !idxborC CON, !inclC CON} {Σ}.
+  Context `{!guardC CON, !idxborC CON, !inclC CON, !pstoreC CON} {Σ}.
   Definition cif_incl (κ κ' : lft) : cif CON Σ :=
     cif_in inclCT (κ, κ') nullary nullary ().
+  Definition cif_pstore (Px : cif CON Σ) : cif CON Σ :=
+    cif_in pstoreCT () nullary (unary Px) ().
   Definition cif_guard (Px Qx : cif CON Σ) : cif CON Σ :=
     cif_in guardCT () nullary (binary Px Qx) ().
   Definition cif_idxbor κ idx (Px : cif CON Σ) : cif CON Σ :=
@@ -811,6 +851,23 @@ Section judgC.
   (** Both are productive, so a type former may nest them *)
   #[export] Instance cif_guard_ne : NonExpansive2 cif_guard.
   Proof. move=> ???????. rewrite /cif_guard. solve_proper. Qed.
+  #[export] Instance cif_pstore_ne : NonExpansive cif_pstore.
+  Proof. move=> ????. rewrite /cif_pstore. solve_proper. Qed.
+  (** The point of the whole construction: the stored formula sits in a
+    [cdom] position, so a former that holds one is [Productive] in it. *)
+  (** Both of a guard's children sit in the [cdom], so a former that stores
+    a guard is productive in what the guard mentions. *)
+  Lemma cif_guard_productive {k Px Px' Qx Qx'} :
+    proeqv_later k Px Px' → proeqv_later k Qx Qx' →
+    proeqv k (cif_guard Px Qx) (cif_guard Px' Qx').
+  Proof.
+    move=> ??. apply cif_in_preserv_productive=>//.
+    apply fun_proeqv_later=> b. by destruct b.
+  Qed.
+  #[export] Instance cif_pstore_productive : Productive cif_pstore.
+  Proof.
+    move=> ????. apply cif_in_preserv_productive=>//. by apply fun_proeqv_later.
+  Qed.
   #[export] Instance cif_idxbor_ne {κ idx} : NonExpansive (cif_idxbor κ idx).
   Proof. move=> ????. rewrite /cif_idxbor. solve_proper. Qed.
   #[export] Instance cif_idxbor_productive {κ idx} :
@@ -821,7 +878,11 @@ Section judgC.
 
   Context {JUDG} `{guard_j0 : !guardJ (cifO CON Σ) JUDG,
     idxbor_j0 : !idxborJ (cifO CON Σ) JUDG, incl_j0 : !inclJ JUDG,
-    iff_j0 : !iffJ (cifO CON Σ) JUDG, !Jsem JUDG (iProp Σ)}.
+    iff_j0 : !iffJ (cifO CON Σ) JUDG,
+    pstore_j0 : !pstoreJ (cifO CON Σ) JUDG, !Jsem JUDG (iProp Σ)}.
+  Definition pstore_j (Px : cif CON Σ) : JUDG := pstore_j0 (Tagged Px).
+  #[export] Instance pstore_j_ne : NonExpansive pstore_j.
+  Proof. unfold pstore_j=> ????. by f_equiv. Qed.
   Definition incl_j (κ κ' : lft) : JUDG := incl_j0 (Tagged (κ, κ')).
   (** The judgments as elements of [JUDG] *)
   Definition guard_j (Px Qx : cif CON Σ) : JUDG :=
@@ -865,8 +926,12 @@ Section judgC.
   #[export] Program Instance inclCT_ecsem : Ecsem inclCT CON JUDG Σ :=
     ECSEM (λ _ δ s _ _ _, □ δ (incl_j s.1 s.2))%I _.
   Next Obligation. solve_proper. Qed.
+  #[export] Program Instance pstoreCT_ecsem : Ecsem pstoreCT CON JUDG Σ :=
+    ECSEM (λ _ δ _ _ Ψx _, □ δ (pstore_j (Ψx ())))%I _.
+  Next Obligation. solve_proper. Qed.
 End judgC.
 
+Notation pstoreCS := (inCS pstoreCT).
 Notation guardCS := (inCS guardCT).
 Notation idxborCS := (inCS idxborCT).
 Notation inclCS := (inCS inclCT).
@@ -883,12 +948,14 @@ Class typingC CON : Type := TYPING_C {
   typingC_idxbor :: idxborC CON;
   typingC_incl :: inclC CON;
   typingC_exs :: exsC CON;
+  typingC_pstore :: pstoreC CON;
 }.
 Class typingJ CON JUDG Σ : Type := TYPING_J {
   typingJ_guard :: guardJ (cifO CON Σ) JUDG;
   typingJ_idxbor :: idxborJ (cifO CON Σ) JUDG;
   typingJ_incl :: inclJ JUDG;
   typingJ_iff :: iffJ (cifO CON Σ) JUDG;
+  typingJ_pstore :: pstoreJ (cifO CON Σ) JUDG;
 }.
 Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ)} : Prop :=
@@ -899,6 +966,7 @@ Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   typingCS_idxbor :: idxborCS CON JUDG Σ;
   typingCS_incl :: inclCS CON JUDG Σ;
   typingCS_exs :: exsCS CON JUDG Σ;
+  typingCS_pstore :: pstoreCS CON JUDG Σ;
 }.
 Class typingJS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
@@ -907,6 +975,7 @@ Class typingJS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   typingJS_idxbor :: idxborJS CON JUDG Σ;
   typingJS_incl :: inclJS CON JUDG Σ;
   typingJS_iff :: iffJS CON JUDG Σ;
+  typingJS_pstore :: pstoreJS CON JUDG Σ;
 }.
 
 (** ** The ambient interpretation and the [TypeFml] instance
@@ -999,6 +1068,8 @@ Section model.
     pure_fml := (λ φ, cif_pure φ);
     ex_fml := (λ A Φ, cif_ex Φ);
     exs_fml := (λ 𝔄 Φ, cif_exs Φ);
+    pers_fml := cif_pers;
+    store_fml := cif_pstore;
     guard_fml := cif_guard;
     alive_fml := cif_alive;
     cells_fml := cif_cells;
@@ -1018,6 +1089,7 @@ Section model.
   Next Obligation. move=> ?????. by apply cif_ex_ne. Qed.
   Next Obligation. move=> *. exact cif_exs_sem. Qed.
   Next Obligation. move=> ?????. by apply cif_exs_ne. Qed.
+  Next Obligation. done. Qed.
   Next Obligation. move=> ?. exact cif_alive_sem. Qed.
   Next Obligation. move=> *. exact cif_cells_sem. Qed.
   Next Obligation. move=> *. exact cif_ccells_sem. Qed.
@@ -1210,6 +1282,59 @@ Section altSem.
   Lemma or_sem_cif {S} (H : alt_any_cif S) Px Qx :
     S (cif_or Px Qx) ⊣⊢ S Px ∨ S Qx.
   Proof. alt_any_at H. done. Qed.
+  Lemma pers_sem_cif {S} (H : alt_any_cif S) Px :
+    S (cif_pers Px) ⊣⊢ □ S Px.
+  Proof. alt_any_at H. done. Qed.
+
+  (** *** The persistently stored formula
+
+    Reading one is [der_sound] at the ambient interpretation; storing one is
+    [dinv_tok_alloc] followed by [Deriv_factor'], whose obligation is the
+    accessor at every good candidate - which [dinv_tok_acc_persistent]
+    gives, since the content is persistent there. *)
+  Lemma pstore_pers_cif {S} (H : alt_any_cif S) Px :
+    Persistent (S (cif_pstore Px)).
+  Proof.
+    move: H=> [δ Heq].
+    rewrite /cand_fun /= Heq /= /cif_pstore sem_cif_in /=. exact _.
+  Qed.
+
+  Lemma pstore_tok_cif {Px} :
+    (∀ S', alt_sem_cif S' → Persistent (S' Px)) →
+    @dinv_tok (cifOF CON) Σ alerus_dinvGS Px ⊢ bor_sem (cif_pstore Px).
+  Proof.
+    move=> Hp. rewrite /bor_sem /= /cif_pstore sem_cif_in /=.
+    iIntros "#i !>". iApply Deriv_factor'. iIntros (δ' Hδ' _ _).
+    rewrite in_js /=.
+    have HP : Persistent (⟦ Px ⟧ᶜ(δ')).
+    { apply (Hp (MkCand (AlerusSem_at δ'))). by exists δ'. }
+    rewrite /pstoreJT_sem /modw alerus_WGuard_at_of /alerus_WGuard_of.
+    iIntros "((A & B & C & D & Wst) & E)".
+    iDestruct (@dinv_tok_acc_persistent (cifOF CON) Σ alerus_dinvGS
+      (λ Px, ⟦ Px ⟧ᶜ(δ')) Px HP with "i Wst") as "[Wst $]".
+    iFrame.
+  Qed.
+
+  Lemma pstore_acc_cif {Px} :
+    bor_sem (cif_pstore Px) ⊢ □ |->[alerus_WGuard] bor_sem Px.
+  Proof.
+    rewrite /bor_sem /= /cif_pstore sem_cif_in /=. iIntros "#i !>".
+    iDestruct (der_sound with "i") as "i'". by rewrite in_js /=.
+  Qed.
+
+  Lemma pstore_alloc_cif {Px} :
+    (∀ S', alt_sem_cif S' → Persistent (S' Px)) →
+    bor_sem Px =[alerus_WGuard]=∗ bor_sem (cif_pstore Px).
+  Proof.
+    move=> Hp. iIntros "Px W".
+    iDestruct (wsat_split (W:=alerus_WGuard) (W':=alerus_store_wsat) with "W")
+      as "[Wst Wr]".
+    iMod (@dinv_tok_alloc (cifOF CON) Σ alerus_dinvGS bor_sem Px
+      with "Px Wst") as "[Wst i]".
+    iDestruct (pstore_tok_cif Hp with "i") as "st".
+    iDestruct (wsat_join (W:=alerus_WGuard) with "Wst Wr") as "W".
+    iModIntro. iFrame.
+  Qed.
   Lemma alive_sem_cif {S} (H : alt_any_cif S) κ : S (cif_alive κ) ⊣⊢ @[κ].
   Proof. alt_any_at H. exact cif_alive_sem_at. Qed.
   Lemma dead_sem_cif {S} (H : alt_any_cif S) κ : S (cif_dead κ) ⊣⊢ [†κ].
@@ -1278,6 +1403,21 @@ Section altSem.
     iIntros "#big !>". iApply Deriv_factor'. iIntros (δ' Hδ' _ Hinto).
     rewrite in_js /=.
     iApply ("big" $! (MkCand (AlerusSem_at δ')) with "[%] [%]").
+    { by exists δ'. }
+    { eapply alt_into_cif_of_dinto;
+        [exact Hδ|exact Hδ'|exact Heq|done|exact Hinto]. }
+  Qed.
+
+  Lemma pstore_map_cif {S} (H : alt_sem_cif S) Px Qx :
+    □ (∀ S' (_ : alt_sem_cif S') (_ : alt_into_cif S S'), S' Px -∗ S' Qx) -∗
+    S (cif_pstore Px) -∗ S (cif_pstore Qx).
+  Proof.
+    move: (H)=> [δ[Hδ Heq]]. have ? : Deriv (λ _, True) δ := Hδ.
+    rewrite /cand_fun /= Heq /= /cif_pstore !sem_cif_in /=.
+    iIntros "#big #st !>". iApply (Deriv_map with "[] st").
+    iIntros (δ' Hδ' _ Hinto). rewrite !in_js /= /pstoreJT_sem /modw.
+    iIntros "acc W". iDestruct ("acc" with "W") as "[W Px]".
+    iFrame "W". iApply ("big" $! (MkCand (AlerusSem_at δ')) with "[%] [%] Px").
     { by exists δ'. }
     { eapply alt_into_cif_of_dinto;
         [exact Hδ|exact Hδ'|exact Heq|done|exact Hinto]. }
@@ -1538,6 +1678,11 @@ Section altSem.
     ex_sem_at_any := @ex_sem_cif;
     exs_sem_at_any := @exs_sem_cif;
     or_sem_at_any := @or_sem_cif;
+    pers_sem_at_any := @pers_sem_cif;
+    store_fml_acc := @pstore_acc_cif;
+    store_fml_alloc := @pstore_alloc_cif;
+    store_fml_pers_at_any := @pstore_pers_cif;
+    store_fml_map_at := @pstore_map_cif;
     alive_sem_at_any := @alive_sem_cif;
     dead_sem_at_any := @dead_sem_cif;
     cells_sem_at_any := @cells_sem_cif;

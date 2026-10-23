@@ -46,7 +46,12 @@ Section mod_ty.
     intros A B f fi Iso ty sem H d g d' g' x tid Hd Hg.
     by apply (ty_gho_pers_depth_mono_at ty sem H).
   Qed.
-  Next Obligation. intros. apply ty_guard_proph. by rewrite <- syn_type_morphism_ξl. Qed.
+  Next Obligation.
+    intros. iIntros "LFT Incl Pers Rk Rg".
+    iMod (ty_guard_proph with "LFT Incl Pers Rk Rg") as "H".
+    iModIntro. iIntros (ξ Hin). iApply "H". iPureIntro.
+    by rewrite <- syn_type_morphism_ξl.
+  Qed.
   Next Obligation.
     intros A B f fi Iso ty sem H x d g tid.
     apply (ty_gho_pers_pers_at ty sem H).

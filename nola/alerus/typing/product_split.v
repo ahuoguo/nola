@@ -239,9 +239,9 @@ Section product_split.
     iSplit; [|done].
     iExists #lx, (S d1' `max` S d2'). iSplit; [done|].
     iDestruct (ty_gho_depth_mono ty d1' (S d1') (d1' `max` d2')
-      (S d1' `max` S d2') x tid with "gho1") as "[gho1 _]"; [lia|lia|].
+      (S d1' `max` S d2') x tid with "gho1") as "gho1"; [lia|lia|].
     iDestruct (ty_gho_depth_mono ty' d2' (S d2') (d1' `max` d2')
-      (S d1' `max` S d2') y tid with "gho2") as "[gho2 _]"; [lia|lia|].
+      (S d1' `max` S d2') y tid with "gho2") as "gho2"; [lia|lia|].
     rewrite /ty_own own_ptr_gho /= prod_ty_gho /=.
     iFrame "gho1 gho2".
     rewrite heap_mapsto_fancy_vec_app -freeable_sz_split ty_size_eq.
@@ -277,11 +277,17 @@ Section product_split.
     move=> γ q tid [[l [x y]][]] mask post.
     iIntros "#LFT #PROPH #UNIQ #E tok [T _] #Obs W".
     iDestruct "T" as (v d) "[%path [gho %phys]]".
-    destruct d as [|d'];
-      [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
-    rewrite shr_bor_gho /=.
-    iDestruct "gho" as "#(G↦ & Ggho & Pers)".
+    iDestruct (shr_bor_gho_elim with "gho") as (dd gg Hdd Hgg)
+      "#(G↦ & Ggho & StPers)".
+    (* Open the product's stored persistent part, split it, and park the two
+       halves for the two shared borrows built below. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (acc_ty_gho_pers with "StPers") as "#Acc".
+    iDestruct ("Acc" with "Wg") as "[Wg #Pers]".
     rewrite prod_ty_gho_pers /=. iDestruct "Pers" as "#[Pers1 Pers2]".
+    iMod (store_ty_gho_pers ty x dd gg tid with "Pers1 Wg") as "[Wg #St1]".
+    iMod (store_ty_gho_pers ty' y dd gg tid with "Pers2 Wg") as "[Wg #St2]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     have Hsplit : ∀ sem', alt_sem sem' →
       sem' (cells_fml l.1 l.2 (ty_phys ty x tid ++ ty_phys ty' y tid)) ⊣⊢
       sem' (bor_sep
@@ -302,12 +308,16 @@ Section product_split.
     iSplit; last first.
     { iApply (proph_obs_eq with "Obs")=> ?. done. }
     iSplit.
-    { iExists #l.1, (S d'). iSplit.
+    { iExists #l.1, (S (dd + gg)). iSplit.
       { iPureIntro. by rewrite /= path shift_loc_0. }
-      rewrite /ty_own shr_bor_gho /=. by iFrame "G↦1 Ggho1 Pers1". }
-    iSplit; [|done]. iExists #(l.1 +ₗ ty_size ty), (S d'). iSplit.
+      rewrite /ty_own. iSplit; [|done].
+      iApply (shr_bor_gho_intro_st κ ty (cloc_take l (ty_size ty), x)
+        _ _ dd gg with "G↦1 Ggho1 St1"); lia. }
+    iSplit; [|done]. iExists #(l.1 +ₗ ty_size ty), (S (dd + gg)). iSplit.
     { iPureIntro. by rewrite /= path. }
-    rewrite /ty_own shr_bor_gho /=. by iFrame "G↦2 Ggho2 Pers2".
+    rewrite /ty_own. iSplit; [|done].
+    iApply (shr_bor_gho_intro_st κ ty' (cloc_skip l (ty_size ty), y)
+      _ _ dd gg with "G↦2 Ggho2 St2"); lia.
   Qed.
 
   Lemma tctx_split_shr_xprod {𝔄l} κ (tyl: typel 𝔄l) p E L :
@@ -405,9 +415,9 @@ Section product_split.
       rewrite prod_ty_gho /= heap_cloc_mapsto_fancy_vec_app ty_size_eq.
       iFrame "Pt1 Pt2".
       iDestruct (ty_gho_depth_mono ty d1 g1 (d1 `max` d2) (g1 `max` g2) x1 tid
-        with "Gho1") as "[$ _]"; [lia|lia|].
+        with "Gho1") as "$"; [lia|lia|].
       iDestruct (ty_gho_depth_mono ty' d2 g2 (d1 `max` d2) (g1 `max` g2) x2 tid
-        with "Gho2") as "[$ _]"; [lia|lia]. }
+        with "Gho2") as "$"; [lia|lia]. }
     { rewrite bor_sep_sem !uniq_body_fml_sem.
       iEval (rewrite prod_ty_gho /=) in "Gho1".
       iDestruct "Gho1" as "[Gho1 Gho2]".

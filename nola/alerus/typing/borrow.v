@@ -87,7 +87,7 @@ Section borrow.
     rewrite heap_cloc_mapsto_fancy_empty !ty_size_eq.
     iFrame "pt2 freeable".
     iDestruct (ty_gho_depth_mono ty d'' g'' d1 (S d1) x'' tid with "gho2")
-      as "[$ _]"; lia.
+      as "$"; lia.
   Qed.
 
   (** Turning a unique borrow into a shared one.
@@ -120,19 +120,24 @@ Section borrow.
       with "LFT PROPH UNIQ Incl' E tok UniqBody W")
       as "[W (#Obs2 & tok & #ShrGuard)]"; [done|done|].
     iMod (Ltok_withdraw with "tok W") as "[W L]".
+    (* Park the borrowed type's persistent part: the shared borrow holds it
+       behind a judgment, not as a visible child. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iMod (store_ty_gho_pers ty x0 d' g' tid with "Pers2 Wg") as "[Wg #St]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iModIntro. iFrame "W L I". iExists -[(l, x0)].
     inversion Phys as [Eqv]. iSplit.
-    { iSplit; [|done]. iExists v, (S d). iSplit; [done|].
-      rewrite /ty_own shr_bor_gho /=. iSplit; [|by rewrite -Eqv].
+    { iSplit; [|done]. iExists v, (S (d' + g')). iSplit; [done|].
+      (* Both of the shared borrow's indices are bounded, so the pieces go
+         back in at exactly the depth and guard index they came out at. *)
+      rewrite /ty_own shr_bor_gho /by_lt /by_le.
+      iSplit; [|by rewrite -Eqv].
       iDestruct (dguard_rhs_sep_l with "ShrGuard") as "#ShrGho".
       iDestruct (dguard_rhs_sep_r with "ShrGuard") as "#ShrPt".
-      iSplit.
+      iExists d'. iSplit; [iPureIntro; lia|].
+      iExists g'. iSplit; [iPureIntro; lia|]. iSplit.
       { by iApply (dguard_cloc_combine_fancy with "PtBase ShrPt"). }
-      iSplit.
-      { iApply (dguard_depth_mono ty d' g' d (S d) x0 tid with "ShrGho");
-          lia. }
-      iApply (ty_gho_pers_depth_mono ty d' g' d (S d) x0 tid with "Pers2");
-        lia. }
+      by iFrame "ShrGho St". }
     iCombine "Obs Obs2" as "#Obs3".
     iApply (proph_obs_impl with "Obs3")=>/= π [Himpl Heq].
     apply Himpl. by rewrite Heq.
@@ -436,7 +441,7 @@ Section borrow.
     { iIntros "[gho pt]". rewrite own_ptr_gho /=.
       iDestruct "gho" as "(phys & free & gho)".
       iDestruct (ty_gho_depth_mono ty d'' g' (S d'') g' x1 tid with "gho")
-        as "[gho _]"; [lia|lia|]. iModIntro.
+        as "gho"; [lia|lia|]. iModIntro.
       rewrite -heap_cloc_mapsto_fancy_empty. iFrame "gho phys".
       iIntros (y e h) "[gho2 pt2]". iModIntro. iExists (S e), h.
       rewrite own_ptr_gho /=. iFrame "pt gho2 free".
@@ -498,10 +503,16 @@ Section borrow.
     iIntros "#LFT #PROPH #UNIQ #E L %Hp own #Obs W".
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct "own" as "[gho %phys]".
-    destruct d as [|d']; [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
-    rewrite shr_bor_gho /=. iDestruct "gho" as "#(Gp & Ggho & pers)".
-    destruct d' as [|d''].
-    { rewrite own_ptr_gho_pers /=. by iDestruct "pers" as "[]". }
+    iDestruct (shr_bor_gho_elim with "gho") as (dd gg Hdd Hgg)
+      "#(Gp & Ggho & stp)".
+    (* Open the stored persistent part, peel one depth layer off the owning
+       pointer, and park the result for the shared borrow we build below. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (acc_ty_gho_pers with "stp") as "#Acc".
+    iDestruct ("Acc" with "Wg") as "[Wg #pers]". rewrite own_ptr_gho_pers.
+    destruct dd as [|d'']; [by iDestruct "pers" as "[]"|]. simpl.
+    iMod (store_ty_gho_pers ty x2 d'' gg tid with "pers Wg") as "[Wg #St]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iMod (Ltok_alloc with "L W") as "[W (%γ & [#key f])]".
     iAssert (frac_tok γ 1 &&{Wguard}&&> @[κ])%I as "#Gκ".
     { iApply (guard_trans with "[] Alv"). iApply (Ltok_guard_frac with "key"). }
@@ -520,8 +531,8 @@ Section borrow.
     iExists ((l2, repeat [] (length (ty_phys ty x2 tid))), x2). iFrame "L".
     iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Ha. by apply Ha. }
-    rewrite /ty_own shr_bor_gho /=. iSplit; [|done].
-    iSplit.
+    rewrite /ty_own. iSplit; [|done].
+    iApply (shr_bor_gho_intro_st _ _ _ _ _ d'' gg); [lia|lia| | |].
     { iApply (dguard_trans with "Ggho []"). iApply dguard_intro.
       iIntros (sem' Hs) "!> g".
       rewrite !(sep_sem_at Hs) /mapsto_fml !(cells_sem_at Hs)
@@ -529,19 +540,15 @@ Section borrow.
       iDestruct "g" as "(pt & free & gho)".
       rewrite -heap_mapsto_cells_fancy_empty. iFrame "pt".
       iIntros "pt". iFrame. }
-    iSplit.
-    { iApply (dguard_trans with "Ggho []"). iApply dguard_intro.
+    { (* The inner ghost state comes straight out of the owning pointer's,
+         at the very indices the bounded [&shr] asks for. *)
+      iApply (dguard_trans with "Ggho []"). iApply dguard_intro.
       iIntros (sem' Hs) "!> g".
       rewrite !(sep_sem_at Hs) /mapsto_fml (cells_sem_at Hs)
         (freeable_sem_at Hs).
-      iDestruct "g" as "(pt & free & gho)".
-      iDestruct (ty_gho_depth_mono_at ty sem' Hs d'' (S (S d'')) (S (S d''))
-        (S (S (S d''))) x2 tid with "gho") as "[gho back]"; [lia|lia|].
-      iSplitL "gho"; [iExact "gho"|]. iIntros "gho".
-      iDestruct ("back" with "gho") as "$". iFrame. }
-    rewrite own_ptr_gho_pers /=.
-    iApply (ty_gho_pers_depth_mono ty d'' (S (S d'')) (S (S d''))
-      (S (S (S d''))) x2 tid with "pers"); lia.
+      iDestruct "g" as "(pt & free & gho)". iFrame "gho".
+      iIntros "gho". iFrame. }
+    { iApply "St". }
   Qed.
 
   Lemma type_deref_shr_own {𝔄 𝔅l ℭl 𝔇} κ x p e n (ty: type 𝔄)
@@ -808,7 +815,7 @@ Section borrow.
         (prval_to_inh (vπ x1))). iApply proph_eqz_refl. }
     { rewrite uniq_body_fml_sem. iExists x1, d1, g0. iFrame "ζPc pt".
       iDestruct (ty_gho_depth_mono ty d1 g0 d1 g0 x1 tid with "gho")
-        as "[$ _]"; lia. }
+        as "$"; lia. }
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "H") as "H'";
       [set_solver|].
     iMod ("H'" with "W") as "[W [Bor3 f1]]".
@@ -870,10 +877,14 @@ Section borrow.
     iIntros "#LFT #PROPH #UNIQ #E L %Hp [gho %phys] #Obs W".
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (In with "L E") as "#Incl".
-    destruct d as [|d'];
-      [by iDestruct (false_fml_sem_1 with "gho") as "[]"|].
-    rewrite shr_bor_gho /=. iDestruct "gho" as "#(G↦ & Ggho & Pers)".
-    rewrite (uniq_bor_gho_pers κ' ty l1 x1 ξi d1 g1 ξidx d' (S d') tid).
+    iDestruct (shr_bor_gho_elim with "gho") as (dd gg Hdd Hgg)
+      "#(G↦ & Ggho & StPers)".
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W")
+      as "[Wg0 Wr0]".
+    iDestruct (acc_ty_gho_pers with "StPers") as "#Acc".
+    iDestruct ("Acc" with "Wg0") as "[Wg0 #Pers]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg0 Wr0") as "W".
+    rewrite (uniq_bor_gho_pers κ' ty l1 x1 ξi d1 g1 ξidx dd gg tid).
     iDestruct "Pers" as "(%Hineq & #InnerPers & #UBPers)".
     (* The guard to [l1 #↦∗_] lives inside the borrow's ghost assertion, so
       the only way to it is to open the outer guard once. *)
@@ -919,17 +930,19 @@ Section borrow.
       [by iApply dincl_dguard|].
     iDestruct (dguard_rhs_sep_l with "Gghopt") as "#Ggho5".
     iDestruct (dguard_rhs_sep_r with "Gghopt") as "#Gpt1".
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W")
+      as "[Wg1 Wr1]".
+    iMod (store_ty_gho_pers ty x1 d1 g1 tid with "InnerPers2 Wg1")
+      as "[Wg1 #St]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg1 Wr1") as "W".
     iModIntro. iFrame "W". iExists (l1, x1). iFrame "L". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Ha. exact Ha. }
-    rewrite /ty_own shr_bor_gho /=. iSplit; [|done].
-    iSplit.
+    rewrite /ty_own. iSplit; [|done].
+    iApply (shr_bor_gho_intro_st _ _ _ _ _ d1 g1); [lia|lia| | |].
     { iApply dguard_cloc_combine_fancy; [|iApply "Gpt1"].
       iApply (dguard_trans with "[] InnerPtBase"). by iApply dincl_dguard. }
-    iSplit.
-    { iApply (dguard_depth_mono ty d1 g1 (S d') (S (S d')) x1 tid
-        with "Ggho5"); lia. }
-    iApply (ty_gho_pers_depth_mono ty d1 g1 (S d') (S (S d')) x1 tid
-      with "InnerPers2"); lia.
+    { iApply "Ggho5". }
+    { iApply "St". }
   Qed.
 
   Lemma type_deref_shr_uniq {𝔄 𝔅l ℭl 𝔇} κ κ' x p e (ty: type 𝔄)

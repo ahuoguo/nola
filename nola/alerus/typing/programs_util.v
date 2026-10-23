@@ -89,10 +89,10 @@ Section programs_util.
     iMod (Hvs x1 x2 v1 v2 (d1 `max` d2) tid post
       with "CTX PROPH UNIQ E L p1 [own1] p2 [own2] Obs W") as "[$ J]".
     { iDestruct "own1" as "[gho phys]". iFrame.
-      iDestruct (ty_gho_depth_mono with "gho") as "[gho _]";
+      iDestruct (ty_gho_depth_mono with "gho") as "gho";
         last by iFrame "gho". { lia. } { lia. } }
     { iDestruct "own2" as "[gho phys]". iFrame.
-      iDestruct (ty_gho_depth_mono with "gho") as "[gho _]";
+      iDestruct (ty_gho_depth_mono with "gho") as "gho";
         last by iFrame "gho". { lia. } { lia. } }
     iDestruct "J" as (xl') "(? & ? & ?)". iModIntro. iExists xl'. iFrame.
   Qed.
@@ -121,10 +121,10 @@ Section programs_util.
     iMod (Hvs x1 x2 v1 v2 (d1 `max` d2) tid post
       with "CTX PROPH UNIQ E L I p1 [own1] p2 [own2] Obs W") as "[$ J]".
     { iDestruct "own1" as "[gho phys]". iFrame.
-      iDestruct (ty_gho_depth_mono with "gho") as "[gho _]";
+      iDestruct (ty_gho_depth_mono with "gho") as "gho";
         last by iFrame "gho". { lia. } { lia. } }
     { iDestruct "own2" as "[gho phys]". iFrame.
-      iDestruct (ty_gho_depth_mono with "gho") as "[gho _]";
+      iDestruct (ty_gho_depth_mono with "gho") as "gho";
         last by iFrame "gho". { lia. } { lia. } }
     iDestruct "J" as (xl' mask') "(? & ? & ? & ?)". iModIntro.
     iExists xl', mask'. iFrame.

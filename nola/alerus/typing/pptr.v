@@ -82,10 +82,8 @@ Section points_to.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation.
-    move=> ? ty Px sem H *. rewrite !(sep_sem_at H). iIntros "[HP gho]".
-    iDestruct (ty_gho_depth_mono_at ty sem H with "gho") as "[gho wand]";
-      [done|done|].
-    iFrame "HP gho". iIntros "[$ ?]". by iApply "wand".
+    move=> ? ty Px sem H *. rewrite !(sep_sem_at H). iIntros "[$ gho]".
+    by iApply (ty_gho_depth_mono_at ty sem H with "gho").
   Qed.
   Next Obligation.
     move=> ? ty Px sem H *. by apply (ty_gho_pers_depth_mono_at ty sem H).
@@ -186,7 +184,7 @@ Section typing.
     iSplit; [|done]. iExists (LitV (LitLoc l)), (S (S d')).
     iSplit; [done|].
     rewrite /ty_own own_ptr_gho /=. iFrame "Hl Hfree". iSplit; [|done].
-    iDestruct (ty_gho_depth_mono with "Hgho") as "[$ _]"; [lia|lia].
+    iDestruct (ty_gho_depth_mono with "Hgho") as "$"; [lia|lia].
   Qed.
 
   Definition PPtrFromOwn : val :=
@@ -225,7 +223,7 @@ Section typing.
     { rewrite freeable_sz_full. iDestruct "Hfree'" as "[A|%E0]";
         [by iLeft|iRight; iPureIntro; lia]. }
     iSplit; [done|]. iFrame "Hl Hfree".
-    iDestruct (ty_gho_depth_mono with "Hgho") as "[$ _]"; [lia|lia].
+    iDestruct (ty_gho_depth_mono with "Hgho") as "$"; [lia|lia].
   Qed.
 
   Lemma cloc_mapsto_empty_cells {𝔄} (ty: type 𝔄) l x tid :
@@ -262,19 +260,23 @@ Section typing.
     simpl in Hphys. injection Hphys=> ?; subst pl.
     iDestruct "Hperm" as (pl' d' Heval') "[Hshr %Hphys']".
     simpl in Hphys'. injection Hphys'=> ?; subst pl'.
-    destruct d' as [|[|d']].
-    { by iDestruct (false_fml_sem_1 with "Hshr") as "[]". }
-    { rewrite shr_bor_gho /=. iDestruct "Hshr" as "(_ & _ & #Hpers)".
-      rewrite tracked_ty_gho_pers own_ptr_gho_pers /=.
-      by iDestruct "Hpers" as "[]". }
-    rewrite shr_bor_gho /=. iDestruct "Hshr" as "#(_ & Hshr & Hpers)".
-    rewrite tracked_ty_gho_pers own_ptr_gho_pers /=.
-    iDestruct (dguard_rhs_sep_l with "Hshr") as "#Hshrpt".
-    iDestruct (dguard_rhs_sep_r with "Hshr") as "#Hshr3".
-    iDestruct (dguard_rhs_sep_r with "Hshr3") as "#Hshrgho".
+    iDestruct (shr_bor_gho_elim with "Hshr") as (dd gg Hdd Hgg)
+      "#(_ & Hshr' & Hstp)". iClear "Hshr". iRename "Hshr'" into "Hshr".
     iApply twpw_fupdw_nonval; [done|].
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
+    (* Open the stored persistent part, peel the tracked owning pointer off
+       it, and park what is left for the shared borrow built below. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (acc_ty_gho_pers with "Hstp") as "#Acc".
+    iDestruct ("Acc" with "Wg") as "[Wg #Hpers]".
+    rewrite tracked_ty_gho_pers own_ptr_gho_pers.
+    destruct dd as [|dd0]; [by iDestruct "Hpers" as "[]"|]. simpl.
+    iMod (store_ty_gho_pers ty x dd0 gg tid with "Hpers Wg") as "[Wg #St]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
+    iDestruct (dguard_rhs_sep_l with "Hshr") as "#Hshrpt".
+    iDestruct (dguard_rhs_sep_r with "Hshr") as "#Hshr3".
+    iDestruct (dguard_rhs_sep_r with "Hshr3") as "#Hshrgho".
     iModIntro. iFrame "W".
     wp_bind ptr. iApply twp_wand; [by iApply twp_eval_path|].
     iIntros (?->). wp_bind perm_ref.
@@ -282,18 +284,20 @@ Section typing.
     iModIntro. iExists -[((l, repeat [] ty.(ty_size)), x)].
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> ? [_ Hpost]. apply Hpost. }
-    iSplit; [|done]. iExists (LitV (LitLoc l)), (S (S (S d'))).
+    iSplit; [|done]. iExists (LitV (LitLoc l)), (S (dd0 + gg)).
     iSplit; [done|].
-    rewrite /ty_own shr_bor_gho /=. iSplit; [|done]. iSplit.
+    (* The shared borrow's two indices are bounded, so the pieces are put
+       back at exactly the depth and guard index they were taken at. *)
+    rewrite /ty_own shr_bor_gho /by_lt /by_le. iSplit; [|done].
+    iExists dd0. iSplit; [iPureIntro; lia|].
+    iExists gg. iSplit; [iPureIntro; lia|]. iSplit.
     { have Hpt : ∀ sem', alt_sem sem' →
         sem' (mapsto_fml l (ty_phys ty x tid)) ⊣⊢
         sem' (cells_fml (l, repeat (@nil cell_id) (ty_size ty)).1
                (l, repeat (@nil cell_id) (ty_size ty)).2 (ty_phys ty x tid)).
       { move=> sem' Hs. rewrite /mapsto_fml !(cells_sem_at Hs) ty_size_eq //. }
       iApply (dguard_rhs_iff Hpt with "Hshrpt"). }
-    iSplit.
-    { iApply (dguard_depth_mono ty with "Hshrgho"); lia. }
-    iApply (ty_gho_pers_depth_mono with "Hpers"); lia.
+    by iFrame "Hshrgho St".
   Qed.
 
   Definition PPtrMutBorrow : val := (λ: ["ptr"; "perm_ref"], "ptr")%V.
@@ -374,7 +378,7 @@ Section typing.
     { iIntros "[gho pt]". rewrite tracked_ty_gho own_ptr_gho /=.
       iDestruct "gho" as "(phys & free & gho)".
       iDestruct (ty_gho_depth_mono ty d g (S d) g x tid with "gho")
-        as "[gho _]"; [lia|lia|]. iModIntro.
+        as "gho"; [lia|lia|]. iModIntro.
       iEval (rewrite (cloc_mapsto_empty_cells ty l x tid)) in "phys".
       iFrame "gho phys". iIntros (y e h) "[gho2 pt2]". iModIntro.
       iExists (S e), h. rewrite tracked_ty_gho own_ptr_gho /=.

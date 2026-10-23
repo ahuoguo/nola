@@ -89,10 +89,11 @@ Section local_invariants.
   Next Obligation.
     move=> ?? ty pred sem Hsm d g d' g' [[N [[γ γt] d1]] c] tid ??.
     rewrite !(sep_sem_at Hsm) !(pure_sem_at Hsm). iIntros "($ & %Hd & $)".
-    iSplit; [iPureIntro; lia|]. by iIntros "($ & _ & $)".
+    iPureIntro; lia.
   Qed.
   Next Obligation. move=> ?? ty pred sem Hsm *. by iIntros "$". Qed.
-  Next Obligation. move=> ?? ty pred κ [[??]?] ???? Hin. set_solver. Qed.
+  Next Obligation. move=> ?? ty pred κ [[??]?] ????.
+    iIntros "_ _ _ _ _ !>" (ξ) "%Hin". set_solver. Qed.
   Next Obligation.
     move=> ?? ty pred sem Hsm *. rewrite (empty_sem_at Hsm). exact _.
   Qed.
@@ -124,9 +125,10 @@ Section local_invariants.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> ??? ty pred sem Hsm *. iIntros "$". by iIntros "$". Qed.
   Next Obligation. move=> ??? ty pred sem Hsm *. by iIntros "$". Qed.
-  Next Obligation. move=> ?? κ ty pred ? [[??]?] ???? Hin. set_solver. Qed.
+  Next Obligation. move=> ??? ty pred sem Hsm *. by iIntros "$". Qed.
+  Next Obligation. move=> ?? κ ty pred ? [[??]?] ????.
+    iIntros "_ _ _ _ _ !>" (ξ) "%Hin". set_solver. Qed.
   Next Obligation.
     move=> ??? ty pred sem Hsm *. rewrite (empty_sem_at Hsm). exact _.
   Qed.
@@ -238,7 +240,7 @@ Section local_invariants.
     iSplitL "cna_lft Irest".
     { iExists na_mask, at_mask. by iFrame "cna_lft ϝincl Irest". }
     rewrite tracked_ty_gho. iSplitL "gho".
-    { iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; lia. }
+    { iDestruct (ty_gho_depth_mono with "gho") as "$"; lia. }
     iApply (proph_obs_impl with "Obs")=> ? Ha. by apply Ha.
   Qed.
 
@@ -270,10 +272,8 @@ Section local_invariants.
     move=> l1 [l0 [[ns [[γ γt] d0]] c]] d tid iκs post mask.
     iIntros "#LFT #PROPH #UNIQ #E L I shrgho #Obs W".
     rewrite tracked_ty_gho.
-    destruct d as [|d];
-      [by iDestruct (false_fml_sem_1 with "shrgho") as "[]"|].
-    rewrite shr_bor_gho /=.
-    iDestruct "shrgho" as "#(_ & KguardsGho & _)".
+    iDestruct (shr_bor_gho_elim with "shrgho") as (dd gg Hdd Hgg)
+      "#(_ & KguardsGho & _)".
     iDestruct (Halive with "L E") as "#LguardsK".
     iDestruct (dguard_rhs_sep_l with "KguardsGho") as "#KguardsActive".
     iDestruct (dguard_rhs_sep_r with "KguardsGho") as "#KguardsRest".
@@ -309,7 +309,7 @@ Section local_invariants.
     rewrite prod_ty_gho /= tracked_ty_gho local_closer_ty_gho.
     iSplitL "gho Closer".
     { iSplitL "gho".
-      - iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; lia.
+      - iDestruct (ty_gho_depth_mono with "gho") as "$"; lia.
       - iExact "Closer". }
     iApply (proph_obs_impl with "Obs")=> ? [_ Ha]. by apply Ha.
   Qed.

@@ -113,17 +113,18 @@ Section sum.
     apply (ty_gho_pers_depth_mono_at _ sem H); trivial.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl κ [x pad] d g tid ξ R. simpl.
-    move=> Hin. replace x with (of_xsum (to_xsum x)) in Hin;
-      last by rewrite semi_iso'. move: Hin.
-    refine (match (to_xsum x) with | xinj i x0 => _ end).
-    intros Hin. simpl in Hin. rewrite psum_map1_pinj in Hin.
-    rewrite to_xsum_pinj in Hin.
-    iIntros "#LFT #Incl #Pers #Rk #Rg".
-    iApply (ty_guard_proph _ (tyl +!! i) κ x0 d g tid ξ R Hin
-      with "LFT [] Pers Rk Rg").
-    iApply (guard_trans with "Incl []").
-    iApply lft_intersect_tyl_lfts_lookup_incl.
+    intros 𝔄l tyl κ [x pad] d g tid R. simpl.
+    have Hξ : ∀ ξ, ξ ∈ @ξl (Σ! 𝔄l) (x, pad) →
+      ξ ∈ @ξl (Σ! 𝔄l) (of_xsum (to_xsum x), pad).
+    { move=> ξ. by rewrite semi_iso'. }
+    move: Hξ. refine (match (to_xsum x) with | xinj i x0 => _ end).
+    move=> Hξ. iIntros "#LFT #Incl #Pers #Rk #Rg".
+    iMod (ty_guard_proph _ (tyl +!! i) κ x0 d g tid R
+      with "LFT [] Pers Rk Rg") as "H".
+    { iApply (guard_trans with "Incl []").
+      iApply lft_intersect_tyl_lfts_lookup_incl. }
+    iModIntro. iIntros (ξ Hin). iApply "H". iPureIntro.
+    move: (Hξ ξ Hin)=>/=. rewrite psum_map1_pinj to_xsum_pinj. done.
   Qed.
   Next Obligation.
     intros 𝔄l tyl sem H [x pad] d g tid.

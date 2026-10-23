@@ -53,10 +53,8 @@ Section own.
     move=> 𝔄 n ty sem H [|d] g d' g' x tid ??.
     { rewrite /= (false_sem_at H). by iIntros "[]". }
     destruct d' as [|d']; first lia. rewrite /= !(sep_sem_at H).
-    iIntros "(Hown & Hfree & Hgho)".
-    iDestruct (ty_gho_depth_mono_at ty sem H with "Hgho") as "[$ Hwand]";
-      [lia|lia|].
-    iFrame. iIntros "($ & $ & Hgho)". by iApply "Hwand".
+    iIntros "($ & $ & Hgho)".
+    iApply (ty_gho_depth_mono_at ty sem H with "Hgho"); lia.
   Qed.
   Next Obligation.
     move=> 𝔄 n ty sem H [|d] g d' g' x tid ??.
@@ -65,12 +63,11 @@ Section own.
     iApply (ty_gho_pers_depth_mono_at ty sem H with "Hp"); lia.
   Qed.
   Next Obligation.
-    move=> 𝔄 n ty κ x d g tid ξ R Hin. iIntros "#LFT #Incl #Pers".
+    move=> 𝔄 n ty κ x d g tid R. iIntros "#LFT #Incl #Pers".
     destruct d as [|d'].
     { iIntros "_ _". by iDestruct (false_fml_sem_1 with "Pers") as "[]". }
     fml_simpl'. iIntros "#Rk #Rg".
-    iApply (ty_guard_proph _ ty κ (snd x) d' g tid ξ R Hin
-      with "LFT Incl Pers Rk").
+    iApply (ty_guard_proph _ ty κ (snd x) d' g tid R with "LFT Incl Pers Rk").
     iApply (guard_trans with "Rg"). iApply (guard_trans with "[]").
     { iApply (guard_sep_r (P:=((fst x) ↦!∗ ty.(ty_phys) (snd x) tid)%I)). }
     iApply guard_sep_r.
@@ -292,7 +289,7 @@ Section typing.
     replace (length (ty_phys ty x0 tid)) with (length (ty_phys ty' y tid));
       last by do 2 rewrite ty_size_eq.
     rewrite -heap_cloc_mapsto_fancy_empty. iFrame "Pt".
-    iDestruct (ty_gho_depth_mono with "Gho") as "[$ _]"; lia.
+    iDestruct (ty_gho_depth_mono with "Gho") as "$"; lia.
   Qed.
 
   (** Reading a [Copy] type out of an owning pointer.
@@ -327,7 +324,7 @@ Section typing.
     rewrite /ty_own.
     iSplitR.
     { iSplit; [|done].
-      iDestruct (ty_gho_depth_mono with "Hgho") as "[$ _]"; lia. }
+      iDestruct (ty_gho_depth_mono with "Hgho") as "$"; lia. }
     iIntros "Hown $ !>". iExists (l, x0). iSplit; [done|]. iFrame "tok".
     iSplit; [|done]. rewrite own_ptr_gho /=. iFrame "Hfree Hgho".
     by iApply (gsrc_fml_sem_1 (s := GMapstoVec l (ty_phys ty x0 tid))).
@@ -359,7 +356,7 @@ Section typing.
     rewrite /ty_own.
     iSplitL "Hgho".
     { iSplit; [|done].
-      iDestruct (ty_gho_depth_mono with "Hgho") as "[$ _]"; lia. }
+      iDestruct (ty_gho_depth_mono with "Hgho") as "$"; lia. }
     iIntros "Hown $ !>".
     replace (ty_size ty) with (length (ty_phys ty x tid));
       last by apply ty_size_eq.

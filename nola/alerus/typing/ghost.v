@@ -31,7 +31,8 @@ Section ghost.
   Next Obligation. move=> *. trivial. Qed.
   Next Obligation. move=> ?? sem H *. by iIntros "$". Qed.
   Next Obligation.
-    move=> 𝔄 ty κ x d g tid ξ R Hin. exfalso. simpl in Hin. set_solver.
+    move=> 𝔄 ty κ x d g tid R. iIntros "_ _ _ _ _ !>" (ξ) "%Hin".
+    exfalso. simpl in Hin. set_solver.
   Qed.
   Next Obligation. done. Qed.
 

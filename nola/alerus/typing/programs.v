@@ -420,7 +420,7 @@ Section typing.
       as "(W & %z & tok1 & %Hz & ty')".
     { iExists [FVal vb]. rewrite -heap_complete_mapsto_fancy_singleton.
       iFrame "↦". iSplitL.
-      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]".
+      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "$".
         { lia. } { lia. } }
       done. }
     iDestruct (Ltok_split_2 with "tok1 t2") as "tok".
@@ -428,7 +428,7 @@ Section typing.
     iExists -[z]. iFrame "L I". iSplitR "Obs".
     - rewrite right_id tctx_hasty_val'; [|done].
       iExists (S (d' `max` db)). iDestruct "ty'" as "[gho phys]". iFrame.
-      iDestruct (ty_gho_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
+      iDestruct (ty_gho_depth_mono with "gho") as "$". { lia. } { lia. }
     - iCombine "Obs Obs'" as "Obs2".
       iApply (proph_obs_impl with "Obs2")=>/= ?[? Imp].
       generalize Hz. generalize z. apply Imp. trivial.
@@ -566,7 +566,7 @@ Section typing.
     iMod ("Totyw" $! (gtr xr) dr with "[↦ tyb'_gho] Hw' W")
       as "(W & %z & tok1 & %Hz & tyw')".
     { iExists vlb. iFrame "↦". iSplitL.
-      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]".
+      { iDestruct (ty_gho_depth_mono with "tyb'_gho") as "$".
         { lia. } { lia. } }
       done. }
     iMod ("Totyr'" with "Hr' W") as "(W & %zr & %Hzr & tok3 & tyr')".
@@ -576,7 +576,7 @@ Section typing.
     iExists -[_; _]. iFrame "L I". iSplit; [rewrite right_id|].
     - iSplitL "tyw'"; (rewrite tctx_hasty_val'; [|done]).
       + iExists (S (d' `max` dr)). iDestruct "tyw'" as "[gho phys]". iFrame.
-        iDestruct (ty_gho_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
+        iDestruct (ty_gho_depth_mono with "gho") as "$". { lia. } { lia. }
       + iExists dr. iFrame "tyr'".
     - iCombine "Obs Obs'" as "Obs2".
       iApply (proph_obs_impl with "Obs2")=>/= ?[? Imp].

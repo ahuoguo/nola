@@ -75,16 +75,20 @@ Section alloc.
     iMod (llft_wsat_alloc (FML:=cifOF CON)) as (Hllft Hsinv shr) "Wllft".
     iMod (na_inv_wsat_alloc_name (FML:=cifOF CON)) as (γna) "Wna".
     iMod (cna_wsat_alloc (FML:=cifOF CON)) as (Hcna) "Wcna".
+    (* the store family, a second [sinvGS] beside the boxes' - see
+      [alerus_store_name] in [typing/ctx.v] *)
+    iMod (sinv_wsat_alloc_name (FML:=cifOF CON) (sinvGS0 := Hsinv))
+      as (γst) "Wstore".
     iMod (proph_init ⊤) as (Hproph) "#PROPH"; [done|].
     iMod (uniq_init ⊤) as (Huniq) "[#UNIQ Wsend]"; [done|].
     iModIntro.
     iExists (AlerusGS _ _ _ Hllft Hsinv hGS
       (NaInvGS _ _ sinvGS_pre _ γna) _ Hproph Huniq Hcna Hfrac
-      _ Hllctx Hlfts shr γe).
+      _ Hllctx Hlfts shr γe γst).
     do 2 (iSplit; [done|]). iFrame "PROPH UNIQ". iIntros (????).
     iSplit; [done|].
     iSplitR "Wsend"; last iExact "Wsend".
-    iSplitL "Wllft We Wfrac Wllctx Wlfts"; last first.
+    iSplitL "Wllft We Wfrac Wllctx Wlfts Wstore"; last first.
     { iSplitL "Wcna"; first by iApply "Wcna".
       iApply "Wna". iApply ne_internal_ne; try exact _. }
     iApply ("Wllft" $! _ alerus_WG). rewrite /alerus_WG.
@@ -92,7 +96,9 @@ Section alloc.
     iSplitL "Wfrac"; first (iApply "Wfrac"; iApply ne_internal_ne;
       try exact _).
     iSplitL "Wllctx"; first iExact "Wllctx".
-    iExact "Wlfts".
+    iSplitL "Wlfts"; first iExact "Wlfts".
+    rewrite /alerus_store_wsat dinv_wsat_sinv. iApply "Wstore".
+    iIntros (?). iApply ne_internal_ne; try exact _.
   Qed.
 End alloc.
 

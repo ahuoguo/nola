@@ -214,9 +214,10 @@ Section atomic_invariants.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> ?? ty pred sem Hsm *. iIntros "$". by iIntros "$". Qed.
   Next Obligation. move=> ?? ty pred sem Hsm *. by iIntros "$". Qed.
-  Next Obligation. move=> ?? ty pred κ [[??]?] ???? Hin. set_solver. Qed.
+  Next Obligation. move=> ?? ty pred sem Hsm *. by iIntros "$". Qed.
+  Next Obligation. move=> ?? ty pred κ [[??]?] ????.
+    iIntros "_ _ _ _ _ !>" (ξ) "%Hin". set_solver. Qed.
   Next Obligation.
     move=> ?? ty pred sem Hsm *. rewrite (empty_sem_at Hsm). exact _.
   Qed.
@@ -242,9 +243,10 @@ Section atomic_invariants.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> ??? ty pred sem Hsm *. iIntros "$". by iIntros "$". Qed.
   Next Obligation. move=> ??? ty pred sem Hsm *. by iIntros "$". Qed.
-  Next Obligation. move=> ?? κ ty pred ? [[??]?] ???? Hin. set_solver. Qed.
+  Next Obligation. move=> ??? ty pred sem Hsm *. by iIntros "$". Qed.
+  Next Obligation. move=> ?? κ ty pred ? [[??]?] ????.
+    iIntros "_ _ _ _ _ !>" (ξ) "%Hin". set_solver. Qed.
   Next Obligation.
     move=> ??? ty pred sem Hsm *. rewrite (empty_sem_at Hsm). exact _.
   Qed.
@@ -442,7 +444,7 @@ Section atomic_invariants.
     iModIntro. iFrame "W". iExists (d0 `max` g'), x', mask, at_mask.
     iFrame "L ctr pool cna_lfts". iSplit; [done|].
     rewrite tracked_ty_gho. iSplitL "gho".
-    { iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; lia. }
+    { iDestruct (ty_gho_depth_mono with "gho") as "$"; lia. }
     iCombine "Obs Hpred" as "#Obs2".
     iApply (proph_obs_impl with "Obs2")=> π [[_ Ha] Hp]. apply Ha.
     by rewrite Habs.
@@ -464,9 +466,8 @@ Section atomic_invariants.
     move=> l [l1 [[ns γ] c]] d tid post mask na_mask at_mask iκs Hm1 Hm2.
     iIntros "#LFT #PROPH #UNIQ #E L [ctr pool] cna_lfts #fincl shrgho #Obs W".
     rewrite tracked_ty_gho.
-    destruct d as [|d];
-      [by iDestruct (false_fml_sem_1 with "shrgho") as "[]"|].
-    rewrite shr_bor_gho /=. iDestruct "shrgho" as "#(_ & KguardsGho & _)".
+    iDestruct (shr_bor_gho_elim with "shrgho") as (dd gg Hdd Hgg)
+      "#(_ & KguardsGho & _)".
     iDestruct (Halive with "L E") as "#LguardsK".
     iDestruct (dguard_rhs_sep_l with "KguardsGho") as "#KguardsActive0".
     iDestruct (dguard_rhs_sep_r with "KguardsGho") as "#KguardsInv0".
@@ -500,7 +501,7 @@ Section atomic_invariants.
     rewrite prod_ty_gho /= tracked_ty_gho atomic_closer_ty_gho.
     iSplitL "gho handle closer".
     { iSplitL "gho".
-      - iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; lia.
+      - iDestruct (ty_gho_depth_mono with "gho") as "$"; lia.
       - iFrame "handle closer". }
     iCombine "Obs Hpred" as "#Obs2".
     iApply (proph_obs_impl with "Obs2")=> π [[_ Ha] Hp]. apply Ha.

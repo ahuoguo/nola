@@ -70,9 +70,9 @@ Section pcell.
   Next Obligation. move=> n v tid. by rewrite length_pad. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. move=> ? sem Hsm *. iIntros "$". by iIntros "$". Qed.
   Next Obligation. move=> ? sem Hsm *. by iIntros "$". Qed.
-  Next Obligation. move=> n κ x d g tid ξ R Hin. set_solver. Qed.
+  Next Obligation. move=> ? sem Hsm *. by iIntros "$". Qed.
+  Next Obligation. iIntros "* _ _ _ _ _ !>" (ξ) "%Hin". set_solver. Qed.
   Next Obligation. move=> ? sem Hsm *. rewrite (pure_sem_at Hsm). exact _. Qed.
   Next Obligation. move=> *. by iIntros "$". Qed.
 
@@ -121,9 +121,7 @@ Section points_to.
     destruct d as [|d0]; [rewrite /= (false_sem_at Hsm); by iIntros "[]"|].
     destruct d' as [|d0']; [lia|]. rewrite /= !(sep_sem_at Hsm).
     iIntros "[$ gho]".
-    iDestruct (ty_gho_depth_mono_at ty sem Hsm with "gho") as "[$ Hwand]";
-      [lia|lia|].
-    iIntros "[$ gho]". by iApply "Hwand".
+    iApply (ty_gho_depth_mono_at ty sem Hsm with "gho"); lia.
   Qed.
   Next Obligation.
     move=> ? ty sem Hsm d g d' g' x tid ??.
@@ -133,12 +131,11 @@ Section points_to.
     iApply (ty_gho_pers_depth_mono_at ty sem Hsm with "gho"); lia.
   Qed.
   Next Obligation.
-    move=> ? ty κ x d g tid ξ R Hin. rewrite !by_succx_sem.
+    move=> ? ty κ x d g tid R. rewrite !by_succx_sem.
     destruct d as [|d']; [by iIntros "_ _ []"|].
     rewrite /= !bor_sep_sem.
     iIntros "#LFT #Incl [_ Pers] #Gk #Ggho".
-    iApply (ty_guard_proph _ ty κ x.2 d' g tid ξ R Hin
-      with "LFT Incl Pers Gk").
+    iApply (ty_guard_proph _ ty κ x.2 d' g tid R with "LFT Incl Pers Gk").
     iApply (guard_rhs_sep_r with "Ggho").
   Qed.
   Next Obligation.
@@ -242,7 +239,7 @@ Section typing.
     rewrite (pad_length' (FCell <$> γs) (ty_size ty));
       [|by rewrite length_fmap Hlen].
     iDestruct (ty_gho_depth_mono ty d (S d) d (S (S d)) x tid with "Hgho")
-      as "[Hgho _]"; [lia|lia|].
+      as "Hgho"; [lia|lia|].
     iFrame "Hchain Hfree Htail Hgho". by iSplit.
   Qed.
 
@@ -293,7 +290,7 @@ Section typing.
     iSplit; [|done]. iExists #l, (S (S d'')). iSplit; [done|].
     rewrite /ty_own own_ptr_gho /=.
     iDestruct (ty_gho_depth_mono ty d'' (S (S d'')) (S d'') (S (S d'')) x tid
-      with "Hgho") as "[Hgho _]"; [lia|lia|].
+      with "Hgho") as "Hgho"; [lia|lia|].
     by iFrame "H↦ Hfree Hgho".
   Qed.
 
@@ -329,30 +326,38 @@ Section typing.
     iDestruct "Hperm" as (pl' d' Heval') "[Hshr' %Hphys']".
     simpl in Hphys, Hphys'. inversion Hphys; subst pl.
     inversion Hphys'; subst pl'.
-    destruct d as [|d0];
-      [by iDestruct (false_fml_sem_1 with "Hshr") as "[]"|].
-    destruct d' as [|d1];
-      [by iDestruct (false_fml_sem_1 with "Hshr'") as "[]"|].
-    rewrite !shr_bor_gho /=.
-    iDestruct "Hshr" as "#(Hpt & _ & Hlen0)".
-    rewrite pcell_ty_gho_pers. iDestruct "Hlen0" as %Hlen.
-    iDestruct "Hshr'" as "#(_ & Hghoshr & Hpers)".
-    rewrite cell_points_to_gho_pers /=.
-    destruct d1 as [|d2]; [by iDestruct "Hpers" as "[]"|].
-    iDestruct "Hpers" as "[_ Hpers]".
+    iDestruct (shr_bor_gho_elim with "Hshr") as (dd0 gg0 Hdd0 Hgg0)
+      "#(Hpt & _ & Hst0)".
+    iDestruct (shr_bor_gho_elim with "Hshr'") as (dd1 gg1 Hdd1 Hgg1)
+      "#(_ & Hghoshr & Hst1)".
     iApply twpw_fupdw_nonval; [done|].
     wp_bind pcell_ref. iApply twp_wand; [by iApply twp_eval_path|].
     iIntros (?->). wp_bind perm_ref.
     iApply twp_wand; [by iApply twp_eval_path|]. iIntros (?->).
     wp_rec. iIntros "W".
     iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
+    (* Both shared borrows keep their persistent part behind a judgment, so
+       they are opened here, where the world satisfaction is at hand. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (store_fml_acc with "Hst0") as "#Acc0".
+    iDestruct ("Acc0" with "Wg") as "[Wg #Hlen0]".
+    rewrite pure_fml_sem. iDestruct "Hlen0" as %Hlen.
+    iDestruct (store_fml_acc with "Hst1") as "#Acc1".
+    iDestruct ("Acc1" with "Wg") as "[Wg #Hpers0]".
+    rewrite by_succx_sem.
+    destruct dd1 as [|d2]; [by iDestruct "Hpers0" as "[]"|]. simpl.
+    rewrite bor_sep_sem pure_fml_sem. iDestruct "Hpers0" as "[_ Hpers]".
+    iMod (store_ty_gho_pers ty x d2 gg1 tid with "Hpers Wg") as "[Wg #St]".
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iDestruct (dguard_rhs_sep_l with "Hghoshr") as "#Hcells".
     iDestruct (dguard_rhs_sep_r with "Hghoshr") as "#Hgho".
     iModIntro. iFrame "W L I". iExists -[(cloc_flat_insert l γs, x)].
     iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> ? [_ Ha]. apply Ha. }
-    iSplit; [|done]. iExists #l.1, (S (S (S d2))). iSplit; [done|].
-    rewrite /ty_own shr_bor_gho /=. iSplit; [|done]. iSplit.
+    iSplit; [|done]. iExists #l.1, (S (d2 + gg1)). iSplit; [done|].
+    rewrite /ty_own. iSplit; [|done].
+    iApply (shr_bor_gho_intro_st κ ty (cloc_flat_insert l γs, x) _ _ d2 gg1);
+      [lia|lia| | |].
     { have Hph : ∀ sem', alt_sem sem' →
         sem' (cells_fml l.1 l.2 (ty_phys (pcell_ty (ty_size ty)) γs tid)) ⊣⊢
         sem' (cells_fml l.1 l.2 (FCell <$> γs)).
@@ -360,11 +365,8 @@ Section typing.
         apply (pcell_ty_gho_phys (ty_size ty) γs tid Hlen l). }
       iDestruct (dguard_rhs_iff Hph with "Hpt") as "#Hpt2".
       iApply (dguard_cloc_combine_fancy' with "Hpt2 Hcells"). }
-    iSplit.
-    { iApply (dguard_depth_mono ty d2 (S (S d2)) (S (S d2)) (S (S (S d2)))
-        x tid with "Hgho"); lia. }
-    iApply (ty_gho_pers_depth_mono ty d2 (S (S d2)) (S (S d2))
-      (S (S (S d2))) x tid with "Hpers"); lia.
+    { iApply "Hgho". }
+    { iApply "St". }
   Qed.
 
   (** The physical footprint of a permission cell, re-read as the flat
@@ -411,14 +413,19 @@ Section typing.
     iDestruct "Hperm" as (pl' d'' Heval') "[Huniq %Hphys']".
     simpl in Hphys, Hphys'. inversion Hphys; subst pl.
     inversion Hphys'; subst pl'.
-    destruct d0 as [|d0];
-      [by iDestruct (false_fml_sem_1 with "Hshr") as "[]"|].
-    rewrite shr_bor_gho /=. iDestruct "Hshr" as "#(Hpt & _ & Hlen0)".
-    rewrite pcell_ty_gho_pers. iDestruct "Hlen0" as %Hlen.
+    iDestruct (shr_bor_gho_elim with "Hshr") as (dd0 gg0 Hdd0 Hgg0)
+      "#(Hpt & _ & Hst0)".
     rewrite uniq_bor_gho.
     iDestruct "Huniq" as "(#Incl & %Hineq & UniqBody & #PtBase & #Pers)".
     iApply twpw_fupdw_nonval; [done|].
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    (* The shared borrow's persistent part is behind a judgment, so the
+       length is read off it here, where the world satisfaction is at hand. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (store_fml_acc with "Hst0") as "#Acc0".
+    iDestruct ("Acc0" with "Wg") as "[Wg #Hlen0]".
+    rewrite pure_fml_sem. iDestruct "Hlen0" as %Hlen.
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iMod (Ltok_alloc with "L W") as "[W (%γ & [#key f])]".
     iDestruct (Ltok_guard_frac with "key") as "#Gfrac".
     iAssert (frac_tok γ 1 &&{Wguard}&&> @[κ])%I as "#Gκ".
@@ -475,7 +482,7 @@ Section typing.
     { iIntros "[gho pt]". rewrite cell_points_to_gho /=.
       iDestruct "gho" as "(cells & gho)".
       iDestruct (ty_gho_depth_mono ty d g (S d) g x tid with "gho")
-        as "[gho _]"; [lia|lia|]. iModIntro.
+        as "gho"; [lia|lia|]. iModIntro.
       iEval (rewrite (heap_complete_mapsto_fancy_val_vec_eq''
         γs cl (ty_phys ty x tid) Hcl)) in "cells".
       iFrame "gho cells". iIntros (y e h) "[gho2 pt2]". iModIntro.
@@ -529,23 +536,26 @@ Section typing.
     iDestruct "Hperm" as (pl' d1 Heval') "[Hint %Hphys']".
     simpl in Hphys, Hphys'. inversion Hphys; subst pl.
     inversion Hphys'; subst pl'.
-    destruct d0 as [|d0];
-      [by iDestruct (false_fml_sem_1 with "Hshr") as "[]"|].
-    destruct d1 as [|d1];
-      [by iDestruct (false_fml_sem_1 with "Hint") as "[]"|].
-    rewrite !shr_bor_gho /=.
-    iDestruct "Hshr" as "#(Hcells & _ & Hlen0)".
-    rewrite pcell_ty_gho_pers. iDestruct "Hlen0" as %Hlen.
-    iDestruct "Hint" as "#(_ & H↦ & _)".
+    iDestruct (shr_bor_gho_elim with "Hshr") as (dd0 gg0 Hdd0 Hgg0)
+      "#(Hcells & _ & Hst0)".
+    iDestruct (shr_bor_gho_elim with "Hint") as (dd1 gg1 Hdd1 Hgg1)
+      "#(_ & H↦ & _)".
     iApply twpw_fupdw_nonval; [done|].
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    (* The shared borrow's persistent part is behind a judgment, so the
+       length is read off it here, where the world satisfaction is at hand. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (store_fml_acc with "Hst0") as "#Acc0".
+    iDestruct ("Acc0" with "Wg") as "[Wg #Hlen0]".
+    rewrite pure_fml_sem. iDestruct "Hlen0" as %Hlen.
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
     iMod (Ltok_alloc with "L W") as "[W (%γl & [#key f])]".
     iDestruct (Ltok_guard_frac with "key") as "#Gfrac".
     iAssert (frac_tok γl 1 &&{Wguard}&&> @[κ])%I as "#Gκ".
     { iApply (guard_trans with "Gfrac Alv"). }
     (* the permission's ghost assertion is [False] at depth zero *)
-    destruct d1 as [|d2].
+    destruct dd1 as [|d2].
     { iDestruct (dguard_alive_sem with "H↦") as "#H↦0".
       iDestruct (guard_trans with "Gκ H↦0") as "#G0".
       iDestruct (wsat_split (W':=Wguard) with "W") as "[Wg Wr]".
@@ -637,14 +647,19 @@ Section typing.
     simpl in Hphys, Hphys', Hphys''.
     inversion Hphys; subst pl. inversion Hphys'; subst pl'.
     inversion Hphys''; subst pl''.
-    destruct d0 as [|d0];
-      [by iDestruct (false_fml_sem_1 with "Hshr") as "[]"|].
-    rewrite shr_bor_gho. iDestruct "Hshr" as "#(Hcells & _ & Hlen0)".
-    rewrite pcell_ty_gho_pers. iDestruct "Hlen0" as %Hlen.
+    iDestruct (shr_bor_gho_elim with "Hshr") as (dd0 gg0 Hdd0 Hgg0)
+      "#(Hcells & _ & Hst0)".
     rewrite uniq_bor_gho.
     iDestruct "Huniq" as "(#Incl & %Hineq & UniqBody & #PtBase & #Pers)".
     iApply twpw_fupdw_nonval; [done|].
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    (* The shared borrow's persistent part is behind a judgment, so the
+       length is read off it here, where the world satisfaction is at hand. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (store_fml_acc with "Hst0") as "#Acc0".
+    iDestruct ("Acc0" with "Wg") as "[Wg #Hlen0]".
+    rewrite pure_fml_sem. iDestruct "Hlen0" as %Hlen.
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
     iMod (Ltok_alloc with "L W") as "[W (%γl & tok)]".
     iDestruct (Ltok_split_1 with "tok") as "[[#key fa] [_ fb]]".
@@ -775,14 +790,19 @@ Section typing.
     simpl in Hphys, Hphys', Hphys1, Hphys2.
     inversion Hphys; subst pl. inversion Hphys'; subst pl'.
     inversion Hphys1; subst q1. inversion Hphys2; subst q2.
-    destruct d0 as [|d0];
-      [by iDestruct (false_fml_sem_1 with "Hshr") as "[]"|].
-    rewrite shr_bor_gho. iDestruct "Hshr" as "#(Hcells & _ & Hlen0)".
-    rewrite pcell_ty_gho_pers. iDestruct "Hlen0" as %Hlen.
+    iDestruct (shr_bor_gho_elim with "Hshr") as (dd0 gg0 Hdd0 Hgg0)
+      "#(Hcells & _ & Hst0)".
     rewrite uniq_bor_gho.
     iDestruct "Huniq" as "(#Incl & %Hineq & UniqBody & #PtBase & #Pers)".
     iApply twpw_fupdw_nonval; [done|].
     iApply fupdw_twpw_nonval; [done|]. iIntros "W".
+    (* The shared borrow's persistent part is behind a judgment, so the
+       length is read off it here, where the world satisfaction is at hand. *)
+    iDestruct (wsat_split (W:=alerus_wsat) (W':=Wguard) with "W") as "[Wg Wr]".
+    iDestruct (store_fml_acc with "Hst0") as "#Acc0".
+    iDestruct ("Acc0" with "Wg") as "[Wg #Hlen0]".
+    rewrite pure_fml_sem. iDestruct "Hlen0" as %Hlen.
+    iDestruct (wsat_join (W:=alerus_wsat) with "Wg Wr") as "W".
     iMod (proph_obs_sat with "PROPH Obs") as %[π0 [<- _]]; [solve_ndisj|].
     iMod (Ltok_alloc with "L W") as "[W (%γl & tok)]".
     iDestruct (Ltok_split_1 with "tok") as "[[#key fa] [_ fb]]".

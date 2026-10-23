@@ -25,7 +25,7 @@
     never inside it. *)
 
 From nola.bi Require Export guard modw.
-From nola.iris Require Export sinv.
+From nola.iris Require Export sinv dinv.
 From nola.alerus Require Export eternal frac_guard na_inv_fork boxes.
 From nola.alerus.util Require Export non_atomic_cell_map atomic_lock_counter
   cancellable_na_invariants.
@@ -179,7 +179,22 @@ Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
   alerus_shr_name : gname;
   (** The eternalized-lifetime family *)
   alerus_eternal_name : gname;
+  (** The *store* family.
+
+    A type's persistent ghost part has to be reachable from inside a
+    guarded former without being one of that former's visible children -
+    see [typing/shr_bor.v] - so it is parked in a direct invariant, exactly
+    as [nola/examples/rust_halt/shrref.v] parks [ty_shr T] in
+    [cif_store].  [nola/alerus/boxes.v] already owns the [sinvGS] family
+    that [alerus_sinvGS] names, so the store gets a second one: [dinvGS] is
+    definitionally [sinvGS], so this is just another [sinv_name]. *)
+  alerus_store_name : gname;
 }.
+
+(** The store's [dinvGS], kept out of the instance database so that it never
+  competes with [alerus_sinvGS] when something asks for an [sinvGS]. *)
+Definition alerus_dinvGS `{!alerusGS FML Σ} : dinvGS FML Σ :=
+  SinvGS _ _ (@sinvGS_pre FML Σ alerus_sinvGS) alerus_store_name.
 
 (** ** The interpretation of formulas
 
@@ -265,11 +280,26 @@ Section alerus.
     consuming the world satisfaction, so the two would collide.  Keeping
     [send_wsat] outside the guarding world satisfaction - and outside the one
     [Send] runs under, [alerus_wsat_core] - separates them. *)
+  (** Where a type's persistent ghost part is parked, so that a guarded
+    former can reach it without exposing the borrowed type as one of its
+    visible children.  [rust_halt_wsat] has the same conjunct,
+    [dinv_wsat ⟦⟧ᶜ].
+
+    It sits *inside* [alerus_WGuard] rather than beside it, and that is the
+    whole point: a guard's definition hands its body the world satisfaction
+    ([guard_acc]), so a former building a guard can open the store on the
+    way - which is what [&shr{κ}]'s prophecy obligation needs, and what
+    keeps [ty_guard_proph] free of any modality.  This is the same position
+    [box_wsat bor_sem] already occupies. *)
+  Definition alerus_store_wsat : iProp Σ :=
+    @dinv_wsat FML Σ alerus_dinvGS bor_sem.
+
   Definition alerus_WG : iProp Σ :=
     eternal_wsat alerus_eternal_name llft_alive ∗
     frac_wsat bor_sem ∗
     frac_key_wsat llctx_interp ∗
-    frac_key_wsat lfts_interp.
+    frac_key_wsat lfts_interp ∗
+    alerus_store_wsat.
 
   (** Fix the lifetime logic's two parameters *)
   #[export] Instance alerus_LlftWG : LlftWG Σ :=
@@ -288,7 +318,8 @@ Section alerus.
     the ambient interpretation by [alerus_WGuard_of_here]. *)
   Definition alerus_WGuard_of (sem : FML $oi Σ → iProp Σ) : iProp Σ :=
     (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat sem ∗
-     frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp) ∗
+     frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp ∗
+     @dinv_wsat FML Σ alerus_dinvGS sem) ∗
     sinv_wsat (sinvGS0 := SinvGS FML Σ sinvGS_pre alerus_shr_name)
       (λ _ Px, sem Px) ∗
     box_wsat sem ∗ llft_inv_main.
@@ -516,34 +547,56 @@ Section alerus.
   #[export] Instance wsat_incl_alerus_eternal :
     WsatIncl alerus_WG (eternal_wsat alerus_eternal_name llft_alive)
       (frac_wsat bor_sem ∗ frac_key_wsat llctx_interp ∗
-        frac_key_wsat lfts_interp).
+        frac_key_wsat lfts_interp ∗ alerus_store_wsat).
   Proof. done. Qed.
-  #[export] Instance wsat_incl_alerus_fracfml :
-    WsatIncl alerus_WG (frac_wsat bor_sem)
-      (eternal_wsat alerus_eternal_name llft_alive ∗
+
+  (** The store sits inside the guarding world satisfaction *)
+  #[export] Instance wsat_incl_alerus_WGuard_store :
+    WsatIncl alerus_WGuard alerus_store_wsat
+      ((eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem ∗
+        frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp) ∗
+       shr_wsat ∗ box_wsat bor_sem ∗ llft_inv_main).
+  Proof.
+    rewrite /WsatIncl /alerus_WGuard /alerus_WG. iSplit.
+    - iIntros "((A & B & C & D & E) & F)". iFrame.
+    - iIntros "(E & (A & B & C & D) & F)". iFrame.
+  Qed.
+  #[export] Instance wsat_incl_alerus_WG_store :
+    WsatIncl alerus_WG alerus_store_wsat
+      (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem ∗
         frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp).
   Proof.
     rewrite /WsatIncl /alerus_WG. iSplit.
-    - by iIntros "($ & $ & $ & $)".
-    - by iIntros "($ & $ & $ & $)".
+    - iIntros "(A & B & C & D & E)". iFrame.
+    - iIntros "(E & A & B & C & D)". iFrame.
+  Qed.
+  #[export] Instance wsat_incl_alerus_fracfml :
+    WsatIncl alerus_WG (frac_wsat bor_sem)
+      (eternal_wsat alerus_eternal_name llft_alive ∗
+        frac_key_wsat llctx_interp ∗ frac_key_wsat lfts_interp ∗
+        alerus_store_wsat).
+  Proof.
+    rewrite /WsatIncl /alerus_WG. iSplit.
+    - by iIntros "($ & $ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
   Qed.
   #[export] Instance wsat_incl_alerus_llctx :
     WsatIncl alerus_WG (frac_key_wsat llctx_interp)
       (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem ∗
-        frac_key_wsat lfts_interp).
+        frac_key_wsat lfts_interp ∗ alerus_store_wsat).
   Proof.
     rewrite /WsatIncl /alerus_WG. iSplit.
-    - by iIntros "($ & $ & $ & $)".
-    - by iIntros "($ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
   Qed.
   #[export] Instance wsat_incl_alerus_lfts :
     WsatIncl alerus_WG (frac_key_wsat lfts_interp)
       (eternal_wsat alerus_eternal_name llft_alive ∗ frac_wsat bor_sem ∗
-        frac_key_wsat llctx_interp).
+        frac_key_wsat llctx_interp ∗ alerus_store_wsat).
   Proof.
     rewrite /WsatIncl /alerus_WG. iSplit.
-    - by iIntros "($ & $ & $ & $)".
-    - by iIntros "($ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
+    - by iIntros "($ & $ & $ & $ & $)".
   Qed.
 
   (** ** Shares of a multiset of lifetime tokens
@@ -674,6 +727,25 @@ Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ, !AlerusSem FML Σ} := {
     bor_sem (exs_fml Φ) ⊣⊢ ∃ a : ~~𝔄, bor_sem (Φ a);
   exs_fml_ne {𝔄} n (Φ Ψ : (~~𝔄) → FML $oi Σ) :
     (∀ a, Φ a ≡{n}≡ Ψ a) → exs_fml Φ ≡{n}≡ exs_fml Ψ;
+  (** A *persistently stored* formula.
+
+    [&shr{κ} ty] holds the borrowed type's persistent ghost part behind this
+    rather than as a visible child, because a visible child would stop
+    [λ T, &shr{κ} T] from being [Productive] - see [typing/model.v]'s
+    [pstoreJT].  Like [guard_fml] it has no [⊣⊢] semantics: its elimination
+    is [store_fml_acc] and its introduction [store_fml_alloc], both in
+    [AltSem]. *)
+  store_fml : FML $oi Σ → FML $oi Σ;
+  store_fml_ne :: NonExpansive store_fml;
+  (** [□], so that a former can be *structurally* persistent.
+
+    [&shr{κ}] needs its ghost assertion to be persistent without appealing to
+    the borrowed type's own persistence law - otherwise [&shr{κ}] could not
+    guard a recursive type.  [nola/examples/rust_halt/shrref.v] does exactly
+    this, writing [□ cif_store (ty_shr T …)]. *)
+  pers_fml : FML $oi Σ → FML $oi Σ;
+  pers_fml_ne :: NonExpansive pers_fml;
+  pers_fml_sem Px : bor_sem (pers_fml Px) ⊣⊢ □ bor_sem Px;
   (** A guard over the guarding world satisfaction, for [&shr{κ}] *)
   guard_fml : FML $oi Σ → FML $oi Σ → FML $oi Σ;
   guard_fml_ne :: NonExpansive2 guard_fml;
@@ -904,6 +976,7 @@ Class AltSem (FML : oFunctor) Σ
     sem (exs_fml Φ) ⊣⊢ ∃ a : ~~𝔄, sem (Φ a);
   or_sem_at_any {sem} : alt_any sem → ∀ Px Qx,
     sem (or_fml Px Qx) ⊣⊢ sem Px ∨ sem Qx;
+  pers_sem_at_any {sem} : alt_any sem → ∀ Px, sem (pers_fml Px) ⊣⊢ □ sem Px;
   alive_sem_at_any {sem} : alt_any sem → ∀ κ, sem (alive_fml κ) ⊣⊢ @[κ];
   dead_sem_at_any {sem} : alt_any sem → ∀ κ, sem (dead_fml κ) ⊣⊢ [†κ];
   cells_sem_at_any {sem} : alt_any sem → ∀ l cs fv,
@@ -919,6 +992,23 @@ Class AltSem (FML : oFunctor) Σ
     sem (pc_fml ξ x vπ d) ⊣⊢ .PC[ξ] x vπ d;
   gsrc_sem_at_any {sem} : alt_any sem → ∀ s,
     sem (gsrc_fml s) ⊣⊢ gsrc_interp s;
+  (** Reading a stored formula, at the *ambient* interpretation.  That is
+    the only place it is needed: a guarded former reads it while building a
+    guard, and a guard's body is handed the world satisfaction. *)
+  store_fml_acc {Px} :
+    bor_sem (store_fml Px) ⊢ □ |->[alerus_WGuard] bor_sem Px;
+  (** Storing a formula whose semantics is persistent at every candidate *)
+  store_fml_alloc {Px} :
+    (∀ sem, alt_sem sem → Persistent (sem Px)) →
+    bor_sem Px =[alerus_WGuard]=∗ bor_sem (store_fml Px);
+  store_fml_pers_at_any {sem} : alt_any sem → ∀ Px,
+    Persistent (sem (store_fml Px));
+  (** Transporting a stored formula along an entailment that holds at every
+    candidate the storing one maps into.  [Deriv_map] in the model. *)
+  store_fml_map_at {sem} : alt_sem sem → ∀ Px Qx,
+    □ (∀ sem' (_ : alt_sem sem') (_ : alt_into sem sem'), sem' Px -∗ sem' Qx) -∗
+    sem (store_fml Px) -∗ sem (store_fml Qx);
+
   (** Reading a guard stored at [sem], at a candidate [sem] maps into.  In
     the model this is [dinto δ δ'] applied to the guard judgment. *)
   guard_fml_sem_into {sem sem'} :
@@ -1094,6 +1184,7 @@ Section alt_any.
   Definition gsrc_sem_at {sem} (H : alt_sem sem) := gsrc_sem_at_any (alt_sem_any H).
   Definition bor_state_sem_at {sem} (H : alt_sem sem) := bor_state_sem_at_any (alt_sem_any H).
   Definition guard_fml_pers_at {sem} (H : alt_sem sem) := guard_fml_pers_at_any (alt_sem_any H).
+  Definition store_fml_pers_at {sem} (H : alt_sem sem) := store_fml_pers_at_any (alt_sem_any H).
   Definition idxbor_fml_pers_at {sem} (H : alt_sem sem) := idxbor_fml_pers_at_any (alt_sem_any H).
   Definition incl_fml_pers_at {sem} (H : alt_sem sem) := incl_fml_pers_at_any (alt_sem_any H).
   Definition alt_sem_ne {sem} (H : alt_sem sem) := alt_any_ne (alt_sem_any H).
@@ -1140,6 +1231,8 @@ Section alt_sem.
     [TypeFml] section cannot state this: [guard_fml] has no [⊣⊢] there. *)
   #[export] Instance guard_fml_persistent {Px Qx} :
     Persistent (bor_sem (guard_fml Px Qx)) := guard_fml_pers_at alt_here _ _.
+  #[export] Instance store_fml_persistent {Px} :
+    Persistent (bor_sem (store_fml Px)) := store_fml_pers_at alt_here _.
   #[export] Instance idxbor_fml_persistent {κ idx Px} :
     Persistent (bor_sem (idxbor_fml κ idx Px)) :=
     idxbor_fml_pers_at alt_here _ _ _.
@@ -1815,7 +1908,7 @@ Create HintDb fml_sem.
 Global Hint Rewrite @false_fml_sem @pure_fml_sem @alive_fml_sem
   @cells_fml_sem @ccells_fml_sem @freeable_fml_sem @pc_fml_sem
   @mapsto_fml_sem @bor_sep_sem @empty_fml_sem @or_fml_sem @vo_fml_sem
-  @dead_fml_sem @cmapstoany_fml_sem : fml_sem.
+  @dead_fml_sem @cmapstoany_fml_sem @pers_fml_sem : fml_sem.
 Ltac fml_simpl := autorewrite with fml_sem.
 Ltac fml_simpl' := simpl; autorewrite with fml_sem.
 
