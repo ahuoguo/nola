@@ -33,14 +33,21 @@ semantics**, so neither theorem is vacuous; `alerus_type_soundness` and
 only `Eq_rect_eq` for those too.  Neither this development nor
 `nola/examples/rust_halt/` had ever instantiated `sigTCT`/`sigTO` before.
 
-Two checkable statements fix what is left:
+`typing/rec.v` then builds recursive types by `profix`, as
+`nola/examples/rust_halt/rec.v` does, so the `Cofe (FML $oi Σ)` that
+`typing/fixpoint.v` assumes is no longer on any path.  `&shr{κ}` is the
+guarded former and is *proved* productive; `prod_tyd`, `own_tyd`,
+`xsum2_tyd` and `mod_tyd` are the structural ones, and `ty_shr_list` -
+`μ X. Σ! [(); 𝔄 * &shr{κ} X]` - is a worked recursive type built from
+them.
+
+One checkable statement fixes what is left:
 
 * **`FnFml` is the only class in `typing/` with no instance anywhere.**  Its
   two fields, `fn_fml_sem_2` and `fn_incl_of_all`, are what an execution-level
-  stratification has to supply - item 2 below.
-* **`TypeContractive` has no instance either**, so `typing/fixpoint.v` is
-  inert: it is a correct construction with nothing to apply it to, and its
-  `Cofe (FML $oi Σ)` assumption is one the model cannot discharge - item 3.
+  stratification has to supply - item 2 below.  (`TypeContractive` has none
+  either, but it is superseded: `rec.v` uses `Productive` over `cif`'s
+  `prost`, which is what the model actually has.)
 
 File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
 Performance traps, four of which present as a hang: `nola/alerus/PERF.md`.
@@ -91,14 +98,19 @@ gone; what is written up in `nola/alerus/typing/inst.v` is the record of
 how.  What remains is one small item and two large ones, and the two large
 ones are large for reasons now understood rather than guessed at.
 
-1. **A worked example** (in progress).  `typing/examples/basic.v` types two
-   small programs against the rules, parametric in `CON`/`JUDG` exactly as
-   `rust_halt/verify/` is.  Worth extending to a program that allocates,
-   writes and frees a box, which exercises `own_ptr`, `type_assign` and
-   `type_deref`, and to one that uses `uniq_subtype`, which exercises the
-   relaxed borrow.  Beware the two traps in `nola/alerus/PERF.md`:
-   `type_val` cannot be applied to a concrete program, and transformers must
-   be built forward into an evar.
+1. **A worked example** - done.  `typing/examples/basic.v` types four
+   programs against the rules, parametric in `CON`/`JUDG` exactly as
+   `rust_halt/verify/` is: a binding, two bindings and an addition, a box
+   allocated and freed, and a box allocated, *written* and freed - the last
+   bringing `own_ptr`'s `typed_write` in through `write_own`.  Two subtyping
+   facts exercise the relaxed borrow, including a unique borrow of a unique
+   borrow, which is the case `uniq_subtype` could not state before.
+
+   The traps are recorded in `nola/alerus/PERF.md` and each one bit here:
+   `type_val` cannot be applied to a concrete program, `type_new`'s size
+   must be passed rather than unified, transformers must be built forward
+   into an evar, and `Closed` premises are discharged by resolution *before*
+   the bracket list, which silently shifts every branch.
 
 2. **`fn` must be stratified by an execution level** (thesis § 5, and (5.4)).
    `FnFml`'s `fn_fml_sem_2` and `fn_incl_of_all` have no model, so `fn` is
@@ -124,12 +136,26 @@ ones are large for reasons now understood rather than guessed at.
    `alerus_wsat` and `typed_body` indexed by level, and a level on every
    type former.  This is weeks, not days.
 
-3. **`typing/fixpoint.v`** builds a recursive type as a COFE limit; a `cif`
-   is complete as a `prost`, not an OFE, so it must move to
-   `profix`/`Productive`.  Until then it assumes `Cofe (FML $oi Σ)`, which
-   the model cannot discharge.  The file is also inert - `TypeContractive`
-   has no instance - so this buys recursive types rather than fixing a live
-   path.
+   **And there is no way round it by making `fn_fml` an ordinary formula.**
+   That would need an arbitrary `iProp` - `typed_body` - to sit in a
+   constructor's *data*, and `nola/iris/cif.v`'s `cifcon` requires
+   `cifc_data_contractive :: oFunctorContractive (cifc_data s)`.  The
+   identity functor is not contractive, which is exactly why `cif_later`
+   carries a `Next` and why the only `▷`-free way into a `cif` is a
+   judgment.  So `fn_fml` is a judgment, its introduction is
+   `Deriv_factor'`, and `Deriv_factor'` asks for the body at every
+   candidate.  The four other `FnFml` fields are realizable; this one is the
+   stratification.
+
+3. **Recursive types** - done, in `typing/rec.v`; what follows is the
+   record of how, because every step of it was forced.
+
+   `typing/fixpoint.v` builds a recursive type as a COFE limit, and a `cif`
+   is complete as a `prost`, not an OFE, so it had to move to
+   `profix`/`Productive`.  Until then it assumed `Cofe (FML $oi Σ)`, which
+   the model cannot discharge.  `rec.v` now takes that fixpoint and nothing
+   depends on the assumption; `fixpoint.v` stays for its lifetime half (see
+   "Still to do").
 
    **The design, and why the split alone is not enough.**  `profix` needs
    its carrier to be a `prost` with `Cprost` - a genuine limit constructor.
@@ -393,7 +419,160 @@ ones are large for reasons now understood rather than guessed at.
       `rust_halt`'s `TyOpAt` shape, because reading a `cdom` child back needs
       the world satisfaction and building a guard does not supply it.
 
+   ### Done: the fixpoint, in `typing/rec.v`
+
+   `profix` over the data, with `Ty` transported by `ty_rec_unfold` and the
+   prophecy law by depth induction:
+
+   ```coq
+   Definition ty_rec {𝔄} (F : tyd 𝔄 → tyd 𝔄) `{!Productive F} := profix F.
+   Lemma ty_rec_Ty : (∀ T, Ty (F T)) → Ty (ty_rec F).
+   Lemma ty_rec_TyProphAt lfts :
+     (∀ T d, TyProphLt lfts T d → TyProphAt lfts (F T) d) →
+     ∀ d, TyProphAt lfts (ty_rec F) d.
+   ```
+
+   and the composition that makes it usable - `μ X. G (&shr{κ} X)` for any
+   *size-preserving* `G`, since `&shr{κ}` contributes the productivity and
+   `Ty (shr_tyd κ T)` is unconditional:
+
+   ```coq
+   Lemma shr_rec_productive : Preserv' _ _ G → Productive' _ _ (λ T, G (shr_tyd κ T)).
+   Lemma ty_rec_shr_Ty : (∀ U, Ty U → Ty (G U)) → Ty ty_rec_shr.
+   ```
+
+   That is the thesis's guardedness condition (§ 5.1) and `rust_halt`'s
+   three-layer pattern: guarded formers unconditional, unguarded ones
+   conditional, `ty_rec` asking for `∀ T, Ty (F T)`.  `Print Assumptions`
+   gives `Eq_rect_eq` and nothing else, and the `Cofe (FML $oi Σ)` that
+   `typing/fixpoint.v` assumes never appears.
+
+   The file is in two sections, and the split is forced.  The laws live in
+   an *abstract* `typeG` context, like `typing/shr_bor.v`'s, because with
+   the model concrete Coq reduces `bor_sem` and the `AltSem` projections
+   eagerly (they are primitive) and then none of the development's own
+   lemmas can be applied by unification.  The `prost` lives in a *concrete*
+   section, because `cif` is where it is.  `tydata 𝔄` (abstract) and
+   `prost_car (tyd 𝔄)` (concrete) are the same type, which `tod` witnesses.
+
+   ### Done too: the structural formers
+
+   `prod_tyd` and `own_tyd` are `product.v`'s and `own.v`'s bodies with the
+   record replaced by its data, with `Ty`/`TyProphAt` *conditional* on their
+   arguments' - which is all `ty_rec_shr_Ty` asks, since in
+   `μ X. G (&shr{κ} X)` the hole is already behind the guarded former.
+   `ty_prod_ty` is conditional upstream for the same reason.
+
+   Their `Preserv'` instances are what `shr_rec_productive` composes with,
+   and they are free to mention the argument's physical contents and size:
+   those sit in a constructor's *selector* and *data*, which `proeqv k`
+   compares by equality at every level, and the discrete components of `tyd`
+   supply exactly that.  Only the *guarded* former has to keep its argument
+   out of those positions - which is what `&shr`'s `syn_phys` is about.
+   `sum_tyd` and the rest are the same exercise, obligation for obligation.
+
+   `TyProphAt_lfts` weakens the lifetime list, which composing formers
+   needs: the hole's law arrives with the guarded former's lifetime
+   prepended, and `TyProphAt` is antitone in that list.
+
+   ### Done as well: a list
+
+   `rec.v` ends with
+
+   ```coq
+   ty_shr_list κ T lfts E Hκ HT HP : type (shr_listₛ 𝔄)   (* μ X. Σ! [(); 𝔄 * &shr{κ} X] *)
+   ```
+
+   which is `rust_halt`'s `ty_list` with the one substitution this port
+   forces - the shared reference in place of the owning pointer - and with
+   it the recipe is closed end to end: a refinement type that is its own
+   unfolding, the `ty_mod` bridge, structural formers for the body, the
+   fixpoint, both law classes, and an actual `type` out the other end.
+   `Eq_rect_eq` and `functional_extensionality`, the latter only because
+   `SemiIso` is an equality of functions and every `Isoₛ` needs it.
+
+   Three things it took.
+
+   **A refinement type, `shr_listₛ`.**  `ty_rec` needs `F : tyd 𝔄 → tyd 𝔄` -
+   the same refinement type in and out - and no former preserves it:
+   `&shr{κ}` sends `𝔄` to `at_clocₛ 𝔄`, so a body's refinement is strictly
+   bigger than its argument's and `𝔄 = F(𝔄)` has no solution in the grammar
+   as it stood.  `rust_halt` solves this by choosing a refinement type whose
+   unfolding matches the body's - `listₓ`, and `binₓ` for `mutlist`, because
+   `ty_mutref` *doubles* the refinement - and bridging with `ty_mod` along an
+   injective unwrap.  `shr_listₛ 𝔄` is that choice here, and
+   `foldshrₛ`/`unfoldshrₛ` beside it are the unwrap.
+
+   `listₛ` could not serve, and the reason is the one difference from
+   upstream that matters.  `ty_mod` is free there because `ty_size` is
+   unconstrained data; here `ty_size_eq2` and `ty_phys_eq2` tie a type to its
+   refinement, so `Isoₛ` demands `size_of 𝔄 = size_of 𝔅` *and*
+   `syn_phys x = syn_phys (f x)`.  `size_of (listₛ _) = 0` while the body is
+   `xsumₛ`-shaped.  So `shr_listₛ`'s `size_of` and `syn_phys` clauses *are*
+   the body's, written so the two sides are **convertible**:
+
+   ```coq
+   | shr_listₛ 𝔄₀ => S (list_max [0; size_of 𝔄₀ + 1])
+   ```
+
+   is `size_of (xsumₛ [(); 𝔄₀ * at_clocₛ (shr_listₛ 𝔄₀)])` with the `fmap`
+   and the two `size_of`s already reduced - the recursive occurrence sits
+   under `at_clocₛ`, whose size is `1` whatever is inside, so nothing has to
+   recurse into the hole.  That one line is what makes `syn_iso_size_eq`
+   `eq_refl` and, with it, every `pad` width in `syn_phys`; `shrlist_isoₛ` is
+   then three `done`s and a case split.
+
+   The cost was far lower than this plan estimated, for a reason worth
+   recording: **`typing/syn_type.v` is dead.**  It is not in `_CoqProject`,
+   has no `.vo`, and imports `nola.lrust`; the live grammar is
+   `prophecy/syn_type.v` alone.  The estimate of "~10 fixpoints, and the same
+   again in the copy" was therefore double.  The real blast radius of a new
+   constructor is nine clauses in one file (`~~`, the prophecy
+   interpretation, `syn_abstract`'s type, `syn_type_beq`, `vπ`, `ξl`,
+   `size_of`, `syn_phys`, `syn_abstract`), three proof bullets
+   (`syn_phys_size_eq`, `syn_abstract_phys_eq`, `prophecy.v`'s `syn_indep`),
+   and nothing else in the tree - `inh_syn_type` and `blockedπ` have
+   catch-alls, and the four `case: 𝔄` proofs in `of_just_and_neg_inh_syn_type`
+   are closed by their `try by … exact inhabitant` as long as the new shape
+   has an `Inhabited` instance, which `shrnil []` supplies.
+
+   **A binary tagged sum at the data level, `xsum2_tyd`.**  `typing/sum.v`'s
+   `xsum_ty` is the general one, over a heterogeneous list; two branches is
+   all a list needs, and taking them one at a time means the `psum` is a
+   plain `+` and every obligation is a case split rather than an induction
+   over `𝔄l`.  `unit_tyd` beside it is the nil branch: no memory, no
+   prophecies, `pure_fml True`.
+
+   **And the lesson from the previous commit, applied.**  Every application
+   in the section unfolds its abbreviation first.
+
    ### Still to do
+
+   One thing, and it is not about `rec.v`'s machinery: **`own_ptr` made
+   productive**, which is what turns the list of shared references into a
+   list of owning pointers.  `ty_box` is productive upstream because
+   `ty'_box_def` puts the pointee's `ty_own` behind `cif_store`; our
+   `own_ptr` holds it as a visible child, so it is `Preserv` and not
+   `Productive`.  Making it productive is the arc `&shr` went through, with
+   one difference that makes it bigger: its content is *owned*, so it needs
+   `store_deriv.v`'s general store - the one with the `◇` - rather than our
+   persistent `pstoreJT`, and every site that moves a pointee in or out has
+   to open it.
+
+   VerusBelt was no help: `fix_ty` has no client in
+   `verus-belt/src/lambda_verus/typing/` at all, only `TypeContractive`
+   instances for the formers.  The recipe followed is `rust_halt`'s.
+
+   **The lifetimes** turned out not to be a gap.  `type_of_rec_shr` closes
+   the loop: a guarded, structural body gives an actual `type`, with the
+   lifetime list and the external context *supplied* rather than derived.
+   `typing/fixpoint.v` derives them with `TypeLftMorphism` because its
+   carrier is the whole record; here they were never in the carrier, so the
+   only thing that constrains them is the prophecy law, and that is exactly
+   the obligation `type_of_rec_shr` asks for.  `fixpoint.v`'s
+   `Tn_ty_lft_const`/`Tn_ty_E_const` are therefore spare - useful if one
+   ever wants the list derived rather than chosen, not needed to have
+   recursive types.
 
    So the fixpoint cannot be taken over the whole record.  It should be
    taken over the two *ghost* components only,

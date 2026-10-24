@@ -147,6 +147,8 @@ Proof.
      + apply (FIX 𝔄).
    - destruct x as [[??]?]. clear FIX; done.
    - apply (FIX 𝔄).
+   - elim: x; [by clear FIX|]=> a l r IH p /=.
+     apply (proph_dep_constr2 (λ u v, shrcons u l v p)); [apply FIX|apply IH].
 Qed.
 
 (** * Prophecy Log *)

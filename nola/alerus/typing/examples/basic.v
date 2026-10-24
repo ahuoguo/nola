@@ -8,7 +8,7 @@
   rules themselves. *)
 
 From nola.alerus.lang Require Import notation proofmode.
-From nola.alerus.typing Require Export int programs own uninit.
+From nola.alerus.typing Require Export int programs own uninit uniq_bor.
 From nola.alerus.lang.lib Require Import new_delete.
 From nola.bi Require Import modw.
 Import ModwNotation WpwNotation.
@@ -108,4 +108,56 @@ Section basic.
       iApply (type_done _ _ _ _ _ (#☠ : val) (λ _ _ _ _, True%type)). }
     { by move=> *. }
   Qed.
+  (** [let b = new 1 in let x = 42 in b <- x; delete 1 b; ()]: the box is
+    written before it is freed, which is what brings [own_ptr]'s
+    [typed_write] into play.
+
+    [type_assign] takes *both* operands out of the type context, so the
+    integer has to be bound first - hence the second [let].  [write_own]
+    turns the [↯ 1] the allocation produced into an [int], and the
+    [delete] then has to be given [int] rather than [↯ 1]. *)
+  Definition box_write : expr :=
+    (let: "b" := new_delete.new [ #1 ] in
+     let: "x" := #42 in
+     "b" <- "x";;
+     new_delete.delete [ #1; "b" ];; #☠)%E.
+
+  Lemma box_write_typed {𝔅} E L I (C: cctx 𝔅) :
+    ⊢ typed_body E L I C +[] box_write (λ _ _ _ _, True%type).
+  Proof.
+    rewrite /box_write.
+    iApply (typed_body_impl with "[]"); last first.
+    { iApply (type_new 1 "b"); [lia|].
+      iIntros (vb). simpl_subst.
+      iApply type_int; last first.
+      { iIntros (vx). simpl_subst.
+        iApply (type_assign (own_ptr 1 (↯ (Z.to_nat 1))) (↯ (Z.to_nat 1))
+          (own_ptr 1 int) int);
+          [solve_typing|by apply write_own|solve_typing|].
+        iApply (type_delete int (Z.to_nat 1) 1 vb);
+          [solve_typing|done|done|].
+        iApply (type_done _ _ _ _ _ (#☠ : val) (λ _ _ _ _, True%type)). }
+      all: solve_closed. }
+    { by move=> *. }
+  Qed.
+
+  (** The relaxed borrow, as a subtyping fact.
+
+    [typing/uniq_bor.v]'s [uniq_subtype] has *no* extra premise: shortening
+    the lifetime of a unique borrow needs only [κ' ⊑ κ] and an equality of
+    the borrowed types.  It used to need the borrowed type's own ghost
+    assertion to be *semantically closed*, which is a condition no interesting
+    type satisfies; the relaxed borrow of the thesis's § 6.4 is what removed
+    it, and [uniq_uniq_subtype] below - a unique borrow of a unique borrow,
+    where the inner type is itself a borrow - is the case that could not be
+    stated before. *)
+  Lemma uniq_shorten_int E L κ κ' :
+    lctx_lft_incl E L κ' κ →
+    subtype E L (&uniq{κ} int) (&uniq{κ'} int) idₛ.
+  Proof. move=> ?. apply uniq_subtype; [done|]. apply eqtype_refl. Qed.
+
+  Lemma uniq_shorten_uniq E L κ κ' κ0 :
+    lctx_lft_incl E L κ' κ →
+    subtype E L (&uniq{κ} (&uniq{κ0} int)) (&uniq{κ'} (&uniq{κ0} int)) idₛ.
+  Proof. move=> ?. apply uniq_subtype; [done|]. apply eqtype_refl. Qed.
 End basic.

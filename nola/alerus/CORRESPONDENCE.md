@@ -92,7 +92,7 @@ One-to-one, same names, for: `atomic_inv`, `base`, `base_type`, `bool`,
 `soundness.v` (100 upstream, 182 here) is ported, and proves *termination*
 as well as the original's safety.
 
-Five files are new here:
+Six files are new here:
 
 | here | what |
 |---|---|
@@ -100,7 +100,8 @@ Five files are new here:
 | `model.v` (1579) | the concrete model: `FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`, the four judgments, and the instances of the classes above |
 | `model_inst.v` (74) | the `typeG` bundle and the remaining formula-language classes |
 | `inst.v` (364) | a concrete `CON` and `JUDG` with their semantics, and the two soundness theorems at them |
-| `syn_type.v` (942) | a copy of `prophecy/syn_type.v` specialised to the typing layer |
+| `rec.v` (927) | recursive types by `profix`: a type's data as a `prost`, the laws split into an unconditional `Ty` and a depth-indexed `TyProphAt`, `&shr{κ}` proved `Productive`, `ty_rec` with both laws - the `profix` replacement for `fixpoint.v`'s COFE limit - `xsum2_tyd`/`unit_tyd` for the body, and `ty_shr_list`, the worked recursive type `μ X. Σ! [(); 𝔄 * &shr{κ} X]` |
+| `syn_type.v` (942) | **dead**: not in `_CoqProject`, no `.vo`, imports `nola.lrust`.  A stale copy of `prophecy/syn_type.v`, which is the live grammar |
 
 Two upstream files are missing:
 

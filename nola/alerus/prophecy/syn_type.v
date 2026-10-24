@@ -14,6 +14,28 @@ Set Default Proof Using "Type".
 
 Definition Mask := coPset.
 
+(** ** The value shape of a list behind shared references
+
+  [shr_listₛ 𝔄] below is the refinement type of
+  [μ X. Σ! [(); 𝔄 * &shr{κ} X]].  A recursive type needs a refinement type
+  that *is* its own unfolding, and no combination of the constructors above
+  is one - this is why [nola/examples/xty.v] carries [listₓ] and [binₓ]
+  beside the general shapes.
+
+  Each node carries the [list val] padding that [xsumₛ]'s interpretation
+  carries, and the tail is a [cloc] rather than a nested node, because the
+  recursive occurrence sits under [at_clocₛ].  Both are what make
+  [size_of] and [syn_phys] on this constructor *literally* [xsumₛ]'s on the
+  unfolding, which is what [Isoₛ] demands in this port - upstream's
+  [ty_mod] is free of that because its [ty_size] is unconstrained data. *)
+Inductive shrlist (A : Type) : Type :=
+| shrnil (padding : list val)
+| shrcons (hd : A) (tl : cloc) (rest : shrlist A) (padding : list val).
+Arguments shrnil {_}. Arguments shrcons {_}.
+
+Global Instance shrlist_inhabited {A} : Inhabited (shrlist A) :=
+  populate (shrnil []).
+
 Inductive syn_type := Zₛ | boolₛ | unitₛ | Propₛ | positiveₛ
 | optionₛ (_: syn_type) | listₛ (_: syn_type) | vecₛ (_: syn_type) (_: nat)
 | prodₛ (_ _: syn_type) | sumₛ (_ _: syn_type)
@@ -36,6 +58,7 @@ Inductive syn_type := Zₛ | boolₛ | unitₛ | Propₛ | positiveₛ
 | exec_funₛ (_: syn_type)
 | join_handleₛ (_: syn_type)
 | maskₛ
+| shr_listₛ (_: syn_type)
 .
 
 Notation syn_typel := (list syn_type).
@@ -82,6 +105,7 @@ Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   | exec_funₛ 𝔄₀ => val * indep_interp_of_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | maskₛ => Mask
+  | shr_listₛ 𝔄₀ => shrlist (indep_interp_of_syn_type 𝔄₀)
   end.
 
 Notation "~~" := indep_interp_of_syn_type.
@@ -113,6 +137,7 @@ Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   | exec_funₛ 𝔄₀ => val * indep_interp_of_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | maskₛ => Mask
+  | shr_listₛ 𝔄₀ => shrlist (proph_interp_of_syn_type 𝔄₀)
   end.
 Coercion proph_interp_of_syn_type: syn_type >-> Sortclass.
 
@@ -143,6 +168,7 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   | exec_funₛ 𝔄₀ => val * abstracted_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => abstracted_syn_type 𝔄₀
   | maskₛ => Mask
+  | shr_listₛ 𝔄₀ => shrlist (abstracted_syn_type 𝔄₀)
   end.
   
 (** Decidable Equality *)
@@ -159,7 +185,7 @@ Fixpoint syn_type_beq 𝔄 𝔅 : bool :=
   | blockedₛ 𝔄₀, blockedₛ 𝔅₀ | ghostₛ 𝔄₀, ghostₛ 𝔅₀ | invₛ 𝔄₀, invₛ 𝔅₀
   | local_invₛ 𝔄₀, local_invₛ 𝔅₀ | trackedₛ 𝔄₀, trackedₛ 𝔅₀
   | exec_funₛ 𝔄₀, exec_funₛ 𝔅₀ | join_handleₛ 𝔄₀, join_handleₛ 𝔅₀
-  | storableₛ 𝔄₀, storableₛ 𝔅₀
+  | storableₛ 𝔄₀, storableₛ 𝔅₀ | shr_listₛ 𝔄₀, shr_listₛ 𝔅₀
     => syn_type_beq 𝔄₀ 𝔅₀
   | 𝔄₀ * 𝔄₁, 𝔅₀ * 𝔅₁ | 𝔄₀ + 𝔄₁, 𝔅₀ + 𝔅₁ | funₛ 𝔄₀ 𝔄₁, funₛ 𝔅₀ 𝔅₁
     => syn_type_beq 𝔄₀ 𝔅₀ && syn_type_beq 𝔄₁ 𝔅₁
@@ -406,6 +432,12 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   | exec_funₛ 𝔄₀  => λ x π , x
   | maskₛ => λ x π, x
   | namespaceₛ => λ x π, x
+  | shr_listₛ 𝔄₀ => λ x π,
+      (fix go (y : shrlist (~~𝔄₀)) : shrlist 𝔄₀ :=
+        match y with
+        | shrnil p => shrnil p
+        | shrcons a l r p => shrcons (@vπ 𝔄₀ a π) l (go r) p
+        end) x
   end.
   
 Fixpoint plist_to_list {A: Type} {U: Type} {Xl} (xl: plist (λ (_ : A), U) Xl) : list U :=
@@ -452,6 +484,12 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   | exec_funₛ 𝔄₀  => λ x , []
   | maskₛ => λ x , []
   | namespaceₛ => λ x , []
+  | shr_listₛ 𝔄₀ =>
+      fix go (y : shrlist (~~𝔄₀)) : list proph_var :=
+        match y with
+        | shrnil _ => []
+        | shrcons a _ r _ => @ξl 𝔄₀ a ++ go r
+        end
   end.
   
   
@@ -487,6 +525,13 @@ Fixpoint size_of 𝔄 : nat :=
   | exec_funₛ 𝔄₀  => 1
   | maskₛ => 0
   | namespaceₛ => 0
+  (** Written so that it is *convertible* to the body's,
+    [size_of (xsumₛ [(); 𝔄₀ * at_clocₛ (shr_listₛ 𝔄₀)])]: [fmap] over the
+    two-element list reduces, [size_of ()] to [0] and
+    [size_of (𝔄₀ * at_clocₛ _)] to [size_of 𝔄₀ + 1] without recursing into
+    the hole.  That is what makes [syn_iso_size_eq] below [eq_refl], and
+    with it every [pad] width in [syn_phys]. *)
+  | shr_listₛ 𝔄₀ => S (list_max [0; size_of 𝔄₀ + 1])
   end.
   
 Definition pad (l: list fancy_val) (n: nat) : list fancy_val :=
@@ -533,6 +578,15 @@ Fixpoint syn_phys {𝔄} : (~~𝔄) → list fancy_val :=
   | exec_funₛ 𝔄₀  => λ x, [FVal (fst x)]
   | maskₛ => λ x, []
   | namespaceₛ => λ x, []
+  | shr_listₛ 𝔄₀ => λ x,
+      match x with
+      | shrnil p =>
+          pad (FVal (LitV (LitInt 0)) :: [] ++ fmap FVal p) (size_of 𝔄)
+      | shrcons a l _ p =>
+          pad (FVal (LitV (LitInt 1)) ::
+                (@syn_phys 𝔄₀ a ++ [FVal (LitV (LitLoc l.1))]) ++ fmap FVal p)
+              (size_of 𝔄)
+      end
   end.
       
 Local Lemma length_pad l n : length (pad l n) = n.
@@ -555,6 +609,7 @@ Lemma syn_phys_size_eq 𝔄 (x: ~~𝔄) : length (@syn_phys 𝔄 x) = size_of �
   - destruct x as [[[[[[l ?] ?] ?] ?] ?] ?]. clear FIX; trivial.
   - apply length_pad.
   - simpl. rewrite length_fmap. rewrite length_vec_to_list. clear FIX; trivial.
+  - clear FIX. destruct x; apply length_pad.
 Qed.
 
 Definition blockedπ {𝔄} : ~~(blockedₛ 𝔄) → proph_asn → 𝔄 :=
@@ -601,6 +656,12 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | exec_funₛ 𝔄₀  => λ x  , (fst x, @syn_abstract 𝔄₀ (snd x))
   | maskₛ => λ x , x
   | namespaceₛ => λ x , x
+  | shr_listₛ 𝔄₀ =>
+      fix go (y : shrlist (~~𝔄₀)) : shrlist (abstracted_syn_type 𝔄₀) :=
+        match y with
+        | shrnil p => shrnil p
+        | shrcons a l r p => shrcons (@syn_abstract 𝔄₀ a) l (go r) p
+        end
   end.
 
 Lemma syn_abstract_phys_eq 𝔄 x x' :
@@ -643,6 +704,10 @@ Proof.
     destruct x' as [[[[[[? ?] ?] ?] ?] ?] ?].
     inversion Hab as [[Ha Hb]]. clear FIX. trivial.
   - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
+  - destruct x as [p|a l r p]; destruct x' as [p'|a' l' r' p'];
+      simpl in Hab; try (clear FIX; by inversion Hab).
+    inversion Hab as [[Ha Hb Hc Hd]]. simpl.
+    rewrite (FIX _ _ _ Ha). clear FIX. by subst.
 Qed.
 
 Record syn_type_morphism (𝔄 𝔅 : syn_type) := {
@@ -931,4 +996,65 @@ Global Instance Isoₛ_prod_right_id {𝔄} : @Isoₛ (𝔄 * ()) 𝔄 prod_righ
 Proof.
   split. - typeclasses eauto. - typeclasses eauto. - simpl. lia.
   - intros [?[]]. simpl. by rewrite List.app_nil_r.
+Qed.
+
+
+(** ** [shr_listₛ 𝔄] is its own unfolding
+
+  [shr_list_bodyₛ 𝔄] is the body of [μ X. Σ! [(); 𝔄 * &shr{κ} X]] as a
+  refinement type, and the pair below is the fold and the unfold.  They are
+  this port's [list_unwrap]: [nola/examples/rust_halt/verify/list.v] bridges
+  [listₓ X] to its body with [ty_mod list_unwrap], and [typing/rec.v]'s
+  [mod_tyd] bridges along these.
+
+  Everything here is [done] by computation, which is the whole point of the
+  [size_of] clause above: the two refinement types have the same layout *by
+  conversion*, not merely up to a proof.  [Isoₛ] in this port demands equal
+  [size_of] and equal [syn_phys], because [ty_size_eq2]/[ty_phys_eq2] tie a
+  type to its refinement; upstream's [ty_size] is unconstrained data and its
+  [ty_mod] is free of all this. *)
+Notation shr_list_bodyₛ 𝔄 :=
+  (xsumₛ [unitₛ; prodₛ 𝔄 (at_clocₛ (shr_listₛ 𝔄))]).
+
+(** One pair of maps serves both interpretations: the value shape and the
+  prophecy shape of the body differ only in what sits at the element and the
+  tail, and [shrlist] is polymorphic in exactly that. *)
+Definition fold_shrlist {A}
+  (x : (() + ((A * (cloc * shrlist A)) + ∅)) * list val) : shrlist A :=
+  match x with
+  | (inl _, p) => shrnil p
+  | (inr (inl (a, (l, r))), p) => shrcons a l r p
+  | (inr (inr e), _) => absurd e
+  end.
+Definition unfold_shrlist {A} (x : shrlist A)
+  : (() + ((A * (cloc * shrlist A)) + ∅)) * list val :=
+  match x with
+  | shrnil p => (inl (), p)
+  | shrcons a l r p => (inr (inl (a, (l, r))), p)
+  end.
+
+Global Instance fold_shrlist_iso {A} : Iso (@fold_shrlist A) unfold_shrlist.
+Proof.
+  split; fun_ext=> x.
+  - by move: x=> [[[]|[[?[??]]|?]]?].
+  - by move: x=> [|????].
+Qed.
+
+Program Definition foldshrₛ {𝔄} : shr_list_bodyₛ 𝔄 →ₛ shr_listₛ 𝔄 := {|
+  syn_type_morphism_fn := fold_shrlist;
+  syn_type_morphism_proph_fn := fold_shrlist;
+|}.
+Next Obligation. by move=> ?[[[]|[[?[??]]|?]]?]?. Qed.
+Next Obligation. by move=> ?[[[]|[[?[??]]|?]]?]. Qed.
+
+Program Definition unfoldshrₛ {𝔄} : shr_listₛ 𝔄 →ₛ shr_list_bodyₛ 𝔄 := {|
+  syn_type_morphism_fn := unfold_shrlist;
+  syn_type_morphism_proph_fn := unfold_shrlist;
+|}.
+Next Obligation. move=> ?[|????]?//=. Qed.
+Next Obligation. move=> ?[|????]//=. Qed.
+
+Global Instance shrlist_isoₛ {𝔄} : Isoₛ (@foldshrₛ 𝔄) unfoldshrₛ.
+Proof.
+  split; [exact _|exact _|done|]. by move=> [[[]|[[?[??]]|?]]?].
 Qed.

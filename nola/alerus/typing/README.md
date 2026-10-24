@@ -368,10 +368,12 @@ the interface has to be reshaped.
      through `profix` with `Productive`, as `rust_halt/rec.v`'s `ty_rec`
      does.  Only `typing/fixpoint.v` needs it - it builds a recursive type
      as the COFE limit `compl` of a chain of ghost assertions, the
-     step-indexed idiom - so the assumption now lives there.  Converting
-     that file to `profix` is a separate piece of work and the last
-     structural obstacle to recursive types at the concrete
-     interpretation.
+     step-indexed idiom - so the assumption now lives there.  **It is no
+     longer on any path**: `typing/rec.v` takes the fixpoint with `profix`
+     instead, over a type's *data* rather than the whole record, with the
+     laws split into an unconditional `Ty` and a depth-indexed
+     `TyProphAt`.  `fixpoint.v` stays only for its `TypeLftMorphism` half,
+     which is what supplies the lifetime list that `tyd` omits.
 
    The original sketch of this step read:  A `cif` with the remaining ~25 leaf constructors, a
    `JUDG`, `bor_sem := ⟦⟧ᶜ(der)`, the `AltSem` instance with
