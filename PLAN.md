@@ -36,10 +36,10 @@ only `Eq_rect_eq` for those too.  Neither this development nor
 `typing/rec.v` then builds recursive types by `profix`, as
 `nola/examples/rust_halt/rec.v` does, so the `Cofe (FML $oi Σ)` that
 `typing/fixpoint.v` assumes is no longer on any path.  `&shr{κ}` is the
-guarded former and is *proved* productive; `prod_tyd`, `own_tyd`,
-`xsum2_tyd` and `mod_tyd` are the structural ones, and `ty_shr_list` -
-`μ X. Σ! [(); 𝔄 * &shr{κ} X]` - is a worked recursive type built from
-them.
+guarded former and is *proved* productive; the owning pointer is
+*also* productive, now that its pointee sits in a simple invariant; and
+`ty_shr_list` and `ty_own_list` - `μ X. Σ! [(); 𝔄 * &shr{κ} X]` and
+`μ X. Σ! [(); 𝔄 * own n X]` - are worked recursive types built from them.
 
 One checkable statement fixes what is left:
 
@@ -112,40 +112,117 @@ ones are large for reasons now understood rather than guessed at.
    into an evar, and `Closed` premises are discharged by resolution *before*
    the bracket list, which silently shifts every branch.
 
-2. **`fn` must be stratified by an execution level** (thesis § 5, and (5.4)).
+2. **`fn` must be stratified by an execution level** (thesis § 5).
    `FnFml`'s `fn_fml_sem_2` and `fn_incl_of_all` have no model, so `fn` is
    the one type former the model does not interpret - which is why
    `soundness.v` is stated about a typing judgment, as `rust_halt`'s adequacy
    is.
 
-   The device, from § 5.2: types carry a level `i`, and the function type's
-   interpretation is a total Hoare triple whose *world satisfaction mentions
-   only lower levels*,
+   ### The thesis's recipe, read off Chapter 5
 
-   > `⟦T →ⱼ U⟧ᵢ v ≜ ∀u. [⟦T⟧ᵢ u] v(u) [⟦U⟧ᵢ] ∗_{k<j} Winv_k ⟦⟧*_k`   (5.4)
+   Types carry a level `i`.  The function type's arrow carries an execution
+   level `j ≤ i`, meaning the function body touches only references whose
+   body level is `< j`, and the interpretation is a total Hoare triple whose
+   *world satisfaction mentions only lower levels*:
 
-   which is well-formed because `k < j ≤ i`, so the recursion on the level
-   is well-founded.  That is exactly what `fn_fml_sem_2` lacks: `Deriv_factor'`
-   asks for `typed_body` at every candidate, and `typed_body` is stated at the
-   ambient interpretation.
+   > `⟦T →ⱼ U⟧ᵢᵟ v ≜ ∀u. [⟦T⟧ᵢᵟ u] v(u) [⟦U⟧ᵢᵟ] { ∗_{k<j} Winv_k ⟦⟧ᵟ*_k }`   (5.4)
 
-   The cost is the whole ghost-state layer: one copy of the formula
-   machinery (`sinv`, the box, the borrows) per level up to a fixed maximum
-   `L` - the thesis parameterises by `L` for the same reason, that Coq's
-   global camera is finite (§ 5.2 fn. 3) - plus `FML`, `bor_sem`,
-   `alerus_wsat` and `typed_body` indexed by level, and a level on every
-   type former.  This is weeks, not days.
+   The typing judgment is the same triple with `∗_{k<i} Winv_k`, and
+   adequacy (Cor. 5.3) allocates those `k < i` and applies the extended
+   total Hoare triple's adequacy.
 
-   **And there is no way round it by making `fn_fml` an ordinary formula.**
-   That would need an arbitrary `iProp` - `typed_body` - to sit in a
-   constructor's *data*, and `nola/iris/cif.v`'s `cifcon` requires
-   `cifc_data_contractive :: oFunctorContractive (cifc_data s)`.  The
-   identity functor is not contractive, which is exactly why `cif_later`
-   carries a `Next` and why the only `▷`-free way into a `cif` is a
-   judgment.  So `fn_fml` is a judgment, its introduction is
-   `Deriv_factor'`, and `Deriv_factor'` asks for the body at every
-   candidate.  The four other `FnFml` fields are realizable; this one is the
-   stratification.
+   **The level is what cuts the circularity**, and that is the part this
+   plan had not taken in.  (5.4) is well-formed because `k < j ≤ i`, so
+   `Winv_k ⟦⟧ᵟ*_k` is *already defined* when level `i` is being defined.
+   The port's obstruction - `Deriv_factor'` asks for `typed_body` at every
+   candidate, and `typed_body` is stated at the ambient interpretation - is
+   the same circularity, and the thesis does not solve it with derivability.
+   It solves it with the level, and uses derivability for a different job
+   (below).
+
+   ### What that costs here - less than this plan said
+
+   The thesis's own estimate (§ 5.2 fn. 3) is one component RA per level,
+   capped at a global maximum `L`:
+
+   > Unfortunately, in the current Coq mechanization of Iris, only a finite
+   > number of component RAs are allowed for the global camera.  So we
+   > parameterized our proof with the maximum level `L ∈ N` to be used.
+
+   **With Nola's present `sinv` interface that is no longer so**, and
+   `typing/levels.v` now proves it, axiom-free:
+
+   ```coq
+   lvs_wsat_alloc L : … ⊢ |==> ∃ γs, ⌜length γs = L⌝ ∗ lvs_wsat γs smf
+   lvs_below γs smf j := lvs_wsat (take j γs) smf            (* ∗_{k<j} Winv_k *)
+   wsat_incl_lvs_below : j ≤ j' → WsatIncl (lvs_below … j') (lvs_below … j) _
+   ```
+
+   `sinv_wsat_alloc_name` mints a fresh ghost name against the `inG` an
+   existing instance already carries, so **a level is a `gname`, not a
+   component of the global camera** - allocate as many as a proof needs, no
+   global maximum, no new `inG`.  This port already leans on the same trick
+   once, for the store world satisfaction inside `alerus_WGuard` beside
+   `boxes.v`'s.
+
+   On top of that sit the two rules that make a level worth having, and
+   both are short *because* a level is a ghost name - no camera is indexed
+   by it, so nothing has to be re-proved per level:
+
+   ```coq
+   lvs_below_acc : k < j → γs !! k = Some γ →
+     lv_tok γ i Px -∗ lvs_below γs smf j -∗
+       smf k i Px ∗ (smf k i Px -∗ lvs_below γs smf j)
+   twpw_lvs_le : j ≤ j' →
+     WP[lvs_below γs smf j] e @ s; E [{ Φ }] ⊢
+     WP[lvs_below γs smf j'] e @ s; E [{ Φ }]
+   ```
+
+   The first is the thesis's dereference rule, and it is where the
+   circularity is cut: the content comes back at `smf k`, *level `k`'s*
+   interpretation and never level `j`'s, so the definition of level `j` may
+   mention it - which is (5.4)'s well-formedness, spelled out.  The second
+   is `ty-lev`, raising a judgment's execution level, and it is
+   `twpw_incl_fupd` along `lvs_below_le`.  `wpw_lvs_le` and
+   `thoarew_lvs_le` come with it.  All of `levels.v` is
+   `Closed under the global context`.
+
+   Two more items of the old estimate are wrong, and one is right.
+
+   * **The formula *type* need not be levelled, but the *interpretation*
+     must be.**  The thesis indexes `nProp_i` because its invariant stores
+     `ℓ ↦ T_i` with `T_i : Typ_i`, and `⟦⟧*_i` calls `⟦T⟧_i`, which for a
+     function type calls `∗_{k<j} Winv_k ⟦⟧*_k` with `k < j ≤ i`: the
+     interpretation is a *family*, well-defined by recursion on the level.
+     The port's invariants store one `cif` whatever the level, so `cif`
+     itself can stay single - but `⟦⟧ᶜ(δ)` cannot.  It has to become
+     `⟦⟧ᶜ_i(δ)`, defined by strong recursion on `i`, with `fn_fml`'s
+     selector carrying its execution level `j` (a `nat`, discrete, so no
+     trouble with `cifc_data_contractive`) and its semantics calling
+     `⟦⟧ᶜ_k` only for `k < j ≤ i`.  Without that the circularity is *not*
+     cut: a single `⟦⟧ᶜ(δ)` that mentions `fn` is exactly the loop
+     `Deriv_factor'` runs into.  A family of `Csem`s indexed by level is a
+     new class and a real change, though a smaller one than indexing `FML`.
+   * **Not every world satisfaction need be levelled.**  The thesis levels
+     only `Winv`, the thing a function body may access.  Here that is the
+     borrow machinery; the lifetime machinery, which a body does not open,
+     looks like it can stay single.  Which of `alerus_wsat`'s components
+     must be per-level is the one genuinely open question left in this item.
+   * **A level on every type former, and on `typed_body`, does remain**, and
+     that is the bulk of the work - it touches every file in `typing/`.
+
+   ### And `fn_fml` still has to be a judgment
+
+   Making it an ordinary formula would need an arbitrary `iProp` -
+   `typed_body` - in a constructor's *data*, and `nola/iris/cif.v`'s
+   `cifcon` requires `cifc_data_contractive :: oFunctorContractive
+   (cifc_data s)`.  The identity functor is not contractive, which is why
+   `cif_later` carries a `Next` and why the only `▷`-free way into a `cif`
+   is a judgment.  The thesis is consistent with this: its function type is
+   never *stored*, only interpreted, because its `nProp_i` holds `ℓ ↦ T`
+   and nothing else.  A port whose types' ghost assertions are themselves
+   formulas has no such luxury, so `fn_fml` stays a judgment and the level
+   is what makes its introduction dischargeable.
 
 3. **Recursive types** - done, in `typing/rec.v`; what follows is the
    record of how, because every step of it was forced.
@@ -475,6 +552,145 @@ ones are large for reasons now understood rather than guessed at.
    needs: the hole's law arrives with the guarded former's lifetime
    prepended, and `TyProphAt` is antitone in that list.
 
+   ### The thesis's method, and how `rec.v` corresponds to it
+
+   Chapter 5 does recursive types without a metric at all.  Its syntax is
+
+   >  `Typᵢ ∋ Tᵢ ::= … | ref°ₖ Tₖ | Tᵢ →ⱼ Uᵢ (j ≤ i) | rec Xⱼ. Tⱼ (j ≤ i) | Xⱼ`
+
+   where every occurrence of a variable `Xⱼ` inside a type of level `i` is
+   either **guarded** (`j = i`, and the occurrence under `ref°`) or
+   **lower-level** (`j < i`).  The interpretation is then plain
+   substitution:
+
+   >  `⟦rec Xⱼ. Tⱼ⟧ᵢ v ≜ ⟦Tⱼ[rec Xⱼ.Tⱼ / Xⱼ]⟧ⱼ v`
+
+   and it terminates for exactly two reasons: a guarded occurrence is
+   *never semantically interpreted*, because (5.3)/(5.5) give `⟦ref°ₖ T⟧ᵢ`
+   without ever mentioning `⟦T⟧ₖ`; and a lower-level occurrence recurses at
+   a strictly smaller level.
+
+   **That is the same condition `rec.v` enforces, in metric form.**  A
+   `cifcon`'s `Ecsem` receives its `cdom` children as *formulas*, not as
+   interpretations - the only thing it can do with one is hand it to `δ` as
+   a judgment, or to an interpretation-free function like `dinv_tok`.  So
+   "the argument occurs only under a `cdom` child", which is what
+   `Productive` amounts to, *is* the thesis's "guarded by `ref`, whose
+   interpretation does not depend on the body's".  `&shr{κ}` and `sown_tyd`
+   are this port's `ref°`; `proeqv` plays the part of the level.  The
+   correspondence is exact at the only point that matters, and it explains
+   why the two guarded formers here are precisely the two whose semantics
+   never interprets the argument.
+
+   Where the port cannot follow the thesis is the refinement type.  The
+   thesis has none - it is not a RustHorn-style system - so its `rec` is
+   pure syntax and needs no solution to `𝔄 = F(𝔄)`.  `rust_halt` does have
+   refinement types and uses `profix` with `listₓ`/`binₓ`, which is the
+   route taken here.
+
+   ### Done: subtyping of a recursive type, by induction not coinduction
+
+   § 5.1 fn. 1 allows `≤-ref` to be used *coinductively*, and so derives
+   `listᵢ T ≤ listⱼ U` from `T ≤ U`, `U ≤ T` and `i ≤ j`.  `rec.v` now has
+   that rule for `ty_shr_list`, and the interesting part is that it needed
+   **neither coinduction nor `Deriv`**:
+
+   ```coq
+   ty_rec_incl F G f P : (∀ d, P -∗ tyd_incl_lt (ty_rec F) (ty_rec G) f d -∗
+                                 tyd_incl_at (F (ty_rec F)) (G (ty_rec G)) f d) →
+                         ∀ d, P ⊢ tyd_incl_at (ty_rec F) (ty_rec G) f d
+   ty_shr_list_subtype : lctx_lft_incl E L κ' κ → … →
+     subtype E L (ty_shr_list κ T …) (ty_shr_list κ' U …) (shr_list_mapₛ f)
+   ```
+
+   Two reasons the thesis's device is not needed, and both are facts about
+   the port rather than conveniences.
+
+   * **The thesis's `rec` carries no index**, since it is plain
+     substitution, so there is nothing to descend on and the loop has to be
+     cut coinductively.  The port's guarded formers *do* carry one -
+     `&shr{κ}`'s body is `[Ltx(d') := d] …`, i.e. `∃ d' < d` - so the loop
+     is cut by well-founded induction on the depth, which is how
+     `ty_rec_TyProphAt` and upstream's `ty_rec_ty_op` are already proved.
+     What this took was a statement *indexed by `d`*: `type_incl`
+     quantifies over the depth inside its `□`, so `tyd_incl_at` is the same
+     pair of ghost components with `d` pulled out, and
+     `type_incl_of_tyd_incl` puts it back.
+   * **The quantification `Deriv_φ` would supply is already there.**  The
+     thesis stores `□ δ(T ≤̇ U)`, a subtyping judgment at a derivability
+     candidate; `type_incl` in this port is `□ ∀ sem, alt_sem sem → …`,
+     i.e. quantified over every good candidate up front.  So the
+     coinductive hypothesis has nowhere to live and nothing to do.
+
+   The rest was congruences - `unit_tyd_incl`, `prod_tyd_incl`,
+   `xsum2_tyd_incl`, `mod_tyd_incl` (which asks for a commuting square of
+   the four maps, discharged by `unfoldshr_mapₛ`) and `shr_tyd_incl`, the
+   only one that turns `tyd_incl_lt` into `tyd_incl_at`.  Its proof is
+   `shr_bor.v`'s `shr_type_incl` with the depth exposed, and the backward
+   direction of the ghost component is free because a shared borrow's
+   ghost assertion is persistent - which is exactly what
+   `type_incl_simple_type` exploits.
+
+   The refinement type comes along: `prophecy/syn_type.v` gains
+   `ptrlist_map`, `shr_list_mapₛ`/`own_list_mapₛ`, the two layout lemmas
+   (`shr_list_size_eq`, `shr_list_phys_eq` - `ty_size_eq2`/`ty_phys_eq2`
+   force a subtyping map to preserve both) and `unfoldshr_mapₛ`, the square
+   that lets the rule be read off the body.  `Print Assumptions` on the
+   rule gives `Eq_rect_eq` and `functional_extensionality_dep`, the latter
+   only through `Isoₛ`.
+
+   ### Done too: the same rule for `ty_own_list`, and what it cost
+
+   `sown_tyd` used to hold its pointee behind `dinv_fml`, a bare invariant
+   token, and that admitted **no** subtyping rule: a token names the
+   formula it stores, so nothing turns `dinv_tok Px` into `dinv_tok Qx`.
+
+   That is exactly the obstruction (5.5) exists to remove, and the port
+   confirms the thesis's reading of it.  Its `ref°` stores a *different*
+   type tied to `T` by two derivability assertions, and § 5.1 says the
+   indirection is the only reason `≤-ref` is provable.  `&shr{κ}` here had
+   the indirection already - its body is wrapped in a Leaf guard, and
+   guards compose - which is why `shr_ghod_incl` can simply retarget it and
+   why that former had a rule and the owning pointer did not.
+
+   So `sown_persd` now holds `guard_fml empty_fml Px` in place of
+   `dinv_fml Px`, and the trade is free:
+
+   ```coq
+   dinv_fml_guard_at (H : alt_sem sem) : sem (dinv_fml Px) ⊢
+     (True &&{alt_WGuard sem}&&> sem Px)
+   eguard_fml_alloc : bor_sem Px =[alerus_WGuard]=∗
+     bor_sem (guard_fml empty_fml Px)
+   ```
+
+   The token is still how one is *allocated* - `dinv_fml_alloc` then
+   `guard_fml_sem_2`, which needs the guard at every candidate the ambient
+   interpretation maps into, hence `dinv_fml_guard_at` rather than
+   `dinv_fml_guard`.  What is gained is that a guard *composes*, so
+   `sown_tyd_incl` is `shr_tyd_incl` with one difference: the ghost
+   component is not persistent (it carries the pointer and the deallocation
+   permission), so the backward direction is not free - but it is still
+   free of the argument's laws, because those two pieces are literally the
+   same formula on both sides once `size_of 𝔄 = size_of 𝔅` and
+   `syn_phys x = syn_phys (f x)` are used.
+
+   `ty_own_list_subtype` is then `ty_shr_list_subtype` verbatim, minus the
+   lifetime premise.  Both rest on `Eq_rect_eq` and
+   `functional_extensionality_dep`, the latter only through `Isoₛ`.
+
+   This did **not** fix the other half of the owning pointer: the pointee
+   can still be borrowed and not moved out, for the reason recorded below -
+   `ty_guard_proph` is guard-shaped and a `□` guard needs a *persistent*
+   discriminator.  Subtyping and extraction are independent.
+
+   For reference, (5.5) in full:
+
+   >  `⟦ref°ₖ T⟧ᵢᵟ v ≜ ∃U, k' ≤ k. □ δ(T ≤̇ U) ∗ □ δ(U ≤̇ T) ∗ invₖ'ᴺ((ℓ+o) ↦ U)`
+
+   `&shr{κ}` here puts that indirection in a guard and in
+   `st_iff`/`inclJT` rather than in the type's own interpretation, which is
+   why it needed no change.
+
    ### Done as well: a list
 
    `rec.v` ends with
@@ -546,18 +762,129 @@ ones are large for reasons now understood rather than guessed at.
    **And the lesson from the previous commit, applied.**  Every application
    in the section unfolds its abbreviation first.
 
-   ### Still to do
+   ### Done: the owning pointer, made productive
 
-   One thing, and it is not about `rec.v`'s machinery: **`own_ptr` made
-   productive**, which is what turns the list of shared references into a
-   list of owning pointers.  `ty_box` is productive upstream because
-   `ty'_box_def` puts the pointee's `ty_own` behind `cif_store`; our
-   `own_ptr` holds it as a visible child, so it is `Preserv` and not
-   `Productive`.  Making it productive is the arc `&shr` went through, with
-   one difference that makes it bigger: its content is *owned*, so it needs
-   `store_deriv.v`'s general store - the one with the `◇` - rather than our
-   persistent `pstoreJT`, and every site that moves a pointee in or out has
-   to open it.
+   `rec.v` also ends with
+
+   ```coq
+   ty_own_list n T lfts E HT HP : type (own_listₛ 𝔄)   (* μ X. Σ! [(); 𝔄 * own n X] *)
+   ```
+
+   which is `rust_halt`'s `ty_list` with *nothing* substituted.  Getting
+   there needed one new piece of model, and the reason is worth stating
+   exactly, because this plan had it wrong twice.
+
+   **Nola's store is one-shot, and a Leaf guard cannot use it.**
+   `nola/iris/store.v`:
+
+   ```coq
+   store_tok Px := ∃ γ, token γ ∗ dinv_tok (Px ∨ ▷ token γ)
+   store_tok_acc : store_tok Px -∗[dinv_wsat ⟦⟧ᶜ(δ)]◇ ⟦ Px ⟧ᶜ(δ)
+   ```
+
+   Access deposits the token in the invariant, so the content never comes
+   back.  Fine for `ty_box`, whose `ty_own` is consumed when the box is
+   dereferenced.  Not fine for a guard: `guard_acc` is
+   `Q ∗ (Q -∗ W ∗ T)`, so a guarded resource must be returnable.
+
+   **But a plain simple invariant is exactly what is wanted.**
+   `dinv_tok` is persistent and its accessor is *reversible*:
+
+   ```coq
+   dinv_tok_acc : dinv_tok Px -∗ dinv_wsat sm -∗ sm Px ∗ (sm Px -∗ dinv_wsat sm)
+   ```
+
+   so, with `dinv_wsat` sitting inside `alerus_WGuard` (it already did, for
+   `pstore`), **an invariant is a guard** - three lines, no axioms:
+
+   ```coq
+   Lemma dinv_fml_guard {Px} :
+     bor_sem (dinv_fml Px) ⊢ (True &&{alerus_WGuard}&&> bor_sem Px).
+   Proof.
+     iIntros "#i". iApply (guard_trans (Q:=alerus_store_wsat)).
+     { iApply (guard_wsat_out (W':=alerus_store_wsat)). }
+     iApply guard_intro. iIntros "!> W".
+     rewrite /alerus_store_wsat.
+     by iApply (dinv_fml_acc_at (alt_sem_any alt_here) with "i W").
+   Qed.
+   ```
+
+   That is Leaf's central move, and it is the whole arc.  `dinvCT` in
+   `model.v` is the constructor - one `cdom` child, so a former holding its
+   argument behind it is `Productive`, and a semantics of `dinv_tok` that
+   mentions no interpretation at all, so unlike `cif_pstore` and `cif_guard`
+   it is an ordinary constructor with a `⊣⊢` at every candidate rather than
+   a judgment.
+
+   `sown_tyd` is then `own_tyd` with four forced changes, and its `Ty` comes
+   out **unconditional**, which is the mark of a properly guarded former:
+
+   * the pointee's ghost assertion behind `dinv_fml` rather than in hand;
+   * both indices *bounded* (`Ltx`, `Lex`) rather than matched exactly,
+     because an invariant holds a formula at one fixed depth and guard
+     index and weakening cannot push them up - `rust_halt`'s `sty_shrref`
+     carries `⌜d' < d⌝` for the same reason;
+   * `size_of`/`syn_phys` in place of `tyd_size T`/`tyd_phys T`, because
+     `proeqv 0` relates nothing in a discrete component, so a `Productive`
+     former may not mention either - the same constraint `&shr` is under;
+   * the stored part in the *persistent* component as well as the ghost one,
+     because `ty_guard_proph` is handed that one directly while the guard it
+     is handed cannot be opened, `guard_acc` wanting a left-hand side the
+     law does not supply.
+
+   `own_listₛ` beside `shr_listₛ` is the refinement type; the two differ
+   only in the tail being a `loc` rather than a `cloc`, so the inductive is
+   parameterised by it (`ptrlist L A`) and everything else is the same
+   clauses twice.
+
+   ### Still to do, and it is a genuine tension rather than a gap
+
+   **Moving a pointee out.**  `sown_tyd`'s pointee can be *borrowed* - that
+   is what the reversible accessor gives - but not moved out, so the list
+   can be read and not destructured, and `typing/own.v`'s rules do not apply
+   to it as they stand.  The port therefore has two owning pointers:
+
+   | | content | extractable | productive |
+   |---|---|---|---|
+   | `own_ptr` (`own.v`) | in hand | yes | no |
+   | `sown_tyd` (`rec.v`) | in a simple invariant | no | yes |
+
+   The obvious merge is `store_tok`'s shape - hold an exclusive `token γ`
+   and store `Px ∨ token γ`, so that the guard rules out the right disjunct
+   while extraction deposits the token.  **It does not work, and the reason
+   is structural.**  `guard W P Q` is
+
+   ```coq
+   □ ∀ T, P ∗ (P -∗ W ∗ T) -∗ Q ∗ (Q -∗ W ∗ T)
+   ```
+
+   - note the `□`.  Narrowing a guard on `Px ∨ token γ` to one on `Px` needs
+   `guard_or_false` or `guard_cancel_or`, and both ask for a side condition
+   that is *persistent*: `guard_or_false` wants `token γ &&{W}&&> False`,
+   which a `□` body cannot prove while the only evidence is an owned token,
+   and `guard_cancel_or` wants `Q ∧ R ⊢ False`, which two copies of the same
+   exclusive resource do not give - `P ∧ P ⊣⊢ P`.  (`&uniq` can use
+   `guard_or_false` because its discriminator, a lifetime being dead, *is*
+   persistent.)
+
+   And the general form of the obstruction is the same: whatever
+   distinguishes "content still inside" from "content extracted" has to be
+   persistent for a `□` guard to use it, yet it must be falsified by
+   extraction.  So the two cannot be merged while `ty_guard_proph` is
+   guard-shaped.
+
+   The ways out, none of them small:
+
+   1. reshape `ty_guard_proph` so its premise is ownership under the world
+      satisfaction rather than a guard, which is `rust_halt`'s `TyOpAt`
+      shape - its prophecy law is a fupd and it has no Leaf guards at all.
+      This is the honest fix and it touches every type former.
+   2. leave the two formers side by side, which is where the tree is: the
+      recursion uses `sown_tyd` and the typing rules use `own_ptr`, and a
+      recursive type is readable but not destructurable.
+   3. give the list its own destructuring rules against `sown_tyd`
+      directly, which is `verify/list.v`-level work and does not need
+      `own_ptr` at all.
 
    VerusBelt was no help: `fix_ty` has no client in
    `verus-belt/src/lambda_verus/typing/` at all, only `TypeContractive`

@@ -92,15 +92,16 @@ One-to-one, same names, for: `atomic_inv`, `base`, `base_type`, `bool`,
 `soundness.v` (100 upstream, 182 here) is ported, and proves *termination*
 as well as the original's safety.
 
-Six files are new here:
+Seven files are new here:
 
 | here | what |
 |---|---|
-| `ctx.v` (1841) | the interface the whole typing layer is parametric in: `alerusGS` (ghost state), `AlerusSem` (the interpretation), `TypeFml`, `GsrcSem`, `HeapSem`, `AltSem` - the rules for stored guards, indexed borrows and inclusions at a derivability candidate - and the relaxed borrow (`dFullBor`, `dIdxBor`, `dalter`) |
+| `ctx.v` (2078) | the interface the whole typing layer is parametric in: `alerusGS` (ghost state), `AlerusSem` (the interpretation), `TypeFml`, `GsrcSem`, `HeapSem`, `AltSem` - the rules for stored guards, indexed borrows and inclusions at a derivability candidate - and the relaxed borrow (`dFullBor`, `dIdxBor`, `dalter`) |
 | `model.v` (1579) | the concrete model: `FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`, the four judgments, and the instances of the classes above |
 | `model_inst.v` (74) | the `typeG` bundle and the remaining formula-language classes |
 | `inst.v` (364) | a concrete `CON` and `JUDG` with their semantics, and the two soundness theorems at them |
-| `rec.v` (927) | recursive types by `profix`: a type's data as a `prost`, the laws split into an unconditional `Ty` and a depth-indexed `TyProphAt`, `&shr{κ}` proved `Productive`, `ty_rec` with both laws - the `profix` replacement for `fixpoint.v`'s COFE limit - `xsum2_tyd`/`unit_tyd` for the body, and `ty_shr_list`, the worked recursive type `μ X. Σ! [(); 𝔄 * &shr{κ} X]` |
+| `rec.v` (1661) | recursive types by `profix`: a type's data as a `prost`, the laws split into an unconditional `Ty` and a depth-indexed `TyProphAt`, **two** guarded formers proved `Productive` - `&shr{κ}` and the owning pointer, the latter with its pointee behind a stored guard - `ty_rec` with both laws, `xsum2_tyd`/`unit_tyd` for the body, the two worked recursive types `ty_shr_list` and `ty_own_list`, and their subtyping: `tyd_incl_at` (`type_incl` with the depth exposed), a congruence per former, and `ty_rec_incl` by depth induction |
+| `levels.v` (202) | execution levels as *ghost names*, following the thesis's Chapter 5 but without its global maximum level: `lvs_wsat_alloc`, `lvs_below` (the thesis's `∗_{k<j} Winv_k`), `lv_tok`/`lvs_below_acc` (a reference at level `k` is reachable from execution level `j > k`) and `twpw_lvs_le` (its `ty-lev`) |
 | `syn_type.v` (942) | **dead**: not in `_CoqProject`, no `.vo`, imports `nola.lrust`.  A stale copy of `prophecy/syn_type.v`, which is the live grammar |
 
 Two upstream files are missing:

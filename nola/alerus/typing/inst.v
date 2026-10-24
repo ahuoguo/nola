@@ -24,13 +24,13 @@ Import iPropAppNotation.
 (** ** The constructor signature *)
 Variant alerus_consel :=
 | acs_alerus | acs_naInv | acs_guard | acs_idxbor | acs_incl | acs_exs
-| acs_pstore.
+| acs_pstore | acs_dinv.
 
 Definition alerusCONF (s : alerus_consel) : cifcon :=
   match s with
   | acs_alerus => alerusCT | acs_naInv => naInvCT | acs_guard => guardCT
   | acs_idxbor => idxborCT | acs_incl => inclCT | acs_exs => exsCT
-  | acs_pstore => pstoreCT
+  | acs_pstore => pstoreCT | acs_dinv => dinvCT
   end.
 
 Definition alerusCON : cifcon := sigTCT alerusCONF.
@@ -49,9 +49,11 @@ Definition alerusCON : cifcon := sigTCT alerusCONF.
   sigTCT_inC (a := acs_exs).
 #[export] Instance pstoreC_CON : pstoreC alerusCON :=
   sigTCT_inC (a := acs_pstore).
+#[export] Instance dinvC_CON : dinvC alerusCON :=
+  sigTCT_inC (a := acs_dinv).
 
 #[export] Instance typingC_CON : typingC alerusCON :=
-  TYPING_C _ _ _ _ _ _ _ _.
+  TYPING_C _ _ _ _ _ _ _ _ _.
 
 (** ** The judgment type *)
 Variant alerus_jsel :=
@@ -248,7 +250,7 @@ Definition alerusCONF_ecsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
   | acs_alerus => alerusCT_ecsem | acs_naInv => naInvCT_ecsem
   | acs_guard => guardCT_ecsem | acs_idxbor => idxborCT_ecsem
   | acs_incl => inclCT_ecsem | acs_exs => exsCT_ecsem
-  | acs_pstore => pstoreCT_ecsem
+  | acs_pstore => pstoreCT_ecsem | acs_dinv => dinvCT_ecsem
   end.
 
 #[export] Instance alerusCsem {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
@@ -277,6 +279,9 @@ Definition alerusCONF_ecsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
 #[export] Instance pstoreCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   pstoreCS alerusCON (alerusJUDG Σ) Σ :=
   sigTCT_inCS (semec := alerusCONF_ecsem) (a := acs_pstore).
+#[export] Instance dinvCS_CON {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
+  dinvCS alerusCON (alerusJUDG Σ) Σ :=
+  sigTCT_inCS (semec := alerusCONF_ecsem) (a := acs_dinv).
 
 (** The judgments' semantics, by cases on the judgment type.  Each one
   *applies* the interpretation - [guardJT_sem] to the two sub-formulas,
@@ -315,7 +320,7 @@ Definition alerusJUDGF_dsem {Σ} `{!alerusGS (cifOF alerusCON) Σ}
   typingCS alerusCON (alerusJUDG Σ) Σ :=
   {| typingCS_alerus := _; typingCS_naInv := _; typingCS_guard := _;
      typingCS_idxbor := _; typingCS_incl := _; typingCS_exs := _;
-     typingCS_pstore := _ |}.
+     typingCS_pstore := _; typingCS_dinv := _ |}.
 #[export] Instance typingJS_JUDG {Σ} `{!alerusGS (cifOF alerusCON) Σ} :
   typingJS alerusCON (alerusJUDG Σ) Σ :=
   {| typingJS_guard := _; typingJS_idxbor := _; typingJS_incl := _;

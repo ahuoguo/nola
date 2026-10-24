@@ -737,6 +737,16 @@ Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ, !AlerusSem FML Σ} := {
     [AltSem]. *)
   store_fml : FML $oi Σ → FML $oi Σ;
   store_fml_ne :: NonExpansive store_fml;
+  (** A formula held in a *simple invariant*.
+
+    [store_fml] is one-way and sound only for persistent content.  This one
+    holds *owned* content and its accessor gives it back, which is what a
+    Leaf guard needs - and it is why an owning pointer can hold its pointee
+    behind it and still be [Productive].  Unlike [store_fml] it does have a
+    [⊣⊢] semantics, [dinv_fml_sem_at_any], because [dinv_tok] mentions no
+    interpretation. *)
+  dinv_fml : FML $oi Σ → FML $oi Σ;
+  dinv_fml_ne :: NonExpansive dinv_fml;
   (** [□], so that a former can be *structurally* persistent.
 
     [&shr{κ}] needs its ghost assertion to be persistent without appealing to
@@ -1008,6 +1018,10 @@ Class AltSem (FML : oFunctor) Σ
   store_fml_map_at {sem} : alt_sem sem → ∀ Px Qx,
     □ (∀ sem' (_ : alt_sem sem') (_ : alt_into sem sem'), sem' Px -∗ sem' Qx) -∗
     sem (store_fml Px) -∗ sem (store_fml Qx);
+  (** [dinv_fml] is the invariant *token*, at every candidate: the token
+    does not mention the interpretation, only the formula. *)
+  dinv_fml_sem_at_any {sem} : alt_any sem → ∀ Px,
+    sem (dinv_fml Px) ⊣⊢ @dinv_tok FML Σ alerus_dinvGS Px;
 
   (** Reading a guard stored at [sem], at a candidate [sem] maps into.  In
     the model this is [dinto δ δ'] applied to the guard judgment. *)
@@ -1185,6 +1199,7 @@ Section alt_any.
   Definition bor_state_sem_at {sem} (H : alt_sem sem) := bor_state_sem_at_any (alt_sem_any H).
   Definition guard_fml_pers_at {sem} (H : alt_sem sem) := guard_fml_pers_at_any (alt_sem_any H).
   Definition store_fml_pers_at {sem} (H : alt_sem sem) := store_fml_pers_at_any (alt_sem_any H).
+  Definition dinv_fml_sem_at {sem} (H : alt_sem sem) := dinv_fml_sem_at_any (alt_sem_any H).
   Definition idxbor_fml_pers_at {sem} (H : alt_sem sem) := idxbor_fml_pers_at_any (alt_sem_any H).
   Definition incl_fml_pers_at {sem} (H : alt_sem sem) := incl_fml_pers_at_any (alt_sem_any H).
   Definition alt_sem_ne {sem} (H : alt_sem sem) := alt_any_ne (alt_sem_any H).
@@ -1233,6 +1248,135 @@ Section alt_sem.
     Persistent (bor_sem (guard_fml Px Qx)) := guard_fml_pers_at alt_here _ _.
   #[export] Instance store_fml_persistent {Px} :
     Persistent (bor_sem (store_fml Px)) := store_fml_pers_at alt_here _.
+
+  (** *** A simple invariant, and the guard it is
+
+    [dinv_fml] is persistent at every candidate because [dinv_tok] is. *)
+  (** [bor_sem] is [alt_amb] only up to conversion, so the ambient form is
+    taken by [exact] rather than by [rewrite]. *)
+  Lemma dinv_fml_sem_1 {Px} :
+    bor_sem (dinv_fml Px) ⊢ @dinv_tok FML Σ alerus_dinvGS Px.
+  Proof.
+    exact (bi.equiv_entails_1_1 _ _ (dinv_fml_sem_at alt_here Px)).
+  Qed.
+  Lemma dinv_fml_sem_2 {Px} :
+    @dinv_tok FML Σ alerus_dinvGS Px ⊢ bor_sem (dinv_fml Px).
+  Proof.
+    exact (bi.equiv_entails_1_2 _ _ (dinv_fml_sem_at alt_here Px)).
+  Qed.
+
+  Lemma dinv_fml_pers_at {sem} (H : alt_any sem) {Px} :
+    Persistent (sem (dinv_fml Px)).
+  Proof. rewrite (dinv_fml_sem_at_any H). exact _. Qed.
+  #[export] Instance dinv_fml_persistent {Px} :
+    Persistent (bor_sem (dinv_fml Px)) := dinv_fml_pers_at (alt_sem_any alt_here).
+
+  (** Allocating one: the content moves into the store world satisfaction,
+    which sits inside [alerus_WGuard]. *)
+  Lemma dinv_fml_alloc {Px} :
+    bor_sem Px =[alerus_WGuard]=∗ bor_sem (dinv_fml Px).
+  Proof.
+    iIntros "Px W".
+    iDestruct (wsat_split (W:=alerus_WGuard) (W':=alerus_store_wsat) with "W")
+      as "[Wst Wr]".
+    iMod (dinv_tok_alloc (FML:=FML) (sm:=bor_sem) Px with "Px Wst")
+      as "[Wst #i]".
+    iDestruct (wsat_join (W:=alerus_WGuard) with "Wst Wr") as "$".
+    iModIntro. by iApply dinv_fml_sem_2.
+  Qed.
+
+  (** Opening one, at any candidate: the content comes back out, and has to
+    go back in.  That is the whole difference from [store_fml_acc]. *)
+  Lemma dinv_fml_acc_at {sem} (H : alt_any sem) {Px} :
+    sem (dinv_fml Px) -∗ @dinv_wsat FML Σ alerus_dinvGS sem -∗
+      sem Px ∗ (sem Px -∗ @dinv_wsat FML Σ alerus_dinvGS sem).
+  Proof. rewrite (dinv_fml_sem_at_any H). exact dinv_tok_acc. Qed.
+
+  (** **** A simple invariant *is* a guard
+
+    Leaf's central move, and the reason an owning pointer can keep its
+    pointee behind [dinv_fml] and still let [ty_guard_proph] reach it: the
+    world satisfaction is guarded by anything ([guard_wsat_out]), and the
+    invariant turns the world satisfaction into its content, reversibly
+    ([guard_intro]). *)
+  Lemma dinv_fml_guard {Px} :
+    bor_sem (dinv_fml Px) ⊢ (True &&{alerus_WGuard}&&> bor_sem Px).
+  Proof.
+    iIntros "#i". iApply (guard_trans (Q:=alerus_store_wsat)).
+    { iApply (guard_wsat_out (W':=alerus_store_wsat)). }
+    iApply guard_intro. iIntros "!> W".
+    rewrite /alerus_store_wsat.
+    by iApply (dinv_fml_acc_at (alt_sem_any alt_here) with "i W").
+  Qed.
+
+  (** ...so holding the token outright gives a guard on the content against
+    *any* left-hand side.  An owning pointer therefore keeps the token in
+    its persistent component, where [ty_guard_proph] is handed it directly,
+    rather than reaching for it through the guard it is given - which it
+    could not do, [guard_acc] needing the left-hand side. *)
+  Lemma dinv_fml_guard_any {R Px} :
+    bor_sem (dinv_fml Px) ⊢ (R &&{alerus_WGuard}&&> bor_sem Px).
+  Proof.
+    iIntros "#i". iApply (guard_trans (Q:=True%I)); [iApply guard_true|].
+    by iApply dinv_fml_guard.
+  Qed.
+
+  (** **** ...and the guard is itself storable, which the token is not
+
+    [dinv_fml Px] names the formula it stores, so nothing turns
+    [dinv_tok Px] into [dinv_tok Qx] and a former holding one admits no
+    subtyping rule.  A *guard* does compose ([guard_trans]), so a former
+    holding [guard_fml empty_fml Px] does - which is why [&shr{κ}] has a
+    subtyping rule and an owning pointer behind a bare token has none.
+
+    The two are interderivable in the direction that matters: the token
+    gives the guard at every candidate ([dinv_fml_guard_at]), and
+    [guard_fml_sem_2] stores it.  So an owning pointer can hold the guard
+    and still be *allocated*, which is the only thing the token was there
+    for.  This is the thesis's (5.5) read in the port's terms: its [ref°]
+    stores a different type tied by two derivability assertions precisely
+    so that [≤-ref] goes through, and a Leaf guard is that indirection
+    already. *)
+  Definition alt_store_wsat (S : Cand FML Σ) : iProp Σ :=
+    @alerus_store_wsat FML Σ _ (cand_asem S).
+
+  Lemma dinv_fml_guard_at {sem} (H : alt_sem sem) {Px} :
+    sem (dinv_fml Px) ⊢ (True &&{alt_WGuard sem}&&> sem Px).
+  Proof.
+    have ? := dinv_fml_pers_at (alt_sem_any H) (Px:=Px).
+    iIntros "#i". iApply (guard_trans (Q:=alt_store_wsat sem)).
+    { iApply (guard_wsat_out (W':=alt_store_wsat sem)). }
+    iApply guard_intro. iIntros "!> W".
+    rewrite /alt_store_wsat /alerus_store_wsat.
+    by iApply (dinv_fml_acc_at (alt_sem_any H) with "i W").
+  Qed.
+
+  Lemma eguard_fml_alloc {Px} :
+    bor_sem Px =[alerus_WGuard]=∗ bor_sem (guard_fml empty_fml Px).
+  Proof.
+    iIntros "Px W". iMod (dinv_fml_alloc with "Px W") as "[$ #i]". iModIntro.
+    iApply (guard_fml_sem_2 alt_here). iIntros (sem' Hs Hi).
+    have ? := dinv_fml_pers_at (alt_sem_any Hs) (Px:=Px).
+    iAssert (sem' (dinv_fml Px)) as "#i'".
+    { rewrite (dinv_fml_sem_at_any (alt_sem_any Hs)). by iApply dinv_fml_sem_1. }
+    rewrite (empty_sem_at_any (alt_sem_any Hs)).
+    by iApply (dinv_fml_guard_at Hs).
+  Qed.
+
+  Lemma eguard_fml_empty : ⊢ True &&{alerus_WGuard}&&> bor_sem empty_fml.
+  Proof.
+    iApply guard_intro. iIntros "!> _". iSplit; [|by iIntros "_"].
+    by iApply (bi.equiv_entails_1_2 _ _ (empty_sem_at alt_here)).
+  Qed.
+
+  Lemma eguard_fml_guard_any {R Px} :
+    bor_sem (guard_fml empty_fml Px) ⊢ (R &&{alerus_WGuard}&&> bor_sem Px).
+  Proof.
+    iIntros "#g". iDestruct (guard_fml_sem_1 with "g") as "#g'".
+    iApply (guard_trans with "[] g'").
+    iApply (guard_trans (Q:=True%I)); [iApply guard_true|].
+    iApply eguard_fml_empty.
+  Qed.
   #[export] Instance idxbor_fml_persistent {κ idx Px} :
     Persistent (bor_sem (idxbor_fml κ idx Px)) :=
     idxbor_fml_pers_at alt_here _ _ _.

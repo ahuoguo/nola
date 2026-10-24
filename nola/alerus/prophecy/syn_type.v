@@ -27,13 +27,17 @@ Definition Mask := coPset.
   recursive occurrence sits under [at_clocₛ].  Both are what make
   [size_of] and [syn_phys] on this constructor *literally* [xsumₛ]'s on the
   unfolding, which is what [Isoₛ] demands in this port - upstream's
-  [ty_mod] is free of that because its [ty_size] is unconstrained data. *)
-Inductive shrlist (A : Type) : Type :=
-| shrnil (padding : list val)
-| shrcons (hd : A) (tl : cloc) (rest : shrlist A) (padding : list val).
-Arguments shrnil {_}. Arguments shrcons {_}.
+  [ty_mod] is free of that because its [ty_size] is unconstrained data.
 
-Global Instance shrlist_inhabited {A} : Inhabited (shrlist A) :=
+  The pointer type is a parameter, because the two guarded formers this
+  port has point differently: [&shr{κ}] through a [cloc] and the owning
+  pointer through a [loc]. *)
+Inductive ptrlist (L A : Type) : Type :=
+| shrnil (padding : list val)
+| shrcons (hd : A) (tl : L) (rest : ptrlist L A) (padding : list val).
+Arguments shrnil {_ _}. Arguments shrcons {_ _}.
+
+Global Instance ptrlist_inhabited {L A} : Inhabited (ptrlist L A) :=
   populate (shrnil []).
 
 Inductive syn_type := Zₛ | boolₛ | unitₛ | Propₛ | positiveₛ
@@ -59,6 +63,7 @@ Inductive syn_type := Zₛ | boolₛ | unitₛ | Propₛ | positiveₛ
 | join_handleₛ (_: syn_type)
 | maskₛ
 | shr_listₛ (_: syn_type)
+| own_listₛ (_: syn_type)
 .
 
 Notation syn_typel := (list syn_type).
@@ -105,7 +110,8 @@ Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   | exec_funₛ 𝔄₀ => val * indep_interp_of_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | maskₛ => Mask
-  | shr_listₛ 𝔄₀ => shrlist (indep_interp_of_syn_type 𝔄₀)
+  | shr_listₛ 𝔄₀ => ptrlist cloc (indep_interp_of_syn_type 𝔄₀)
+  | own_listₛ 𝔄₀ => ptrlist loc (indep_interp_of_syn_type 𝔄₀)
   end.
 
 Notation "~~" := indep_interp_of_syn_type.
@@ -137,7 +143,8 @@ Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   | exec_funₛ 𝔄₀ => val * indep_interp_of_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | maskₛ => Mask
-  | shr_listₛ 𝔄₀ => shrlist (proph_interp_of_syn_type 𝔄₀)
+  | shr_listₛ 𝔄₀ => ptrlist cloc (proph_interp_of_syn_type 𝔄₀)
+  | own_listₛ 𝔄₀ => ptrlist loc (proph_interp_of_syn_type 𝔄₀)
   end.
 Coercion proph_interp_of_syn_type: syn_type >-> Sortclass.
 
@@ -168,7 +175,8 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   | exec_funₛ 𝔄₀ => val * abstracted_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => abstracted_syn_type 𝔄₀
   | maskₛ => Mask
-  | shr_listₛ 𝔄₀ => shrlist (abstracted_syn_type 𝔄₀)
+  | shr_listₛ 𝔄₀ => ptrlist cloc (abstracted_syn_type 𝔄₀)
+  | own_listₛ 𝔄₀ => ptrlist loc (abstracted_syn_type 𝔄₀)
   end.
   
 (** Decidable Equality *)
@@ -185,7 +193,7 @@ Fixpoint syn_type_beq 𝔄 𝔅 : bool :=
   | blockedₛ 𝔄₀, blockedₛ 𝔅₀ | ghostₛ 𝔄₀, ghostₛ 𝔅₀ | invₛ 𝔄₀, invₛ 𝔅₀
   | local_invₛ 𝔄₀, local_invₛ 𝔅₀ | trackedₛ 𝔄₀, trackedₛ 𝔅₀
   | exec_funₛ 𝔄₀, exec_funₛ 𝔅₀ | join_handleₛ 𝔄₀, join_handleₛ 𝔅₀
-  | storableₛ 𝔄₀, storableₛ 𝔅₀ | shr_listₛ 𝔄₀, shr_listₛ 𝔅₀
+  | storableₛ 𝔄₀, storableₛ 𝔅₀ | shr_listₛ 𝔄₀, shr_listₛ 𝔅₀ | own_listₛ 𝔄₀, own_listₛ 𝔅₀
     => syn_type_beq 𝔄₀ 𝔅₀
   | 𝔄₀ * 𝔄₁, 𝔅₀ * 𝔅₁ | 𝔄₀ + 𝔄₁, 𝔅₀ + 𝔅₁ | funₛ 𝔄₀ 𝔄₁, funₛ 𝔅₀ 𝔅₁
     => syn_type_beq 𝔄₀ 𝔅₀ && syn_type_beq 𝔄₁ 𝔅₁
@@ -433,7 +441,13 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   | maskₛ => λ x π, x
   | namespaceₛ => λ x π, x
   | shr_listₛ 𝔄₀ => λ x π,
-      (fix go (y : shrlist (~~𝔄₀)) : shrlist 𝔄₀ :=
+      (fix go (y : ptrlist cloc (~~𝔄₀)) : ptrlist cloc 𝔄₀ :=
+        match y with
+        | shrnil p => shrnil p
+        | shrcons a l r p => shrcons (@vπ 𝔄₀ a π) l (go r) p
+        end) x
+  | own_listₛ 𝔄₀ => λ x π,
+      (fix go (y : ptrlist loc (~~𝔄₀)) : ptrlist loc 𝔄₀ :=
         match y with
         | shrnil p => shrnil p
         | shrcons a l r p => shrcons (@vπ 𝔄₀ a π) l (go r) p
@@ -485,7 +499,13 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   | maskₛ => λ x , []
   | namespaceₛ => λ x , []
   | shr_listₛ 𝔄₀ =>
-      fix go (y : shrlist (~~𝔄₀)) : list proph_var :=
+      fix go (y : ptrlist cloc (~~𝔄₀)) : list proph_var :=
+        match y with
+        | shrnil _ => []
+        | shrcons a _ r _ => @ξl 𝔄₀ a ++ go r
+        end
+  | own_listₛ 𝔄₀ =>
+      fix go (y : ptrlist loc (~~𝔄₀)) : list proph_var :=
         match y with
         | shrnil _ => []
         | shrcons a _ r _ => @ξl 𝔄₀ a ++ go r
@@ -532,6 +552,7 @@ Fixpoint size_of 𝔄 : nat :=
     the hole.  That is what makes [syn_iso_size_eq] below [eq_refl], and
     with it every [pad] width in [syn_phys]. *)
   | shr_listₛ 𝔄₀ => S (list_max [0; size_of 𝔄₀ + 1])
+  | own_listₛ 𝔄₀ => S (list_max [0; size_of 𝔄₀ + 1])
   end.
   
 Definition pad (l: list fancy_val) (n: nat) : list fancy_val :=
@@ -587,6 +608,15 @@ Fixpoint syn_phys {𝔄} : (~~𝔄) → list fancy_val :=
                 (@syn_phys 𝔄₀ a ++ [FVal (LitV (LitLoc l.1))]) ++ fmap FVal p)
               (size_of 𝔄)
       end
+  | own_listₛ 𝔄₀ => λ x,
+      match x with
+      | shrnil p =>
+          pad (FVal (LitV (LitInt 0)) :: [] ++ fmap FVal p) (size_of 𝔄)
+      | shrcons a l _ p =>
+          pad (FVal (LitV (LitInt 1)) ::
+                (@syn_phys 𝔄₀ a ++ [FVal (LitV (LitLoc l))]) ++ fmap FVal p)
+              (size_of 𝔄)
+      end
   end.
       
 Local Lemma length_pad l n : length (pad l n) = n.
@@ -609,6 +639,7 @@ Lemma syn_phys_size_eq 𝔄 (x: ~~𝔄) : length (@syn_phys 𝔄 x) = size_of �
   - destruct x as [[[[[[l ?] ?] ?] ?] ?] ?]. clear FIX; trivial.
   - apply length_pad.
   - simpl. rewrite length_fmap. rewrite length_vec_to_list. clear FIX; trivial.
+  - clear FIX. destruct x; apply length_pad.
   - clear FIX. destruct x; apply length_pad.
 Qed.
 
@@ -657,7 +688,13 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | maskₛ => λ x , x
   | namespaceₛ => λ x , x
   | shr_listₛ 𝔄₀ =>
-      fix go (y : shrlist (~~𝔄₀)) : shrlist (abstracted_syn_type 𝔄₀) :=
+      fix go (y : ptrlist cloc (~~𝔄₀)) : ptrlist cloc (abstracted_syn_type 𝔄₀) :=
+        match y with
+        | shrnil p => shrnil p
+        | shrcons a l r p => shrcons (@syn_abstract 𝔄₀ a) l (go r) p
+        end
+  | own_listₛ 𝔄₀ =>
+      fix go (y : ptrlist loc (~~𝔄₀)) : ptrlist loc (abstracted_syn_type 𝔄₀) :=
         match y with
         | shrnil p => shrnil p
         | shrcons a l r p => shrcons (@syn_abstract 𝔄₀ a) l (go r) p
@@ -704,6 +741,10 @@ Proof.
     destruct x' as [[[[[[? ?] ?] ?] ?] ?] ?].
     inversion Hab as [[Ha Hb]]. clear FIX. trivial.
   - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
+  - destruct x as [p|a l r p]; destruct x' as [p'|a' l' r' p'];
+      simpl in Hab; try (clear FIX; by inversion Hab).
+    inversion Hab as [[Ha Hb Hc Hd]]. simpl.
+    rewrite (FIX _ _ _ Ha). clear FIX. by subst.
   - destruct x as [p|a l r p]; destruct x' as [p'|a' l' r' p'];
       simpl in Hab; try (clear FIX; by inversion Hab).
     inversion Hab as [[Ha Hb Hc Hd]]. simpl.
@@ -1015,25 +1056,27 @@ Qed.
   [ty_mod] is free of all this. *)
 Notation shr_list_bodyₛ 𝔄 :=
   (xsumₛ [unitₛ; prodₛ 𝔄 (at_clocₛ (shr_listₛ 𝔄))]).
+Notation own_list_bodyₛ 𝔄 :=
+  (xsumₛ [unitₛ; prodₛ 𝔄 (at_locₛ (own_listₛ 𝔄))]).
 
 (** One pair of maps serves both interpretations: the value shape and the
   prophecy shape of the body differ only in what sits at the element and the
   tail, and [shrlist] is polymorphic in exactly that. *)
-Definition fold_shrlist {A}
-  (x : (() + ((A * (cloc * shrlist A)) + ∅)) * list val) : shrlist A :=
+Definition fold_shrlist {L A}
+  (x : (() + ((A * (L * ptrlist L A)) + ∅)) * list val) : ptrlist L A :=
   match x with
   | (inl _, p) => shrnil p
   | (inr (inl (a, (l, r))), p) => shrcons a l r p
   | (inr (inr e), _) => absurd e
   end.
-Definition unfold_shrlist {A} (x : shrlist A)
-  : (() + ((A * (cloc * shrlist A)) + ∅)) * list val :=
+Definition unfold_shrlist {L A} (x : ptrlist L A)
+  : (() + ((A * (L * ptrlist L A)) + ∅)) * list val :=
   match x with
   | shrnil p => (inl (), p)
   | shrcons a l r p => (inr (inl (a, (l, r))), p)
   end.
 
-Global Instance fold_shrlist_iso {A} : Iso (@fold_shrlist A) unfold_shrlist.
+Global Instance fold_shrlist_iso {L A} : Iso (@fold_shrlist L A) unfold_shrlist.
 Proof.
   split; fun_ext=> x.
   - by move: x=> [[[]|[[?[??]]|?]]?].
@@ -1058,3 +1101,120 @@ Global Instance shrlist_isoₛ {𝔄} : Isoₛ (@foldshrₛ 𝔄) unfoldshrₛ.
 Proof.
   split; [exact _|exact _|done|]. by move=> [[[]|[[?[??]]|?]]?].
 Qed.
+
+(** ...and the same for the owning-pointer list, whose tail is a [loc] *)
+Program Definition foldownₛ {𝔄} : own_list_bodyₛ 𝔄 →ₛ own_listₛ 𝔄 := {|
+  syn_type_morphism_fn := fold_shrlist;
+  syn_type_morphism_proph_fn := fold_shrlist;
+|}.
+Next Obligation. by move=> ?[[[]|[[?[??]]|?]]?]?. Qed.
+Next Obligation. by move=> ?[[[]|[[?[??]]|?]]?]. Qed.
+
+Program Definition unfoldownₛ {𝔄} : own_listₛ 𝔄 →ₛ own_list_bodyₛ 𝔄 := {|
+  syn_type_morphism_fn := unfold_shrlist;
+  syn_type_morphism_proph_fn := unfold_shrlist;
+|}.
+Next Obligation. move=> ?[|????]?//=. Qed.
+Next Obligation. move=> ?[|????]//=. Qed.
+
+Global Instance ownlist_isoₛ {𝔄} : Isoₛ (@foldownₛ 𝔄) unfoldownₛ.
+Proof.
+  split; [exact _|exact _|done|]. by move=> [[[]|[[?[??]]|?]]?].
+Qed.
+
+
+(** ** Mapping the element of a pointer list
+
+  The thesis derives [listᵢ T ≤ listⱼ U] from [T ≤ U], [U ≤ T] and [i ≤ j]
+  (§ 5.1 fn. 1).  With refinement types a change of element type is also a
+  change of refinement type, so that rule needs a map
+  [shr_listₛ 𝔄 →ₛ shr_listₛ 𝔅]; this is it, and [typing/rec.v]'s
+  [shr_list_subtype] carries it.
+
+  It is [fmap] on [ptrlist], polymorphic in the tail exactly as
+  [fold_shrlist] is, so the shared-reference list and the owning-pointer
+  list share it. *)
+Fixpoint ptrlist_map {L A B} (f : A → B) (x : ptrlist L A) : ptrlist L B :=
+  match x with
+  | shrnil p => shrnil p
+  | shrcons a l r p => shrcons (f a) l (ptrlist_map f r) p
+  end.
+
+Program Definition shr_list_mapₛ {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅)
+  : shr_listₛ 𝔄 →ₛ shr_listₛ 𝔅 := {|
+  syn_type_morphism_fn := ptrlist_map (~~!ₛ f);
+  syn_type_morphism_proph_fn := ptrlist_map (!ₛ f);
+|}.
+Next Obligation.
+  move=> 𝔄 𝔅 f x π. elim: x=>//= a l r IH p.
+  by rewrite syn_type_morphism_commutes IH.
+Qed.
+Next Obligation.
+  move=> 𝔄 𝔅 f x. elim: x=>//= a l r IH p.
+  by rewrite (syn_type_morphism_ξl _ _ f) IH.
+Qed.
+
+Program Definition own_list_mapₛ {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅)
+  : own_listₛ 𝔄 →ₛ own_listₛ 𝔅 := {|
+  syn_type_morphism_fn := ptrlist_map (~~!ₛ f);
+  syn_type_morphism_proph_fn := ptrlist_map (!ₛ f);
+|}.
+Next Obligation.
+  move=> 𝔄 𝔅 f x π. elim: x=>//= a l r IH p.
+  by rewrite syn_type_morphism_commutes IH.
+Qed.
+Next Obligation.
+  move=> 𝔄 𝔅 f x. elim: x=>//= a l r IH p.
+  by rewrite (syn_type_morphism_ξl _ _ f) IH.
+Qed.
+
+(** The layout is preserved whenever the element's is, which is what
+  [ty_size_eq2]/[ty_phys_eq2] force a subtyping rule to supply. *)
+Lemma shr_list_size_eq {𝔄 𝔅} :
+  size_of 𝔄 = size_of 𝔅 → size_of (shr_listₛ 𝔄) = size_of (shr_listₛ 𝔅).
+Proof. move=>/= ->. done. Qed.
+Lemma own_list_size_eq {𝔄 𝔅} :
+  size_of 𝔄 = size_of 𝔅 → size_of (own_listₛ 𝔄) = size_of (own_listₛ 𝔅).
+Proof. move=>/= ->. done. Qed.
+
+Lemma shr_list_phys_eq {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) :
+  size_of 𝔄 = size_of 𝔅 →
+  (∀ x, @syn_phys 𝔄 x = @syn_phys 𝔅 (f ~~$ₛ x)) →
+  ∀ x, @syn_phys (shr_listₛ 𝔄) x
+     = @syn_phys (shr_listₛ 𝔅) (shr_list_mapₛ f ~~$ₛ x).
+Proof.
+  move=> Hsz Hph x. by case: x=> [?|a ???]/=; rewrite ?Hph Hsz.
+Qed.
+
+Lemma own_list_phys_eq {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) :
+  size_of 𝔄 = size_of 𝔅 →
+  (∀ x, @syn_phys 𝔄 x = @syn_phys 𝔅 (f ~~$ₛ x)) →
+  ∀ x, @syn_phys (own_listₛ 𝔄) x
+     = @syn_phys (own_listₛ 𝔅) (own_list_mapₛ f ~~$ₛ x).
+Proof.
+  move=> Hsz Hph x. by case: x=> [?|a ???]/=; rewrite ?Hph Hsz.
+Qed.
+
+(** The map commutes with the unfolding, which is what lets the subtyping
+  rule be read off the body.  [mod_tyd] in [typing/rec.v] relabels along
+  [unfoldshrₛ], so its congruence asks for exactly this square. *)
+Definition shr_list_body_mapₛ {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅)
+  : shr_list_bodyₛ 𝔄 →ₛ shr_list_bodyₛ 𝔅 :=
+  psum_mapₛ (𝔄l := [unitₛ; prodₛ 𝔄 (at_clocₛ (shr_listₛ 𝔄))])
+            (𝔅l := [unitₛ; prodₛ 𝔅 (at_clocₛ (shr_listₛ 𝔅))])
+    (idₛ -:: prod_mapₛ f (at_cloc_mapₛ (shr_list_mapₛ f)) -:: -[]).
+Definition own_list_body_mapₛ {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅)
+  : own_list_bodyₛ 𝔄 →ₛ own_list_bodyₛ 𝔅 :=
+  psum_mapₛ (𝔄l := [unitₛ; prodₛ 𝔄 (at_locₛ (own_listₛ 𝔄))])
+            (𝔅l := [unitₛ; prodₛ 𝔅 (at_locₛ (own_listₛ 𝔅))])
+    (idₛ -:: prod_mapₛ f (at_loc_mapₛ (own_list_mapₛ f)) -:: -[]).
+
+Lemma unfoldshr_mapₛ {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) x :
+  unfoldshrₛ ~~$ₛ (shr_list_mapₛ f ~~$ₛ x)
+    = shr_list_body_mapₛ f ~~$ₛ (unfoldshrₛ ~~$ₛ x).
+Proof. by case: x=> [?|????]. Qed.
+
+Lemma unfoldown_mapₛ {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) x :
+  unfoldownₛ ~~$ₛ (own_list_mapₛ f ~~$ₛ x)
+    = own_list_body_mapₛ f ~~$ₛ (unfoldownₛ ~~$ₛ x).
+Proof. by case: x=> [?|????]. Qed.

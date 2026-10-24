@@ -825,6 +825,49 @@ Definition pstoreCT : cifcon :=
   Cifcon pstoreCT_id unit (λ _, Empty_set) (λ _, unit) (λ _, unitO) _.
 Notation pstoreC := (inC pstoreCT).
 
+(** [dinvCT]: a formula held in a *simple invariant*.
+
+  [pstoreCT] is persistent and one-way - [store_fml_acc] hands out
+  [|->[Wguard] Px] and nothing is given back - which is sound only because
+  its content is persistent.  This one holds *owned* content, and its
+  accessor is [dinv_tok_acc]: reversible, the content returned to the world
+  satisfaction.  That is exactly what a Leaf guard needs, [guard_acc] being
+  [Q ∗ (Q -∗ W ∗ T)], and it is what [nola/iris/store.v]'s [store_tok]
+  cannot do - there, access consumes a token and leaves it in the
+  invariant, so the content never comes back.  [ty_box] upstream is happy
+  with that because dereferencing a box moves the pointee out; a guard is
+  not.
+
+  Its child is a [cdom] child, which is the point: a former that holds its
+  argument behind this is [Productive].  Its semantics is [dinv_tok], which
+  mentions no interpretation at all, so - unlike [cif_pstore] and
+  [cif_guard] - this is an ordinary constructor with a [⊣⊢] at every
+  candidate, not a judgment. *)
+Variant dinvCT_id := .
+Definition dinvCT : cifcon :=
+  Cifcon dinvCT_id unit (λ _, Empty_set) (λ _, unit) (λ _, unitO) _.
+Notation dinvC := (inC dinvCT).
+
+Section dinvC.
+  Context `{!dinvC CON} {Σ}.
+  Definition cif_dinv (Px : cif CON Σ) : cif CON Σ :=
+    cif_in dinvCT () nullary (unary Px) ().
+  #[export] Instance cif_dinv_ne : NonExpansive cif_dinv.
+  Proof. move=> ????. rewrite /cif_dinv. solve_proper. Qed.
+  #[export] Instance cif_dinv_productive : Productive cif_dinv.
+  Proof.
+    move=> ????. apply cif_in_preserv_productive=>//. by apply fun_proeqv_later.
+  Qed.
+
+  Context `{!alerusGS (cifOF CON) Σ}.
+  #[export] Program Instance dinvCT_ecsem {JUDG} : Ecsem dinvCT CON JUDG Σ :=
+    ECSEM (λ _ _ _ _ Ψx _, @dinv_tok (cifOF CON) Σ alerus_dinvGS (Ψx ())) _.
+  Next Obligation.
+    solve_proper_prepare. apply dinv_tok_ne. apply H1.
+  Qed.
+End dinvC.
+Notation dinvCS := (inCS dinvCT).
+
 Variant inclCT_id := .
 Definition inclCT : cifcon :=
   Cifcon inclCT_id (lft * lft)%type (λ _, Empty_set) (λ _, Empty_set)
@@ -949,6 +992,7 @@ Class typingC CON : Type := TYPING_C {
   typingC_incl :: inclC CON;
   typingC_exs :: exsC CON;
   typingC_pstore :: pstoreC CON;
+  typingC_dinv :: dinvC CON;
 }.
 Class typingJ CON JUDG Σ : Type := TYPING_J {
   typingJ_guard :: guardJ (cifO CON Σ) JUDG;
@@ -967,6 +1011,7 @@ Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   typingCS_incl :: inclCS CON JUDG Σ;
   typingCS_exs :: exsCS CON JUDG Σ;
   typingCS_pstore :: pstoreCS CON JUDG Σ;
+  typingCS_dinv :: dinvCS CON JUDG Σ;
 }.
 Class typingJS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
@@ -1070,6 +1115,7 @@ Section model.
     exs_fml := (λ 𝔄 Φ, cif_exs Φ);
     pers_fml := cif_pers;
     store_fml := cif_pstore;
+    dinv_fml := cif_dinv;
     guard_fml := cif_guard;
     alive_fml := cif_alive;
     cells_fml := cif_cells;
@@ -1313,6 +1359,15 @@ Section altSem.
     iDestruct (@dinv_tok_acc_persistent (cifOF CON) Σ alerus_dinvGS
       (λ Px, ⟦ Px ⟧ᶜ(δ')) Px HP with "i Wst") as "[Wst $]".
     iFrame.
+  Qed.
+
+  (** [cif_dinv]'s semantics is the invariant token, at every candidate:
+    [dinv_tok] mentions the formula and not the interpretation. *)
+  Lemma dinv_sem_cif {S} (H : alt_any_cif S) Px :
+    S (cif_dinv Px) ⊣⊢ @dinv_tok (cifOF CON) Σ alerus_dinvGS Px.
+  Proof.
+    move: H=> [δ Heq].
+    by rewrite /cand_fun /= Heq /= /cif_dinv sem_cif_in /=.
   Qed.
 
   Lemma pstore_acc_cif {Px} :
@@ -1683,6 +1738,7 @@ Section altSem.
     store_fml_alloc := @pstore_alloc_cif;
     store_fml_pers_at_any := @pstore_pers_cif;
     store_fml_map_at := @pstore_map_cif;
+    dinv_fml_sem_at_any := @dinv_sem_cif;
     alive_sem_at_any := @alive_sem_cif;
     dead_sem_at_any := @dead_sem_cif;
     cells_sem_at_any := @cells_sem_cif;
