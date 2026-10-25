@@ -27,27 +27,28 @@ Section FullBorrows.
   Context `{!invGS_gen hlc Σ}.
   Context `{!boxG Σ, !sinvGS FML Σ, !BorSem FML Σ}.
   
+  (** The lifetime tokens' ghost name, and - separately - the borrow
+    bookkeeping's.  See the head of [nola/alerus/lifetime/inv.v]. *)
+  Context (γlt: gname).
   Context (γ: gname).
   Context (γo: gname).
   Context (γd: gname).
   
   Implicit Types (mprops: gmap_props FML Σ).
   
-  Local Instance modulo_dead_pers γ1 k : Persistent (ModuloDeadPers γ1 k).
-  Proof. apply own_core_persistent. unfold CoreId. trivial. Qed.
  
   Lemma future_vs_create_empty alive dead outlives mbs mprops sn Px dd :
   ¬(dd ## dead) →
   (mbs !! sn = None) →
-  future_vs γ alive dead outlives mbs mprops
-  ⊢ future_vs γ alive dead outlives (<[sn:=Borrow ∅ dd]> mbs) (<[sn:=Px]> mprops).
-  Proof using invGS_gen0 Σ γ γd γo.
+  future_vs γlt γ alive dead outlives mbs mprops
+  ⊢ future_vs γlt γ alive dead outlives (<[sn:=Borrow ∅ dd]> mbs) (<[sn:=Px]> mprops).
+  Proof using γlt invGS_gen0 Σ γ γd γo.
     generalize dead. clear dead.
     induction alive as [my_alive IH] using set_ind_strong. 
     iIntros (my_dead Hdd Hmbssn) "Hvs".
     
     rewrite future_vs_def.
-    rewrite (future_vs_def γ my_alive).
+    rewrite (future_vs_def γlt γ my_alive).
     
     iIntros (k) "%Hin_my_alive #Dead". iSplit.
       { iIntros "NotSwell". iDestruct ("Hvs" $! k Hin_my_alive with "Dead") as "[Hvs _]".
@@ -72,15 +73,15 @@ Section FullBorrows.
   Qed.
   
   Lemma inner_borrow_create_empty alive dead blocked Px :
-      (inner_inv γ γo alive dead blocked) ∗ (bor_sem Px)
+      (inner_inv γlt γ γo alive dead blocked) ∗ (bor_sem Px)
         -∗ |=[box_wsat bor_sem]=>
-        ∃ sn , (inner_inv γ γo alive dead blocked)
+        ∃ sn , (inner_inv γlt γ γo alive dead blocked)
             ∗ OwnBorState γ sn (Borrow ∅ {[ default_dead ]})
             ∗ sinv_tok sn Px.
-  Proof using invGS_gen0 Σ γ γd γo.
+  Proof using γlt invGS_gen0 Σ γ γd γo.
     iIntros "[Inv P]".
     unfold inner_inv.
-    iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [box [vs [%pures [#slices outlives]]]]]]".
+    iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [#DeadsLt [box [vs [%pures [#slices outlives]]]]]]]".
     
     iMod (slice_insert_full (f := boxmap alive dead mbs) (P := Ptotal) Px with "P box") as (sn) "[%Hisnone [#slice box]]".
     assert (mbs !! sn = None) as Hmbssn. {
@@ -100,7 +101,7 @@ Section FullBorrows.
     iExists (bor_sem Px ∗ Ptotal)%I.
     iExists outlives.
     iFrame "auth".
-    iSplitL "box". { 
+    try iFrame "DeadsLt". iSplitL "box". { 
       rewrite boxmap_insert_Borrow.
       rewrite bool_decide_eq_true_2. { iFrame. }
       set_solver.
@@ -133,7 +134,7 @@ Section FullBorrows.
       ∗ (mprops !! sn ≡ Some Px)
   ⊢ full_borrows_invalidated_via alive dead k mbs mprops
       ∗ (⌜ al ⊆ alive ∧ k ∉ al ∧ al' ⊆ alive ∧ k ∈ al' ⌝ -∗ bor_sem Px).
-  Proof using invGS_gen0 Σ γ γd γo.
+  Proof using γlt invGS_gen0 Σ γ γd γo.
     iIntros (Hne Hdisj Halive Hdead Hmbssn Hmbssn2) "[inval #Heq]".
     destruct (decide (k ∈ al ∧ al ⊆ alive)) as [Hin|Hout].
     
@@ -191,7 +192,7 @@ Section FullBorrows.
     full_borrows_revalidated_via alive dead k
         (<[sn2:=Borrow (al ∪ al') dd]> (<[sn:=Borrow al al']> (delete sn mbs)))
         (<[sn2:=Px]> (<[sn:=Px]> (delete sn mprops))).
-  Proof using invGS_gen0 Σ γ γd γo.
+  Proof using γlt invGS_gen0 Σ γ γd γo.
     iIntros (Hdisj Halive Hdead Hwfal' Hmbssn Hmbssn2) "[reval [#Heq P]]".
     
     iApply full_borrows_revalidated_via_insert_false.
@@ -222,13 +223,13 @@ Section FullBorrows.
     (al' ⊆ alive ∪ dead) →
     mbs !! sn = Some (Borrow al dd) →
     mbs !! sn2 = None →
-    future_vs γ alive dead outlives mbs mprops
+    future_vs γlt γ alive dead outlives mbs mprops
       ∗ (mprops !! sn ≡ Some Px)
     ⊢ 
-    future_vs γ alive dead outlives
+    future_vs γlt γ alive dead outlives
       (<[sn2:=Borrow (al ∪ al') dd]> (<[sn:=Borrow al al']> mbs))
       (<[sn2:=Px]> (<[sn:=Px]> (delete sn mprops))).
-  Proof using invGS_gen0 Σ γ γd γo.
+  Proof using γlt invGS_gen0 Σ γ γd γo.
     replace (<[sn:=Borrow al al']> mbs) with (<[sn:=Borrow al al']> (delete sn mbs)).
       2: { apply map_eq. { intros i. destruct (decide (sn = i)).
           - subst sn. rewrite lookup_insert_eq. rewrite lookup_insert_eq. trivial.
@@ -241,7 +242,7 @@ Section FullBorrows.
     iIntros (my_dead Hdisj Hdead Hwfal Hmbssn Hmbssn2) "[Hvs #Heq]".
     
     rewrite future_vs_def.
-    rewrite (future_vs_def γ my_alive).
+    rewrite (future_vs_def γlt γ my_alive).
     iIntros (k) "%Hin_my_alive Dead". iSplit.
       { iIntros "NotSwell". iDestruct ("Hvs" $! k Hin_my_alive with "Dead") as "[Hvs _]".
         iApply IH. { intuition. } { set_solver. } { set_solver. }
@@ -280,21 +281,21 @@ Section FullBorrows.
   Lemma inner_reborrow alive dead blocked Px sn al al' :
       swell_set al' →
       (al' ⊆ alive ∪ dead) →
-      (inner_inv γ γo alive dead blocked)
+      (inner_inv γlt γ γo alive dead blocked)
         ∗ OwnBorState γ sn (Borrow al {[default_dead]})
         ∗ sinv_tok sn Px
         -∗ |=[box_wsat bor_sem]=> ∃ sn1 sn2,
-      (inner_inv γ γo alive dead blocked)
+      (inner_inv γlt γ γo alive dead blocked)
         ∗ OwnBorState γ sn1 (Borrow (al ∪ al') {[default_dead]})
         ∗ OwnBorState γ sn2 (Borrow al al')
         ∗ sinv_tok sn1 Px
         ∗ sinv_tok sn2 Px.
-  Proof using invGS_gen0 Σ γ γd γo.
+  Proof using γlt invGS_gen0 Σ γ γd γo.
     intros swell_al' Hal'wf.
     iIntros "[Inv [OwnBor #sliceP]]".
     destruct (decide (al ## dead)) as [Hdisj|Hndisj].
     2: {
-      iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [box [vs [#pures [#slices outlives]]]]]]".
+      iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [#DeadsLt [box [vs [#pures [#slices outlives]]]]]]]".
       iMod (inner_fake γ alive dead blocked (al ∪ al') {[default_dead]} Px with "Modulo") as (sn1) "[Modulo [A Aslice]]". { set_solver. }
       iMod (inner_fake γ alive dead blocked al al' Px with "Modulo") as (sn2) "[Modulo [B Bslice]]". { set_solver. }
       iModIntro. iExists sn1. iExists sn2. iFrame. iFrame "#".
@@ -303,13 +304,13 @@ Section FullBorrows.
     destruct (decide (al' ## dead)) as [Hdisj'|Hndisj].
     2: {
       iDestruct (inv_get_dead with "Inv") as "%Hdd".
-      iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [box [vs [#pures [#slices outlives]]]]]]".
+      iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [#DeadsLt [box [vs [#pures [#slices outlives]]]]]]]".
       iMod (inner_fake γ alive dead blocked (al ∪ al') {[default_dead]} Px with "Modulo") as (sn1) "[Modulo [A Aslice]]". { set_solver. }
       
       assert (∃ x , x ∈ al' ∩ dead) as Hex_x. { apply set_choose_L; set_solver. }
       destruct Hex_x as [x Hex].
-      iDestruct (get_all_modulo_dead_pers γ dead with "Modulo") as "[Modulo #Deads]".
-      iMod (update_bor_state_borrow_fix_dead γ sn al {[default_dead]} al' default_dead x with "[OwnBor]") as "OwnBor2"; trivial. { set_solver. } { set_solver. } {
+      iDestruct (get_all_modulo_dead_pers γlt γ dead with "DeadsLt Modulo") as "[Modulo #Deads]".
+      iMod (update_bor_state_borrow_fix_dead' γlt γ sn al {[default_dead]} al' default_dead x with "[OwnBor]") as "OwnBor2"; trivial. { set_solver. } { set_solver. } {
         iFrame. iSplitL.
           { iApply "Deads". iPureIntro. trivial. }
           { iApply "Deads". iPureIntro. set_solver. }
@@ -319,7 +320,7 @@ Section FullBorrows.
     }
    
     unfold inner_inv.
-    iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [box [vs [%pures [#slices outlives]]]]]]".
+    iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [#DeadsLt [box [vs [%pures [#slices outlives]]]]]]]".
     
     iDestruct (agree_bor_state_borrow_lts γ sn mbs dead al {[default_dead]}
         with "[Modulo auth OwnBor]") as (dd') "[%Hmbssn %Hrel_dd]". { set_solver. } { iFrame.    }
@@ -371,7 +372,7 @@ Section FullBorrows.
     iExists (bor_sem Px ∗ Ptotal)%I.
     iExists outlives.
     iFrame "outlives". iFrame "auth".
-    iSplitL "box". {
+    try iFrame "DeadsLt". iSplitL "box". {
       rewrite boxmap_insert_Borrow.
       rewrite boxmap_insert_Borrow.
       rewrite bool_decide_eq_true_2.
@@ -404,17 +405,17 @@ Section FullBorrows.
    Lemma inner_borrow_create alive dead blocked lt Px :
       swell_set lt →
       (lt ⊆ alive ∪ dead) →
-      (inner_inv γ γo alive dead blocked)
-        ∗ LtState γ alive dead
+      (inner_inv γlt γ γo alive dead blocked)
+        ∗ LtState γlt alive dead
         ∗ (bor_sem Px)
         -∗ |=[box_wsat bor_sem]=>
-        ∃ sn sn2, (inner_inv γ γo alive dead blocked)
-            ∗ LtState γ alive dead
+        ∃ sn sn2, (inner_inv γlt γ γo alive dead blocked)
+            ∗ LtState γlt alive dead
             ∗ OwnBorState γ sn (Borrow lt {[ default_dead ]})
             ∗ OwnBorState γ sn2 (Borrow ∅ lt)
             ∗ sinv_tok sn Px
             ∗ sinv_tok sn2 Px.
-  Proof using invGS_gen0 Σ γ γd γo.
+  Proof using γlt invGS_gen0 Σ γ γd γo.
     intros swell_lt Hlt. iIntros "[Inv [LtState P]]".
     iMod (inner_borrow_create_empty alive dead blocked Px with "[Inv P]") as (sn) "[Inv [OwnBor #slice]]". { iFrame. }
     iMod (inner_reborrow alive dead blocked Px sn ∅ lt swell_lt Hlt with "[Inv OwnBor]") as (sn1 sn2) "[Ha [Hb [Hd [He Hf]]]]".
@@ -427,13 +428,13 @@ Section FullBorrows.
       swell_set lt →
       (lt ⊆ alive ∪ dead) →
       Delayed γd None
-        ∗ (outer_inv γ γo γd alive dead blocked)
-        ∗ LtState γ alive dead
+        ∗ (outer_inv γlt γ γo γd alive dead blocked)
+        ∗ LtState γlt alive dead
         ∗ (bor_sem Px)
         -∗ |=[box_wsat bor_sem]=>
       Delayed γd None ∗
-      ∃ sn sn2, (outer_inv γ γo γd alive dead blocked)
-          ∗ LtState γ alive dead
+      ∃ sn sn2, (outer_inv γlt γ γo γd alive dead blocked)
+          ∗ LtState γlt alive dead
           ∗ OwnBorState γ sn (Borrow lt {[ default_dead ]})
           ∗ OwnBorState γ sn2 (Borrow ∅ lt)
           ∗ sinv_tok sn Px
@@ -451,12 +452,12 @@ Section FullBorrows.
       swell_set al' →
       (al' ⊆ alive ∪ dead) →
       Delayed γd None
-       ∗ (outer_inv γ γo γd alive dead blocked)
+       ∗ (outer_inv γlt γ γo γd alive dead blocked)
         ∗ OwnBorState γ sn (Borrow al {[default_dead]})
         ∗ sinv_tok sn Px
         -∗ |=[box_wsat bor_sem]=> ∃ sn1 sn2,
       Delayed γd None
-        ∗ (outer_inv γ γo γd alive dead blocked)
+        ∗ (outer_inv γlt γ γo γd alive dead blocked)
         ∗ OwnBorState γ sn1 (Borrow (al ∪ al') {[default_dead]})
         ∗ OwnBorState γ sn2 (Borrow al al')
         ∗ sinv_tok sn1 Px

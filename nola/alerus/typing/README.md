@@ -456,9 +456,62 @@ that holds it can read its own `f : fn →ⱼ` back out of a borrow and call
 it, because calling asks for the `lvs_below … j` the body already has.
 What stops that in the thesis is that a reference at level `k` interprets
 `fn →ⱼ` only for `j ≤ k`, so the borrow families themselves have to be
-levelled - and in this port they cannot be yet, because `lifetime/ra.v`'s
-`LtRa` carries the lifetime atoms and the borrow states in one record
-under one ghost name.  See PLAN.md's item 2.
+levelled.  Which part of them, exactly: `box_wsat bor_sem`, `shr_wsat`
+**and `llft_inv_main`**.  The last is not interpretation-free, whatever an
+earlier version of this file said: it is `outer_inv`, which is
+`inner_inv`, which holds `box bor_sem (boxmap alive dead mbs) Ptotal` and
+the formula map `mprops` beside `AuthBorState … mbs`, tied by
+`dom mbs = dom mprops`.  Levelling the box therefore means levelling the
+borrow bookkeeping, which used to sit at `llft_name` with the lifetime
+tokens - and that is why `lifetime/ra.v`'s `LtRa` had to be split after
+all.  It now is: `llft_logicGS` carries a `bor_name` beside `llft_name`,
+and the split needed no new camera, because `lt_inv`'s only cross term
+was `w ⊆ d` and `consistent_modulo` was always about the borrow side's
+own copy of the dead set.
+
+`typing/strat_bor.v` then checks that the levelled design is *sound* with
+borrows in it, which neither source establishes: the thesis's Chapter 5
+has no lifetimes and no borrows, and `rust_halt` has no function type at
+all - there is no `ty_fn` in `nola/examples/rust_halt/`.  Over Nola's
+native `borrow.v` and `lft.v`, which already separate the borrow ghost
+name from the lifetime tokens (`lftG` has no ghost name and no world
+satisfaction, and `lft_end` is a bare `==∗`), it gives each execution
+level its own borrowing machinery and proves `typed_call_borrowed`: a
+closure of type `A →ⱼ B` stored in a borrow at slot level `k`, retrieved
+at execution level `i` and called, with `j ≤ k < i` forced by the storing
+and opening rules.  `knot_not_typable` is why no `j` closes the knot, and
+`ex_borfn_total` runs such a program and proves it terminates.
+
+It also locates the port's real obstacle, by being free of it.  Nola's
+`lft_end` is `1.[α] ==∗ [†α]`, needing no world satisfaction at all, and
+a dead lifetime's borrows are reclaimed lazily by the lender at its own
+level - `typed_ex_endlft` runs the same program along that route.  The
+port's `expire_lt.v` is not like that: `inner_kill_lt` runs under
+`|=[box_wsat bor_sem]{…}=>`, because `inner_inv` is *indexed by the dead
+set* and a death empties and fills that level's slices.  With one
+`inner_inv` per level, killing would have to advance every level at once,
+and a body at level `j` never holds the levels at or above `j`.
+
+The split is what makes the way out expressible: each level keeps its own
+`ModuloDead`, so it can hold its own `sd_k ⊆ sd` and catch up lazily the
+next time its world satisfaction is held - sound because `inner_inv` now
+carries `□ ∀ d ∈ dead, Dead llft_name d` persistently, which is what
+replaced the camera-level coupling.  Giving a lifetime a level, and
+keeping its borrows below it, is then what makes the lag invisible.
+
+The one thing that could have sunk that design is checked rather than
+assumed, in `lifetime/inv.v`: a lagging level can be *bounded* by a
+persistent witness because death is persistent, but **aliveness is not**,
+and `inner_inv` consults `alive` in three places.  It does not need to.
+Each consults it only as `al ⊆ alive` for a borrow's own alive set, and
+`map_wf` gives `al ∪ de ⊆ alive ∪ dead` with `alive ## dead`, so
+`al ⊆ alive ↔ al ## dead` (`subseteq_alive_iff`); `boxmap_alive_free`,
+`invalidated_alive_free` and `revalidated_alive_free` carry the
+substitution out as equalities of the *boolean*, so they rewrite under
+`boxmap` and `borrow_sum` without disturbing a proof.  A level can then
+be indexed by its own dead set alone, and "κ is alive" transfers in for
+free.  The remaining work is in `lifetime/inv.v` and
+`lifetime/expire_lt.v`; PLAN.md item 2 has the shape of it.
 
 ## What this means for the earlier plan
 

@@ -164,7 +164,7 @@ Section alerusC.
     | as_vo ξ x d => .VO[ξ] x d
     | as_pc ξ x xp d => .PC[ξ] x xp d
     | as_gsrc s => gsrc_interp (FML:=FMLC) s
-    | as_bor_state sn bs => ra.OwnBorState llft_name sn bs
+    | as_bor_state sn bs => ra.OwnBorState bor_name sn bs
     | as_heap lc cells cv =>
         points_to_seq (FML:=FMLC) heap_name lc cells cv
     | as_cellsvec cs fv => cells_points_to_fancy_value_vec (FML:=FMLC) cs fv
@@ -279,7 +279,7 @@ Section sem_at.
 
   (** The semantics of the custom constructors, computed *)
   Lemma cif_bor_state_sem {δ sn bs} :
-    ⟦ cif_bor_state sn bs ⟧ᶜ(δ) ⊣⊢ ra.OwnBorState llft_name sn bs.
+    ⟦ cif_bor_state sn bs ⟧ᶜ(δ) ⊣⊢ ra.OwnBorState bor_name sn bs.
   Proof. by rewrite /cif_bor_state sem_cif_in. Qed.
   Lemma cif_dead_atom_sem {δ k} :
     ⟦ cif_dead_atom k ⟧ᶜ(δ) ⊣⊢ ra.Dead llft_name k.
@@ -330,7 +330,7 @@ Section sem_at.
 
   (** The borrow-state constructor means borrow-state ownership *)
   Program Definition BorStateFml_at δ
-    : @BorStateFml Σ _ (cifOF CON) (BorSem_at δ) llft_name :=
+    : @BorStateFml Σ _ (cifOF CON) (BorSem_at δ) bor_name :=
     {| bor_state_fml := (λ sn bs, cif_bor_state sn bs : cifOF CON $oi Σ) |}.
   Next Obligation. move=> *. exact cif_bor_state_sem. Qed.
 

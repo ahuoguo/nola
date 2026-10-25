@@ -27,6 +27,9 @@ Section FullBorrows.
   Context `{!invGS_gen hlc Σ}.
   Context `{!boxG Σ, !sinvGS FML Σ, !BorSem FML Σ}.
   
+  (** The lifetime tokens' ghost name, and - separately - the borrow
+    bookkeeping's.  See the head of [nola/alerus/lifetime/inv.v]. *)
+  Context (γlt: gname).
   Context (γ: gname).
   Context (γo: gname).
   Context (γd: gname).
@@ -45,15 +48,15 @@ Section FullBorrows.
   
   Lemma future_vs_augment_outlives alive dead outlives outlives' mbs mprops :
     outlives ⊆ outlives' →
-    future_vs γ alive dead outlives mbs mprops ⊢
-    future_vs γ alive dead outlives' mbs mprops.
-  Proof using invGS_gen0 Σ γ γd γo.
+    future_vs γlt γ alive dead outlives mbs mprops ⊢
+    future_vs γlt γ alive dead outlives' mbs mprops.
+  Proof using γlt invGS_gen0 Σ γ γd γo.
     intros Hc.
     generalize dead. clear dead.
     induction alive as [my_alive IH] using set_ind_strong. 
     iIntros (my_dead) "Hvs".
     rewrite future_vs_def.
-    rewrite (future_vs_def γ my_alive).
+    rewrite (future_vs_def γlt γ my_alive).
     
     iIntros (k) "%Hin_my_alive Dead". iSplit.
       { iIntros "NotSwell". iDestruct ("Hvs" $! k with "[] Dead") as "[Hvs _]".
@@ -95,13 +98,13 @@ Section FullBorrows.
     (∀ o , o ∈ outlives' → o.1 ⊆ alive ∪ dead ∧ o.2 ∈ alive ∪ dead) →
     (outlives ⊆ outlives') →
     (outlives_consistent dead outlives') →
-      (inner_inv γ γo alive dead blocked) ∗ Outlives γo outlives
-    ==∗ (inner_inv γ γo alive dead blocked) ∗ Outlives γo outlives'.
-  Proof using invGS_gen0 Σ γ γd γo.
+      (inner_inv γlt γ γo alive dead blocked) ∗ Outlives γo outlives
+    ==∗ (inner_inv γlt γ γo alive dead blocked) ∗ Outlives γo outlives'.
+  Proof using γlt invGS_gen0 Σ γ γd γo.
     intros Ho Hsub Hc.
     iIntros "[Inv Outlives]".
     unfold inner_inv.
-    iDestruct "Inv" as (mbs mprops Ptotal outlives2) "[auth [Modulo [box [vs [%pures [#slices outlives]]]]]]".
+    iDestruct "Inv" as (mbs mprops Ptotal outlives2) "[auth [Modulo [#DeadsLt [box [vs [%pures [#slices outlives]]]]]]]".
     iDestruct (outlives_agree with "[outlives Outlives]") as "%Hoeq". { iFrame. }
     subst outlives2.
     
@@ -110,6 +113,7 @@ Section FullBorrows.
     iModIntro. iSplitR "Outlives"; last by iFrame "Outlives".
     iExists mbs. iExists mprops. iExists Ptotal. iExists outlives'.
     iFrame "auth". iFrame "box". iFrame "outlives". iFrame "Modulo".
+    iFrame "DeadsLt".
     iDestruct (future_vs_augment_outlives alive dead outlives outlives' mbs mprops with "vs") as "vs"; trivial.
     iFrame "vs".
     iSplitL. {
@@ -124,8 +128,8 @@ Section FullBorrows.
     (∀ o , o ∈ outlives' → o.1 ⊆ alive ∪ dead ∧ o.2 ∈ alive ∪ dead) →
     (outlives ⊆ outlives') →
     (outlives_consistent dead outlives') →
-      Delayed γd None ∗ (outer_inv γ γo γd alive dead blocked) ∗ Outlives γo outlives
-    ==∗ Delayed γd None ∗ (outer_inv γ γo γd alive dead blocked) ∗
+      Delayed γd None ∗ (outer_inv γlt γ γo γd alive dead blocked) ∗ Outlives γo outlives
+    ==∗ Delayed γd None ∗ (outer_inv γlt γ γo γd alive dead blocked) ∗
       Outlives γo outlives'.
   Proof.
     intros Howf Hosub Hc.

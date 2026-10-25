@@ -29,6 +29,9 @@ Section FullBorrows.
   Context `{!invGS_gen hlc Σ}.
   Context `{!boxG Σ, !sinvGS FML Σ, !BorSem FML Σ}.
   
+  (** The lifetime tokens' ghost name, and - separately - the borrow
+    bookkeeping's.  See the head of [nola/alerus/lifetime/inv.v]. *)
+  Context (γlt: gname).
   Context (γ: gname).
   Context (γo: gname).
   Context (γd: gname).
@@ -36,26 +39,26 @@ Section FullBorrows.
   Implicit Types (mprops: gmap_props FML Σ).
  
   Lemma inv_get_alive_dead_disj alive dead blocked
-    : inner_inv γ γd alive dead blocked ⊢ ⌜alive ## dead⌝.
+    : inner_inv γlt γ γd alive dead blocked ⊢ ⌜alive ## dead⌝.
   Proof.
-    iIntros "Inv". iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [modulo [box [vs [%pures [#slices outlives]]]]]]".
+    iIntros "Inv". iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [modulo [#DeadsLt [box [vs [%pures [#slices outlives]]]]]]]".
     unfold inv.map_wf in pures. intuition.
   Qed.
   
   Lemma inv_get_outlives_condition alive dead blocked outlives
-    : inner_inv γ γo alive dead blocked ∗ Outlives γo outlives ⊢ 
+    : inner_inv γlt γ γo alive dead blocked ∗ Outlives γo outlives ⊢ 
       ⌜∀ o , o ∈ outlives → o.1 ⊆ alive ∪ dead ∧ o.2 ∈ alive ∪ dead⌝.
   Proof.
-    iIntros "[Inv Outlives]". iDestruct "Inv" as (mbs mprops Ptotal outlives') "[auth [modulo [box [vs [%pures [#slices outlives]]]]]]".
+    iIntros "[Inv Outlives]". iDestruct "Inv" as (mbs mprops Ptotal outlives') "[auth [modulo [#DeadsLt [box [vs [%pures [#slices outlives]]]]]]]".
     iDestruct (outlives_agree with "[outlives Outlives]") as "%Hoeq". { iFrame. }
     subst outlives'. unfold inv.map_wf in pures. intuition.
   Qed.
   
   Lemma inv_get_outlives_consistent alive dead blocked outlives
-    : inner_inv γ γo alive dead blocked ∗ Outlives γo outlives ⊢ 
+    : inner_inv γlt γ γo alive dead blocked ∗ Outlives γo outlives ⊢ 
       ⌜outlives_consistent dead outlives⌝.
   Proof.
-    iIntros "[Inv Outlives]". iDestruct "Inv" as (mbs mprops Ptotal outlives') "[auth [modulo [box [vs [%pures [#slices outlives]]]]]]".
+    iIntros "[Inv Outlives]". iDestruct "Inv" as (mbs mprops Ptotal outlives') "[auth [modulo [#DeadsLt [box [vs [%pures [#slices outlives]]]]]]]".
     iDestruct (outlives_agree with "[outlives Outlives]") as "%Hoeq". { iFrame. }
     subst outlives'. intuition.
   Qed.
@@ -79,20 +82,20 @@ Section FullBorrows.
   
   Lemma inner_instant_kill_lt alive dead blocked k :
     (k ∉ alive ∪ dead) →
-    Dead γ k ∗
-    (inner_inv γ γo alive dead blocked)
+    Dead γlt k ∗
+    (inner_inv γlt γ γo alive dead blocked)
       ={∅}=∗
-    (inner_inv γ γo alive (dead ∪ {[k]}) blocked).
+    (inner_inv γlt γ γo alive (dead ∪ {[k]}) blocked).
   Proof.
     intros Hk_fresh.
     iIntros "[Dead Inv]".
     unfold inner_inv.
-    iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [box [vs [%pures [#slices outlives]]]]]]".
+    iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [#DeadsLt [box [vs [%pures [#slices outlives]]]]]]]".
     
-    iMod (modulo_dead_new γ k dead with "[Dead Modulo]") as "Modulo".
-      { iFrame. }
+    iMod (modulo_dead_new γ k dead with "Modulo") as "Modulo".
+    iDestruct (deads_extend γlt dead k with "Dead DeadsLt") as "#DeadsLt2".
     
-    iDestruct (llfb_fb_vs_for_new_lt' γ alive dead blocked outlives alive dead mbs mprops k with "vs") as "vs"; trivial.
+    iDestruct (llfb_fb_vs_for_new_lt' γlt γ alive dead blocked outlives alive dead mbs mprops k with "vs") as "vs"; trivial.
       { intuition. }
       { unfold inv.map_wf in pures. intuition. }
       { set_solver. }
@@ -101,7 +104,7 @@ Section FullBorrows.
     iModIntro. iExists mbs. iExists mprops. iExists Ptotal. iExists outlives.
     iFrame "auth". iFrame "Modulo".
     destruct pures as [Hdom [Hwf Hoc]].
-    iSplitL "box". {
+    iFrame "DeadsLt2". iSplitL "box". {
       replace (boxmap alive (dead ∪ {[k]}) mbs) with (boxmap alive dead mbs). { iFrame. }
       unfold boxmap. apply map_eq. intros sn.
       rewrite lookup_fmap. rewrite lookup_fmap.
@@ -199,7 +202,7 @@ Section FullBorrows.
      - rewrite Hmbs in Hm. discriminate.
    }
    iMod "X" as "[H box]". iModIntro.
-   iSplitL "box". {
+   try iFrame "DeadsLt". iSplitL "box". {
       replace ((boxmap (alive ∖ {[k]}) dead mbs)) with (((λ _ : FML $oi Σ, false) <$>
                       map_imap
                         (λ (sn : gname) (bs : BorState),
@@ -324,25 +327,24 @@ Section FullBorrows.
   Local Instance dead_pers γ1 k : Persistent (Dead γ1 k).
   Proof. apply own_core_persistent. unfold CoreId. trivial. Qed.
   
-  Local Instance modulo_dead_pers γ1 k : Persistent (ModuloDeadPers γ1 k).
-  Proof. apply own_core_persistent. unfold CoreId. trivial. Qed.
   
   Lemma inner_kill_lt alive dead blocked outlives k :
     (k ∈ alive) →
     (k ∉ blocked) →
     (∀ other , (other, k) ∈ outlives → ¬(other ## (dead ∪ {[k]}))) →
-    (inner_inv γ γo alive dead blocked) ∗ Outlives γo outlives ∗ Dead γ k
+    (inner_inv γlt γ γo alive dead blocked) ∗ Outlives γo outlives ∗ Dead γlt k
       -∗ |=[box_wsat bor_sem]{↑NllftUsr ∪ ↑NllftUsr2}=>
-    (inner_inv γ γo (alive ∖ {[k]}) (dead ∪ {[k]}) blocked) ∗ Outlives γo outlives.
+    (inner_inv γlt γ γo (alive ∖ {[k]}) (dead ∪ {[k]}) blocked) ∗ Outlives γo outlives.
   Proof.
     intros Hk_alive Hk_not_blocked Houtlives_okay.
     iIntros "[Inv [Outlives #Dead]]".
-    iDestruct "Inv" as (mbs mprops Ptotal outlives') "[auth [Modulo [box [vs [%pures [#slices outlives]]]]]]".
+    iDestruct "Inv" as (mbs mprops Ptotal outlives') "[auth [Modulo [#DeadsLt [box [vs [%pures [#slices outlives]]]]]]]".
     iDestruct (outlives_agree with "[outlives Outlives]") as "%Hoeq". { iFrame. }
     subst outlives'.
     
-    iMod (modulo_dead_new γ k dead with "[Dead Modulo]") as "Modulo". { iFrame. iFrame "#". }
-    iDestruct (get_all_modulo_dead_pers γ with "Modulo") as "[Modulo #alldeadpers]".
+    iMod (modulo_dead_new γ k dead with "Modulo") as "Modulo".
+    iDestruct (deads_extend γlt dead k with "Dead DeadsLt") as "#DeadsLt2".
+    iDestruct (get_all_modulo_dead_pers γlt γ _ with "DeadsLt2 Modulo") as "[Modulo #alldeadpers]".
     
     destruct pures as [Hp [Hwf Hrest]]. 
     
@@ -373,7 +375,7 @@ Section FullBorrows.
 
     iModIntro. iSplitR "Outlives". 2: { iFrame. }
     unfold inner_inv. iExists mbs. iExists mprops. iExists Ptotal.
-    iExists outlives. iFrame. iFrame "slices". iPureIntro.
+    iExists outlives. iFrame. iFrame "slices DeadsLt2". iPureIntro.
    
     split; trivial. split.
     { apply map_wf_preserved_on_kill; trivial. }
@@ -404,18 +406,19 @@ Section FullBorrows.
     (k ∈ alive) →
     (k ∉ blocked) →
     (∀ other , (other, k) ∈ outlives → ¬(other ## (dead ∪ {[k]}))) →
-    (inner_inv γ γo alive dead blocked) ∗ Outlives γo outlives ∗ Dead γ k
+    (inner_inv γlt γ γo alive dead blocked) ∗ Outlives γo outlives ∗ Dead γlt k
       -∗ |=[box_wsat bor_sem]=>
-    (inner_inv γ γo (alive ∖ {[k]}) (dead ∪ {[k]}) blocked) ∗ Outlives γo outlives.
+    (inner_inv γlt γ γo (alive ∖ {[k]}) (dead ∪ {[k]}) blocked) ∗ Outlives γo outlives.
   Proof.
     intros Hnotswell Hk_alive Hk_not_blocked Houtlives_okay.
     iIntros "[Inv [Outlives #Dead]]".
-    iDestruct "Inv" as (mbs mprops Ptotal outlives') "[auth [Modulo [box [vs [%pures [#slices outlives]]]]]]".
+    iDestruct "Inv" as (mbs mprops Ptotal outlives') "[auth [Modulo [#DeadsLt [box [vs [%pures [#slices outlives]]]]]]]".
     iDestruct (outlives_agree with "[outlives Outlives]") as "%Hoeq". { iFrame. }
     subst outlives'.
     
-    iMod (modulo_dead_new γ k dead with "[Dead Modulo]") as "Modulo". { iFrame. iFrame "#". }
-    iDestruct (get_all_modulo_dead_pers γ with "Modulo") as "[Modulo #alldeadpers]".
+    iMod (modulo_dead_new γ k dead with "Modulo") as "Modulo".
+    iDestruct (deads_extend γlt dead k with "Dead DeadsLt") as "#DeadsLt2".
+    iDestruct (get_all_modulo_dead_pers γlt γ _ with "DeadsLt2 Modulo") as "[Modulo #alldeadpers]".
     
     destruct pures as [Hp [Hwf Hrest]]. 
     
@@ -433,7 +436,7 @@ Section FullBorrows.
     unfold inner_inv. iExists mbs. iExists mprops. iExists Ptotal.
     iExists outlives.
     rewrite <- (boxmap_unswell_eq alive dead blocked outlives); trivial.
-    iFrame. iFrame "slices". 
+    iFrame. iFrame "slices DeadsLt2".
     iPureIntro.
     split; trivial. split.
     { apply map_wf_preserved_on_kill; trivial. }
@@ -445,15 +448,15 @@ Section FullBorrows.
     (k ∈ alive) →
     (k ∉ blocked) →
     (∀ other , (other, k) ∈ outlives → ¬(other ## (dead ∪ {[k]}))) →
-    (inner_inv γ γo alive dead blocked) ∗ Outlives γo outlives ∗ Dead γ k
+    (inner_inv γlt γ γo alive dead blocked) ∗ Outlives γo outlives ∗ Dead γlt k
       -∗ |=[box_wsat bor_sem]{↑NllftUsr ∪ ↑NllftUsr2}=>
-    (inner_inv γ γo (alive ∖ {[k]}) (dead ∪ {[k]}) blocked) ∗ Outlives γo outlives.
+    (inner_inv γlt γ γo (alive ∖ {[k]}) (dead ∪ {[k]}) blocked) ∗ Outlives γo outlives.
   Proof. intros _. apply inner_kill_lt. Qed.
   
   Lemma outer_instant_kill_lt alive dead blocked k :
     (k ∉ alive ∪ dead) →
-    Dead γ k ∗ (outer_inv γ γo γd alive dead blocked) ={∅}=∗
-    (outer_inv γ γo γd alive (dead ∪ {[k]}) blocked).
+    Dead γlt k ∗ (outer_inv γlt γ γo γd alive dead blocked) ={∅}=∗
+    (outer_inv γlt γ γo γd alive (dead ∪ {[k]}) blocked).
   Proof.
     intros Had.
     iIntros "[#Dead Inv]". iDestruct "Inv" as (opt_k) "[D Inv]".
@@ -479,9 +482,9 @@ Section FullBorrows.
   Lemma outer_kill_lt_step1 alive dead blocked k :
     (k ∈ alive) →
     (k ∉ dead) →
-    (outer_inv γ γo γd alive dead blocked) ∗ Delayed γd None
+    (outer_inv γlt γ γo γd alive dead blocked) ∗ Delayed γd None
       -∗ |=[box_wsat bor_sem]=>
-    (outer_inv γ γo γd (alive ∖ {[k]}) (dead ∪ {[k]}) blocked) ∗ Delayed γd (Some (k, alive ∖ {[k]})).
+    (outer_inv γlt γ γo γd (alive ∖ {[k]}) (dead ∪ {[k]}) blocked) ∗ Delayed γd (Some (k, alive ∖ {[k]})).
   Proof.
     intros kalive kdead.
     iIntros "[Inv Delayed]". iDestruct "Inv" as (opt_k) "[D Inv]".
@@ -511,12 +514,12 @@ Section FullBorrows.
     (swell k → b = true) →
     (k ∉ blocked) →
     (∀ other , (other, k) ∈ outlives → ¬(other ⊆ alive')) →
-    (outer_inv γ γo γd alive dead blocked)
+    (outer_inv γlt γ γo γd alive dead blocked)
       ∗ Outlives γo outlives
-      ∗ Dead γ k
+      ∗ Dead γlt k
       ∗ Delayed γd (Some (k, alive'))
       -∗ |=[box_wsat bor_sem]{↑NllftUsr ∪ ↑NllftUsr2}=>
-    (outer_inv γ γo γd alive dead blocked)
+    (outer_inv γlt γ γo γd alive dead blocked)
       ∗ Outlives γo outlives
       ∗ Delayed γd None.
   Proof.
@@ -561,15 +564,15 @@ Section FullBorrows.
     ¬(de ## dead) →
     (∀ (k : lt_atom) , k ∈ al → (bl, k) ∈ outlives) →
     Delayed γd None
-        ∗ (outer_inv γ γo γd alive dead blocked)
+        ∗ (outer_inv γlt γ γo γd alive dead blocked)
         ∗ Outlives γo outlives
         ∗ OwnBorState γ sn (Borrow al de)
         ∗ sinv_tok sn Px
         -∗ |=[box_wsat bor_sem]=> bor_sem Px ∗ ∀ Qx, 
-        ((bor_sem Qx ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ bor_sem Px)) ∗ (bor_sem Qx)
+        ((bor_sem Qx ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γlt k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ bor_sem Px)) ∗ (bor_sem Qx)
           -∗ |=[box_wsat bor_sem]=> ∃ sn2,
     Delayed γd None
-        ∗ (outer_inv γ γo γd alive dead blocked)
+        ∗ (outer_inv γlt γ γo γd alive dead blocked)
         ∗ Outlives γo outlives
         ∗ OwnBorState γ sn2 (Borrow al de)
         ∗ sinv_tok sn2 Qx
@@ -580,7 +583,7 @@ Section FullBorrows.
     iDestruct "Inv" as (opt_k) "[D Inv]".
     iDestruct (delayed_agree with "[D Delayed]") as "%Heq". { iFrame "D Delayed". }
     subst opt_k.
-    iMod (inner_unborrow_atomic γ γo γd alive dead blocked outlives sn bl al de Px Hal Hde with "[H Inv]") as "[P H]"; trivial. { iFrame. }
+    iMod (inner_unborrow_atomic γlt γ γo γd alive dead blocked outlives sn bl al de Px Hal Hde with "[H Inv]") as "[P H]"; trivial. { iFrame. }
     iModIntro. iFrame "P". iIntros (Qx). iDestruct ("H" $! Qx) as "H". iIntros "A".
     iDestruct ("H" with "A") as "H". iMod "H" as (sn2) "H". iModIntro. iExists sn2.
     iFrame. iFrame "H".

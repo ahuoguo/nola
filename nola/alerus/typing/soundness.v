@@ -17,36 +17,11 @@
 From iris.algebra Require Import gmap_view agree auth gset.
 From iris.proofmode Require Import proofmode.
 From nola.alerus.lang Require Import adequacy races proofmode notation.
-From nola.alerus.typing Require Export model_inst.
+From nola.alerus.typing Require Export level_ctx.
 From nola.alerus.typing Require Import function programs product base_type
   type_context.
 From nola.bi Require Import modw.
 Import ModwNotation WpwNotation iPropAppNotation.
-
-(** ** The ghost state, before allocation *)
-Class alerusGpreS (FML : oFunctor) Σ : Type := AlerusGpreS {
-  #[global] alerus_preG_lrust :: lrustGpreS FML Σ;
-  #[global] alerus_preG_llft :: llft_logicGpreS Σ;
-  #[global] alerus_preG_sinv :: sinvGpreS FML Σ;
-  #[global] alerus_preG_proph :: prophPreG Σ;
-  #[global] alerus_preG_uniq :: uniqPreG Σ;
-  #[global] alerus_preG_cna :: cnaGpreS FML Σ;
-  #[global] alerus_preG_frac :: fracGuardGpreS FML Σ;
-  #[global] alerus_preG_eternal :: inG Σ (authUR (gsetUR lft));
-  #[global] alerus_preG_llctx ::
-    inG Σ (gmap_viewR gname (agreeR (leibnizO llctx)));
-  #[global] alerus_preG_lfts ::
-    inG Σ (gmap_viewR gname (agreeR (leibnizO (gmultiset lft))));
-}.
-
-Definition alerusΣ FML `{!oFunctorContractive FML} : gFunctors :=
-  #[lrustΣ FML; llft_logicΣ; sinvΣ FML; prophΣ; uniqΣ; cnaΣ FML;
-    fracGuardΣ FML; GFunctor (constRF (authUR (gsetUR lft)));
-    fracKeyΣ llctx; fracKeyΣ (gmultiset lft)].
-
-#[export] Instance subG_alerusGpreS {FML Σ} `{!oFunctorContractive FML} :
-  subG (alerusΣ FML) Σ → alerusGpreS FML Σ.
-Proof. solve_inG. Qed.
 
 (** ** Allocating the world satisfaction
 
@@ -68,37 +43,17 @@ Section alloc.
            (@lrustGpreS_alc _ _ alerus_preG_lrust)
            _ alerus_NaSem heapSem_cif = alerus_lrustGS⌝ ∧ alerus_wsat.
   Proof.
-    iMod (frac_key_wsat_alloc (K:=llctx)) as (Hllctx) "Wllctx".
-    iMod (frac_key_wsat_alloc (K:=gmultiset lft)) as (Hlfts) "Wlfts".
-    iMod eternal_wsat_alloc as (γe) "We".
-    iMod (frac_wsat_alloc (FML:=cifOF CON)) as (Hfrac) "Wfrac".
-    iMod (llft_wsat_alloc (FML:=cifOF CON)) as (Hllft Hsinv shr) "Wllft".
-    iMod (na_inv_wsat_alloc_name (FML:=cifOF CON)) as (γna) "Wna".
-    iMod (cna_wsat_alloc (FML:=cifOF CON)) as (Hcna) "Wcna".
-    (* the store family, a second [sinvGS] beside the boxes' - see
-      [alerus_store_name] in [typing/ctx.v] *)
-    iMod (sinv_wsat_alloc_name (FML:=cifOF CON) (sinvGS0 := Hsinv))
-      as (γst) "Wstore".
+    iMod alerus_names_alloc as (n) "W".
+    (* [uniq_init] allocates the atomic pool against a [cnaGS]; any level's
+      will do, because [send_wsat] is [cna_lifetimes atomic_pool_name ∅],
+      whose [own] is at an [inG] of [cnaGpreS] and not at [cna_name]. *)
+    pose (Hllft := an_llft n). pose (Hcna := an_cna n).
     iMod (proph_init ⊤) as (Hproph) "#PROPH"; [done|].
     iMod (uniq_init ⊤) as (Huniq) "[#UNIQ Wsend]"; [done|].
-    iModIntro.
-    iExists (AlerusGS _ _ _ Hllft Hsinv hGS
-      (NaInvGS _ _ sinvGS_pre _ γna) _ Hproph Huniq Hcna Hfrac
-      _ Hllctx Hlfts shr γe γst).
+    iModIntro. iExists (alerusGS_of hGS Hproph Huniq n).
     do 2 (iSplit; [done|]). iFrame "PROPH UNIQ". iIntros (????).
-    iSplit; [done|].
-    iSplitR "Wsend"; last iExact "Wsend".
-    iSplitL "Wllft We Wfrac Wllctx Wlfts Wstore"; last first.
-    { iSplitL "Wcna"; first by iApply "Wcna".
-      iApply "Wna". iApply ne_internal_ne; try exact _. }
-    iApply ("Wllft" $! _ alerus_WG). rewrite /alerus_WG.
-    iSplitL "We"; first iApply "We".
-    iSplitL "Wfrac"; first (iApply "Wfrac"; iApply ne_internal_ne;
-      try exact _).
-    iSplitL "Wllctx"; first iExact "Wllctx".
-    iSplitL "Wlfts"; first iExact "Wlfts".
-    rewrite /alerus_store_wsat dinv_wsat_sinv. iApply "Wstore".
-    iIntros (?). iApply ne_internal_ne; try exact _.
+    iSplit; [done|]. iSplitR "Wsend"; [|iExact "Wsend"].
+    by iApply "W".
   Qed.
 End alloc.
 

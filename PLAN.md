@@ -72,6 +72,19 @@ later/`iLöb`/`pers` machinery disappears.  Nothing in the tree waits on a
 missing guarding lemma, so pull in `storage_protocol/` when starting
 `protocol.v`, not before.
 
+The first three of these are **feasible later-free, and the obstacle is
+size rather than principle** - worth saying, because the fourth is not.
+`guarding/storage_protocol/protocol.v` has no `iLöb` and no `pers`
+machinery; its 28 `▷`s are all around `f b`, the interpretation of the
+protocol state held in an Iris invariant, which is exactly the shape
+`boxes.v` and `frac_guard.v` shed here by making the content a formula
+and the invariant a `sinv_wsat`.  `typing/protocol.v` has **no `▷` and
+no `iLöb` at all**.  The chain to pull in is `guarding/internal/inved.v`
+(343, no laters, pure algebra), `storage_protocol/base_storage_opt.v`
+(110, no laters), `storage_protocol/protocol.v` (1272), and then
+`typing/protocol.v` (1189) and `guarding/lib/rwlock.v` (518) - about
+3400 lines, and a job of its own rather than a step in item 2.
+
 ## Is the model concrete?  Yes, as of `af5aee0`
 
 `model.v` gives the interpretation parametrically in `CON` and `JUDG`, as
@@ -388,41 +401,242 @@ ones are large for reasons now understood rather than guessed at.
    instances can be allocated from one `Σ` today; `soundness.v`'s
    `alerus_wsat_alloc` is already the one-level case of it.
 
-   And the components divide more favourably than feared.  Of what
-   `alerus_wsat` and `alerus_WGuard` contain:
+   And of what `alerus_wsat` and `alerus_WGuard` contain, these carry the
+   interpretation and so have to be levelled:
 
    | carries the interpretation | does not |
    |---|---|
-   | `shr_wsat`, `box_wsat bor_sem`, `cna_wsat … bor_sem`, `na_inv_wsat … bor_sem`, `frac_wsat bor_sem`, `alerus_store_wsat` | `llft_inv_main`, `eternal_wsat`, the two `frac_key_wsat`s, `send_wsat` |
+   | `shr_wsat`, `box_wsat bor_sem`, `llft_inv_main`, `cna_wsat … bor_sem`, `na_inv_wsat … bor_sem`, `frac_wsat bor_sem`, `alerus_store_wsat` | `eternal_wsat`, the two `frac_key_wsat`s, `send_wsat` |
 
-   In particular **`llft_inv_main` is interpretation-free** - `LtState`,
-   `outer_inv` and two alive sets, no `bor_sem` anywhere - so the lifetime
-   logic's *bookkeeping*, and with it the lifetime tokens `@[κ]` and
-   `[†κ]`, could stay single while only the slice families are levelled.
-   That is the difference between a tower of lifetime logics and a tower
-   of `sinv` families, and it is the former that would have been
-   prohibitive.
+   #### Done: step 1, `alerusGS_at` and `∗_{k<j} Winv_k`
 
-   What is genuinely open is one thing, and it is sharper than "which
-   world satisfactions": **the borrow slices and the lifetime tokens are
-   the same camera.**  `lifetime/ra.v`'s
+   `typing/level_ctx.v` builds the levelled package at the port's own
+   world satisfaction: `alerusNames` (one level's ghost names, each a bare
+   `gname` or a `_pre` class plus `gname`s), `alerusGS_of`,
+   `alerus_names_alloc`, the family `alerus_wsats`, `alerus_wsat_below`
+   (the thesis's `∗_{k<j} Winv_k`) and `ty-lev` as `twpw_alerus_le`.  As
+   many levels as asked for come out of one `Σ`; `typing/soundness.v` now
+   takes its `alerusGpreS` and its allocation from that file, since
+   allocating one level and allocating `L` of them are the same lemma.
+
+   Two things the construction forces, both recorded in the file:
+
+   * **`send_wsat` is shared, and that is a fact rather than a choice.**
+     It is `cna_lifetimes atomic_pool_name ∅`, whose `own` is at an `inG`
+     of `cnaGpreS` and at a pool name from `uniqG`, so it mentions no
+     `cna_name` and is literally the same proposition at every level.  It
+     therefore sits beside the family, as `alerus_wsat` has it sit beside
+     `alerus_wsat_core`.
+   * **The weakest precondition's `invGS_gen` has to be the program
+     logic's own.**  A `fupd` at a second `invGS_gen` is a different
+     proposition; the first `twpw_alerus_le` failed with a goal and a
+     lemma that printed identically.
+
+   #### Correction, twice over: `LtRa` *does* need splitting - and now it is split
+
+   A previous version of this plan said `LtRa` had to be split; the one
+   after it said that was wrong, on the grounds that `llft_inv_main` is
+   interpretation-free.  **That second claim is false, and the first was
+   right.**  `llft_inv_main` is
 
    ```coq
-   Inductive LtRa := LtOk : option (gset lt_atom * gset lt_atom) →
-     gmultiset lt_atom → gset lt_atom →            (* alive, dead atoms *)
-     option gmap_bor_state → gmultiset_bor_state → (* borrow states *)
-     option (gset lt_atom) → gset lt_atom → LtRa
+   ∃ sa sd blocked, LtState llft_name sa sd ∗ llft_alive_def' sa
+     ∗ outer_inv llft_name … sa sd blocked ∗ llft_alive_def' blocked
    ```
 
-   carries the lifetime atoms *and* the borrow states in one record under
-   one `llft_name`, so `Alive llft_name k` (which is `@[κ]`) and
-   `OwnBorState llft_name sn bs` cannot be given different ghost names.
-   Levelling the borrows therefore levels the lifetime tokens - a
-   lifetime at level 0 and "the same" lifetime at level 1 would be
-   unrelated - and that is the tower.  Splitting `LtRa` in two, tokens in
-   one camera and borrow bookkeeping in another, is the change that makes
-   the rest mechanical, and it is a change inside `lifetime/ra.v` and
-   `inv.v`.  The thesis has no counterpart: it has no lifetimes.
+   and `outer_inv` is `inner_inv`, which is
+
+   ```coq
+   ∃ mbs mprops Ptotal outlives,
+     AuthBorState … mbs ∗ ModuloDead … dead
+       ∗ box bor_sem (boxmap alive dead mbs) Ptotal
+       ∗ future_vs alive dead outlives mbs mprops
+       ∗ ⌜dom mbs = dom mprops ∧ …⌝
+       ∗ ([∗ map] sn ↦ Q ∈ mprops, sinv_tok sn Q) ∗ Outlives …
+   ```
+
+   - the interpretation-carrying box and the borrow bookkeeping in one
+   existential, tied by `dom mbs = dom mprops`.  So levelling the box
+   means levelling the bookkeeping, and the bookkeeping was at
+   `llft_name`, which is also where the lifetime tokens live.
+
+   **The split is done** (`lifetime/ra.v`, `lifetime/inv.v`,
+   `lifetime/lifetime_full.v` and the files between).  `llft_logicGS`
+   gains `bor_name`; `AuthBorState`, `OwnBorState` and `ModuloDead` move
+   there, `LtState`, `Alive` and `Dead` stay at `llft_name`.
+
+   **It needed no new camera**, which is what made it affordable, and the
+   reason is worth recording because it is the opposite of what the
+   previous estimate feared.  In `lt_inv`
+
+   ```coq
+   lt_inv (LtOk (Some (sa, sd)) a d (Some g) gs (Some w) wp) :=
+     sd = d ∧ sa ∩ sd = ∅ ∧ w = wp ∧ w ⊆ d ∧ (multiplicity condition)
+       ∧ consistent_modulo w g gs
+   ```
+
+   the only term joining the lifetime components to the borrow components
+   was **`w ⊆ d`**, and it was there only because `modulo_dead w` put `w`
+   into the *global* dead component `d`.  `consistent_modulo` has always
+   been stated about the borrow side's own copy `w` and nothing else - so
+   the earlier worry that `consistent_modulo` "would have fought the
+   split" was misplaced; it is indifferent to it.  Drop `modulo_dead`'s
+   contribution to `d`, drop the conjunct, and the two halves are
+   independent.  Since `lt_valid a := ∃ b, lt_inv (a ⋅ b)`, each half is
+   then valid on its own, the existential frame supplying the other.
+
+   What the camera used to enforce, the invariant now enforces, and that
+   trade is the interesting part:
+
+   * `inner_inv` carries `□ ∀ d ∈ dead, Dead γlt d` - persistent, so free
+     to carry and free to duplicate - so a level's view of the dead set
+     cannot run ahead of the real one;
+   * `ModuloDeadPers` carries that witness beside the borrow-side one,
+     since `modulo_dead_pers_implies_dead` is no longer a fact about the
+     camera;
+   * `modulo_dead_new` loses its `Dead` premise and becomes an update **at
+     the borrow name alone** - which is exactly the point, because that is
+     the name that has to vary with the level.
+
+   #### What is still in the way: every level's view of the dead set
+
+   The split is necessary and it is not sufficient, and the remaining
+   obstruction is sharper than "lifetime death needs the box".
+
+   `inner_inv alive dead blocked` is *indexed by the dead set*, and
+   killing an atom changes it: `inner_kill_lt` empties the slices the
+   death invalidates and fills the ones it revalidates
+   (`slice_empty_many`, `slice_fill_many`), both of which are operations
+   on that level's box.  With one `inner_inv` per level, killing a
+   lifetime would have to advance **every** level at once, and a body at
+   execution level `j` never holds the levels at or above `j`.
+
+   Nola is free of this because its settlement is lazy - `lft_end` is
+   `1.[α] ==∗ [†α]` and a lender reclaims later, one level at a time -
+   and that is why `typing/strat_bor.v` works there.  Leaf's lifetime
+   logic settles eagerly, and rewriting it to settle lazily is a rewrite
+   of `inv.v`, `expire_lt.v`, `unnest.v` and `reborrow.v`, not a
+   refactor.
+
+   The cheaper route, and the one the split has just made expressible, is
+   **a per-level view of the dead set that catches up lazily**:
+
+   * level `k`'s `inner_inv` carries its own `sd_k`, with `sd_k ⊆ sd`
+     witnessed by the persistent `□ ∀ d ∈ sd_k, Dead llft_name d` the
+     invariant now holds - no shared existential, no shared authority;
+   * killing an atom updates the shared `LtState` and only the levels the
+     killer holds; a level that lags catches up the next time its own
+     world satisfaction is held, by running the existing `inner_kill_lt`
+     over `sd ∖ sd_k`, which is sound precisely because the persistent
+     witness says those atoms really are dead;
+   * `PLAN`'s lifetime-level invariant - *a lifetime carries a level,
+     every borrow of it lives strictly below that level, and it is
+     created and killed only at an execution level at least that high* -
+     is then what makes the lag invisible: a lifetime never has borrows
+     at a level that could lag behind its death.
+
+   #### Checked: the bookkeeping does not need `alive` at all
+
+   The design above has one thing that could have sunk it, so it is
+   checked in `lifetime/inv.v` rather than assumed.  A level that lags
+   can be *bounded* by a persistent witness, because death is persistent;
+   **aliveness is not**, and `inner_inv` consults `alive` in three
+   places - `boxmap`, `invalidated` and `revalidated`.  If level `k`
+   needed `κ ⊆ alive_k` to open a borrow of `κ`, nothing would carry that
+   in from the shared lifetime tokens and the design would not close.
+
+   It does not need it.  Every one of those three consults `alive` only
+   as `al ⊆ alive` for a borrow's own alive set, and `map_wf` says
+   `al ∪ de ⊆ alive ∪ dead` with `alive ## dead`, so
+
+   >  `al ⊆ alive  ↔  al ## dead`
+
+   (`subseteq_alive_iff`).  `boxmap_alive_free`,
+   `invalidated_alive_free` and `revalidated_alive_free` are that
+   substitution carried out, each an equality of the *boolean*, so each
+   rewrites under `boxmap` and under `borrow_sum` without disturbing a
+   single proof that follows.
+
+   So level `k` can be indexed by its own `dead_k` alone, and "κ is
+   alive" transfers into it for free: the user's `@[κ]` and the shared
+   `LtState` give `κ ## dead`, and `dead_k ⊆ dead` gives `κ ## dead_k`.
+
+   #### And the reindexing that closes it
+
+   With `alive` eliminable, `inner_inv` can be *reparametrized* rather
+   than rewritten: index it by the created atoms instead of the live
+   ones,
+
+   >  `inner_inv_c created dead blocked  :=  inner_inv (created ∖ dead) dead blocked`
+
+   which is a pure change of variable - `alive ## dead` becomes a
+   theorem, `boxmap` and the two validity predicates lose their
+   dependence on the first index by the lemmas above, and `future_vs`
+   recurses on `size (created ∖ dead)` as before.
+
+   Level `k` then carries `(created_k, dead_k, blocked_k)`, both of the
+   first two monotone, and opening a borrow of `κ` at level `k` needs
+
+   * `κ ## dead_k` - free, from `κ ## dead` (the user's `@[κ]` against
+     the shared `LtState`) and `dead_k ⊆ dead` (the persistent witness);
+   * `κ ⊆ created_k` - free as well, and this is the part that was not
+     obvious: `map_wf`'s fourth conjunct says a borrow's own
+     `al ∪ de ⊆ alive ∪ dead`, i.e. `⊆ created_k`, so a borrow of `κ`
+     *being in level `k`'s map at all* is the witness.
+
+   So neither index needs anything carried across from the shared
+   bookkeeping beyond what is already persistent.  What remains is
+   creation - `new_lt` for a lifetime of level `ℓ` has to reach the
+   levels below `ℓ`, which is exactly what a body at level `≥ ℓ` holds -
+   and then the mechanical reindexing itself, in `lifetime/inv.v` and
+   `lifetime/expire_lt.v`.
+
+   ### Done: levelled borrows, mechanized
+
+   Before doing that refactor it was worth asking whether the design it
+   bets on is sound, because **neither source has built it**.  The
+   thesis's Chapter 5 stratifies a *functional* language: its only
+   sharing mechanism is Nola's invariant, and it has no lifetimes and no
+   borrows.  `nola/examples/rust_halt/` has lifetimes and borrows and
+   proves total correctness with them - and has **no function type at
+   all**; there is no `ty_fn` anywhere in that directory.  "A function
+   type whose execution level bounds what it may reach, stored in a
+   borrow" is in neither place, and it is exactly what `fn_fml` needs.
+
+   `typing/strat_bor.v` builds it, and the answer is yes.  Two things had
+   to hold, and both are facts about Nola's existing code rather than
+   guesses:
+
+   - the separation of lifetime tokens from borrow bookkeeping, above;
+   - **ending a lifetime needs no world satisfaction.**  `lft_end` is
+     `1.[α] ==∗ [†α]`, a bare basic update, and a dead lifetime's borrows
+     are settled *lazily* by the lender, with whichever level's world
+     satisfaction it happens to hold.  Had killing a lifetime needed
+     every level at once, levelling the borrows would have been
+     impossible outright, because a body at level `j` never holds the
+     levels above it.
+
+   What those two leave open is whether the recursion on the level still
+   closes with borrows in it, and it does, for (5.5)'s reason:
+   `⟦&{α}ₖ T⟧ v` is a borrow *token* naming the syntax `T`, and never
+   interprets it.  So level `k`'s world satisfaction holds types whose
+   function types are at levels `≤ k`, which mention only `Wbor_h` for
+   `h < k`.  Strictly decreasing, so the construction is `strat.v`'s
+   unchanged.
+
+   `typed_call_borrowed` is the payoff: a closure of type `A →ⱼ B` stored
+   in a borrow at slot level `k`, retrieved at execution level `i` and
+   called.  Its two side conditions are forced - `j ≤ k` to store
+   (`bwf`), `k < i` to open (`bor_open_lv`) - and together they are the
+   whole argument, since the callee then runs under `∗_{h<j} Wbor_h`
+   while the borrow holding it lives at level `k ≥ j`, which the callee
+   does not hold.  `knot_not_typable` states that, and `ex_borfn_total`
+   runs a closed program of that shape and proves it terminates.
+
+   `nola/iris/borrow.v` gained one lemma for this, `borrow_wsat_alloc_name`,
+   the exact analogue of `sinv_wsat_alloc_name`: several borrowing
+   machineries have to hand out their ghost names *before* the
+   interpretation that mentions them is built.
 
    ### Why the cheap design does not work
 
@@ -455,17 +669,26 @@ ones are large for reasons now understood rather than guessed at.
    is interpreted at `⟦⟧ᶜ_k` - so the borrow families must be levelled,
    and there is no way round it.
 
-   After that, and only after that:
+   ### The remaining order of work
 
-   1. `alerusGS_at : nat → alerusGS FML Σ` and
-      `alerus_wsat_below j := ∗_{k<j} alerus_wsat (GS k) (Sem k)`, which is
-      `lvs_below` with `alerus_wsat` in place of `lv_wsat`;
-   2. a level on every type former and on `typed_body`, with `ty-lev` and
-      `≤-→` proved as in `strat.v` (`twpw_lvs_le` and nothing else);
-   3. `fn_fml`'s judgment carrying its execution level as a discrete `nat`,
-      its semantics the body at the *level-`j` package* and hence constant
-      in the candidate - at which point `fn_fml_sem_1` is `der_sound` and
-      `fn_fml_sem_2` is `Deriv_factor'` with nothing left to prove.
+   1. **The ghost state** - done, `typing/level_ctx.v`: `alerusGS_of`
+      (the port's `alerusGS_at`) and `alerus_wsat_below`.
+   2. **`LtRa`'s two halves on two ghost names** - done, so that
+      `bor_name` can vary with the level while `llft_name` does not.
+   3. **A per-level view of the dead set**, with lazy catch-up, and with
+      it the lifetime-level invariant: `lifetime/inv.v` and
+      `lifetime/expire_lt.v`.  This is the open piece, and the section
+      above says what shape it has to take.
+   4. **`bor_name` per level**, which is then only a matter of replacing
+      the one `bor_name` field by the level's.
+   5. **A level on every type former and on `typed_body`**, with `ty-lev`
+      and `≤-→` proved as in `strat.v` (`twpw_alerus_le` and nothing
+      else).  This is the bulk, and it touches every file in `typing/`.
+   6. **`fn_fml`'s judgment carrying its execution level** as a discrete
+      `nat`, its semantics the body at the *level-`j` package* and hence
+      constant in the candidate - at which point `fn_fml_sem_1` is
+      `der_sound` and `fn_fml_sem_2` is `Deriv_factor'` with nothing left
+      to prove.
 
 3. **Recursive types** - done, in `typing/rec.v`; what follows is the
    record of how, because every step of it was forced.

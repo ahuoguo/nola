@@ -214,7 +214,7 @@ Definition alerus_dinvGS `{!alerusGS FML Σ} : dinvGS FML Σ :=
   [AlerusSem]. *)
 Class AlerusSem (FML : oFunctor) Σ `{!alerusGS FML Σ} : Type := AlerusSemI {
   #[global] alerus_borSem :: BorSem FML Σ;
-  #[global] alerus_borStateFml :: BorStateFml llft_name;
+  #[global] alerus_borStateFml :: BorStateFml bor_name;
   #[global] alerus_shrBorSem :: ShrBorSem FML Σ;
   #[global] alerus_emptySem :: EmptySem FML Σ;
 }.

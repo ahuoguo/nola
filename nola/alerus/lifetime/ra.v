@@ -660,7 +660,6 @@ Definition lt_inv (a: LtRa) := match a with
       sd = d
       ∧ sa ∩ sd = ∅
       ∧ w = wp
-      ∧ w ⊆ d
       ∧ (∀ m , (m ∈ sa → multiplicity m a = 2) ∧ (m ∉ sa → multiplicity m a = 0))
       ∧ consistent_modulo w g gs
   | _ => False
@@ -843,8 +842,18 @@ Section LlftHelperResources.
   Definition auth_bor_state (mbs: gmap_bor_state) := LtOk None ∅ ∅ (Some mbs) ∅ None ∅.
   Definition own_bor_state (sn: slice_name) (bs: BorState) := LtOk None ∅ ∅ None {[+ (sn, bs) +]} None ∅.
   
-  Definition modulo_dead (w: gset lt_atom): LtRa := LtOk None ∅ w None ∅ (Some w) w.
-  Definition modulo_dead_pers (wp: lt_atom): LtRa := LtOk None ∅ {[ wp ]} None ∅ None ({[ wp ]}).
+  (** The borrow side's own view of which atoms are dead.
+
+    It used to contribute [w] to the third component - the *global* dead
+    set, the one [LtState] is authoritative for - and [lt_inv] then had
+    [w ⊆ d] to tie the two together.  That conjunct is what made the
+    borrow bookkeeping and the lifetime tokens inseparable, so it is
+    gone, and with it [modulo_dead_pers_implies_dead]; the borrow side's
+    view is tied to the real one by [inner_inv]'s persistent
+    [∀ d ∈ dead, Dead γlt d] instead.  See the note at the head of
+    [nola/alerus/lifetime/inv.v]. *)
+  Definition modulo_dead (w: gset lt_atom): LtRa := LtOk None ∅ ∅ None ∅ (Some w) w.
+  Definition modulo_dead_pers (wp: lt_atom): LtRa := LtOk None ∅ ∅ None ∅ None ({[ wp ]}).
   
   Definition AuthBorState (γlt: gname) (mbs: gmap_bor_state) : iProp Σ :=
       own γlt (auth_bor_state mbs).
@@ -854,19 +863,34 @@ Section LlftHelperResources.
   Definition ModuloDead (γlt: gname) (g: gset lt_atom) : iProp Σ :=
       own γlt (modulo_dead g).
       
-  Definition ModuloDeadPers (γlt: gname) (g: lt_atom) : iProp Σ :=
-      own γlt (modulo_dead_pers g).
+  (** The borrow side's persistent witness that an atom is dead, *together
+    with* the lifetime side's.  The two names are different now, so the
+    second is no longer derivable from the first - it has to be carried.
+    Every producer has one to hand: [inner_inv] keeps [∀ d ∈ dead,
+    Dead γlt d] persistently. *)
+  Definition ModuloDeadPersB (γb: gname) (g: lt_atom) : iProp Σ :=
+      own γb (modulo_dead_pers g).
+  Definition ModuloDeadPers (γlt γb: gname) (g: lt_atom) : iProp Σ :=
+      ModuloDeadPersB γb g ∗ Dead γlt g.
   
   Definition default_dead : lt_atom := LtAtomSwell 0.
   
-  Lemma lt_alloc :
-    ⊢ |==> ∃ γ , LtState γ ∅ ∅ ∗ AuthBorState γ ∅ ∗ ModuloDead γ ∅.
+  (** The two halves allocate separately, and that is the whole point of the
+    split: the lifetime tokens live at one name for the whole run, the
+    borrow bookkeeping at one name *per execution level*. *)
+  Lemma lt_alloc : ⊢ |==> ∃ γ , LtState γ ∅ ∅.
   Proof.
-    unfold LtState, AuthBorState.
-    setoid_rewrite <- own_op.
-    setoid_rewrite <- own_op.
+    unfold LtState. apply own_alloc. unfold "✓", cmra_valid, ltR, lt_valid.
+    exists (LtOk None ∅ ∅ (Some ∅) ∅ (Some ∅) ∅). simpl.
+    unfold consistent_modulo. set_solver.
+  Qed.
+
+  Lemma bor_alloc : ⊢ |==> ∃ γ , AuthBorState γ ∅ ∗ ModuloDead γ ∅.
+  Proof.
+    unfold AuthBorState, ModuloDead. setoid_rewrite <- own_op.
     apply own_alloc. unfold "✓", cmra_valid, ltR, lt_valid.
-    exists (LtOk None ∅ ∅ None ∅ None ∅). simpl. unfold consistent_modulo. set_solver.
+    exists (LtOk (Some (∅, ∅)) ∅ ∅ None ∅ None ∅). simpl.
+    unfold consistent_modulo. set_solver.
   Qed.
 
   Lemma update_helper (a b : LtRa)
@@ -898,9 +922,8 @@ Section LlftHelperResources.
     setoid_rewrite <- own_op.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
     intros o a d g gs w wp lti. destruct o as [[sa sd]|], g as [g|], w as [w|]; try contradiction.
-      simpl in lti. destruct lti as [sd_d [no_int [wp_p [wsub [fm cm]]]]].
+      simpl in lti. destruct lti as [sd_d [no_int [wp_p [fm cm]]]].
       simpl. split. { set_solver. } split. { set_solver. } split. { set_solver. }
-      split. { set_solver. }
       split. { set_solver. }
       rewrite gmultiset_disj_union_left_id.
       rewrite gmultiset_disj_union_left_id in cm.
@@ -918,9 +941,9 @@ Section LlftHelperResources.
     setoid_rewrite <- own_op. setoid_rewrite <- own_op.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
     intros o a d g gs w wp lti. destruct o as [[sa' sd']|], g as [g|], w as [w|]; try contradiction.
-      simpl in lti. destruct lti as [sd_d [wp_p [wsub [no_int [fm cm]]]]].
+      simpl in lti. destruct lti as [sd_d [wp_p [wsub [fm cm]]]].
       simpl. split. { set_solver. } split. { set_solver. } split. { set_solver. }
-      split. { set_solver. } split. { set_solver. }
+      split. { set_solver. }
       rewrite gmultiset_disj_union_left_id. rewrite gmultiset_disj_union_left_id.
       rewrite gmultiset_disj_union_left_id in cm.
       apply consistent_modulo_for_alloc_bs; trivial.
@@ -936,9 +959,9 @@ Section LlftHelperResources.
     setoid_rewrite <- own_op.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
     intros o a d g gs w wp lti. destruct o as [[sa' sd']|], g as [g|], w as [w|]; try contradiction.
-      simpl in lti. destruct lti as [sd_d [wp_p [wsub [no_int [fm cm]]]]].
+      simpl in lti. destruct lti as [sd_d [wp_p [wsub [fm cm]]]].
       simpl. split. { set_solver. } split. { set_solver. } split. { set_solver. }
-      split. { set_solver. } split. { set_solver. }
+      split. { set_solver. }
       rewrite gmultiset_disj_union_left_id.
       rewrite gmultiset_disj_union_left_id in cm.
       apply consistent_modulo_for_alloc_fake; trivial.
@@ -947,15 +970,15 @@ Section LlftHelperResources.
   Lemma update_bor_state_borrow_fix_dead_helper γlt sn al de de' k k' :
       (k ∈ de) →
       (k' ∈ de') →
-      ModuloDeadPers γlt k ∗ ModuloDeadPers γlt k' ∗ OwnBorState γlt sn (Borrow al de) ==∗ ModuloDeadPers γlt k ∗ ModuloDeadPers γlt k' ∗ OwnBorState γlt sn (Borrow al de').
+      ModuloDeadPersB γlt k ∗ ModuloDeadPersB γlt k' ∗ OwnBorState γlt sn (Borrow al de) ==∗ ModuloDeadPersB γlt k ∗ ModuloDeadPersB γlt k' ∗ OwnBorState γlt sn (Borrow al de').
   Proof.
     intros Hk Hk'.
     setoid_rewrite <- own_op. setoid_rewrite <- own_op.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
     intros o a d g gs w wp lti. destruct o as [[sa sd]|], g as [g|], w as [w|]; try contradiction.
-    - simpl in lti. destruct lti as [sd_d [wp_p [wsub [no_int [fm cm]]]]].
+    - simpl in lti. destruct lti as [sd_d [wp_p [wsub [fm cm]]]].
       simpl. split. { set_solver. } split. { set_solver. } split. { set_solver. }
-      split. { set_solver. } split. { set_solver. }
+      split. { set_solver. }
       rewrite gmultiset_disj_union_left_id. rewrite gmultiset_disj_union_left_id.
       rewrite gmultiset_disj_union_left_id in cm. rewrite gmultiset_disj_union_left_id in cm.
       apply consistent_modulo_for_fix with (bs1 := Borrow al de); trivial.
@@ -966,11 +989,23 @@ Section LlftHelperResources.
   Lemma update_bor_state_borrow_fix_dead γlt sn al de de' k k' :
       (k ∈ de) →
       (k' ∈ de') →
-      ModuloDeadPers γlt k ∗ ModuloDeadPers γlt k' ∗ OwnBorState γlt sn (Borrow al de) ==∗ OwnBorState γlt sn (Borrow al de').
+      ModuloDeadPersB γlt k ∗ ModuloDeadPersB γlt k' ∗ OwnBorState γlt sn (Borrow al de) ==∗ OwnBorState γlt sn (Borrow al de').
   Proof.
     intros Hk Hk'. iIntros "D".
     iMod (update_bor_state_borrow_fix_dead_helper with "D") as "[D1 [D2 X]]"; trivial.
     trivial.
+  Qed.
+
+  (** The same with the two-name witness, which is what the clients hold *)
+  Lemma update_bor_state_borrow_fix_dead' γl γb sn al de de' k k' :
+      (k ∈ de) →
+      (k' ∈ de') →
+      ModuloDeadPers γl γb k ∗ ModuloDeadPers γl γb k' ∗ OwnBorState γb sn (Borrow al de)
+      ==∗ OwnBorState γb sn (Borrow al de').
+  Proof.
+    iIntros (Hk Hk') "[[P1 _] [[P2 _] O]]".
+    iApply (update_bor_state_borrow_fix_dead γb sn al de de' k k' Hk Hk').
+    iFrame.
   Qed.
       
   Lemma update_bor_state_borrow_fix_dead_lts γlt sd sn al de de' :
@@ -982,9 +1017,9 @@ Section LlftHelperResources.
     setoid_rewrite <- own_op.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
     intros o a d g gs w wp lti. destruct o as [[sa' sd']|], g as [g|], w as [w|]; try contradiction.
-      simpl in lti. destruct lti as [sd_d [wp_p [wsub [no_int [fm cm]]]]].
+      simpl in lti. destruct lti as [sd_d [wp_p [wsub [fm cm]]]].
       simpl. split. { set_solver. } split. { set_solver. } split. { set_solver. }
-      split. { set_solver. } split. { set_solver. }
+      split. { set_solver. }
       rewrite gmultiset_disj_union_left_id.
       rewrite gmultiset_disj_union_left_id in cm.
       apply consistent_modulo_for_fix with (bs1 := Borrow al de); trivial.
@@ -1001,9 +1036,9 @@ Section LlftHelperResources.
     setoid_rewrite <- own_op. setoid_rewrite <- own_op.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
     intros o a d g gs w wp lti. destruct o as [[sa' sd']|], g as [g|], w as [w|]; try contradiction.
-      simpl in lti. destruct lti as [sd_d [no_int [wp_p [wsub [fm cm]]]]].
+      simpl in lti. destruct lti as [sd_d [no_int [wp_p [fm cm]]]].
       simpl. split. { set_solver. } split. { set_solver. } split. { set_solver. }
-      split. { set_solver. } split. { set_solver. }
+      split. { set_solver. }
       rewrite gmultiset_disj_union_left_id. rewrite gmultiset_disj_union_left_id.
       rewrite gmultiset_disj_union_left_id in cm. rewrite gmultiset_disj_union_left_id in cm.
       apply consistent_modulo_for_update with (bs1 := Borrow alive dead); trivial.
@@ -1016,9 +1051,9 @@ Section LlftHelperResources.
     setoid_rewrite <- own_op. setoid_rewrite <- own_op.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
     intros o a d g gs w wp lti. destruct o as [[sa' sd']|], g as [g|], w as [w|]; try contradiction.
-      simpl in lti. destruct lti as [sd_d [no_int [wp_p [wsub [fm cm]]]]].
+      simpl in lti. destruct lti as [sd_d [no_int [wp_p [fm cm]]]].
       simpl. split. { set_solver. } split. { set_solver. } split. { set_solver. }
-      split. { set_solver. } split. { set_solver. }
+      split. { set_solver. }
       rewrite gmultiset_disj_union_left_id. rewrite gmultiset_disj_union_left_id.
       rewrite gmultiset_disj_union_left_id in cm. rewrite gmultiset_disj_union_left_id in cm.
       apply consistent_modulo_for_update with (bs1 := Unborrow bl alive dead); trivial.
@@ -1035,9 +1070,9 @@ Section LlftHelperResources.
     setoid_rewrite <- own_op. setoid_rewrite <- own_op.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
     intros o a d g gs w wp lti. destruct o as [[sa' sd']|], g as [g|], w as [w|]; try contradiction.
-      simpl in lti. destruct lti as [sd_d [no_int [wp_p [wsub [fm cm]]]]].
+      simpl in lti. destruct lti as [sd_d [no_int [wp_p [fm cm]]]].
       simpl. split. { set_solver. } split. { set_solver. } split. { set_solver. }
-      split. { set_solver. } split. { set_solver. }
+      split. { set_solver. }
       rewrite gmultiset_disj_union_left_id.
       rewrite gmultiset_disj_union_left_id in cm. rewrite gmultiset_disj_union_left_id in cm.
       apply consistent_modulo_for_delete with (bs := Borrow al de); trivial.
@@ -1050,9 +1085,9 @@ Section LlftHelperResources.
     setoid_rewrite <- own_op.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
     intros o a d g gs w wp lti. destruct o as [[sa sd]|], g as [g|], w as [w|]; try contradiction.
-      simpl in lti. destruct lti as [sd_d [wp_p [wsub [no_int [fm cm]]]]].
+      simpl in lti. destruct lti as [sd_d [wp_p [wsub [fm cm]]]].
       simpl. split. { set_solver. } split. { set_solver. } split. { set_solver. }
-      split. { set_solver. } split. { set_solver. }
+      split. { set_solver. }
       rewrite gmultiset_disj_union_left_id.
       rewrite gmultiset_disj_union_left_id in cm.
       apply consistent_modulo_for_delete with (bs := Unborrow bl al de); trivial.
@@ -1072,10 +1107,6 @@ Section LlftHelperResources.
    
      destruct Hincl1 as [[o1 a1 d1 g1 gs1 w1 wp1|] Hincl1]; last by inversion Hincl1.
      
-     assert (sd ⊆ d) as Hsubdead. {
-      destruct Hincl2 as [t Hincl2]. rewrite <- lt_assoc in Hincl2.
-      eapply dead_subseteq_of_LtOk_incl. apply Hincl2.
-     }
      assert (sd ⊆ wp) as Hsubwp. {
       destruct Hincl2 as [t Hincl2]. rewrite <- lt_assoc in Hincl2.
       eapply wp_subseteq_of_LtOk_incl. apply Hincl2.
@@ -1104,7 +1135,7 @@ Section LlftHelperResources.
     unfold valid, cmra_valid, ltR, lt_valid in val. destruct val as [b lti].
     destruct b as [o a d g gs w wp|]; try contradiction.
     destruct o as [[sa' sd']|], g as [g|], w as [w|]; try contradiction.
-    simpl in lti. destruct lti as [sd_d [no_int [wp_p [wsub [fm cm]]]]].
+    simpl in lti. destruct lti as [sd_d [no_int [wp_p [fm cm]]]].
     rewrite gmultiset_disj_union_left_id in cm. rewrite gmultiset_disj_union_left_id in cm.
     destruct (consistent_modulo_for_agree sd mbs gs sn (Borrow al de)) as [bs' x]; trivial.
     destruct bs' as [al' de'|].
@@ -1131,11 +1162,10 @@ Section LlftHelperResources.
     unfold valid, cmra_valid, ltR, lt_valid in val. destruct val as [b lti].
     destruct b as [o a d g gs w wp|]; try contradiction.
     destruct o as [[sa sd]|], g as [g|], w as [w|]; try contradiction.
-    simpl in lti. destruct lti as [sd_d [no_int [wp_w [wsub [fm cm]]]]].
+    simpl in lti. destruct lti as [sd_d [no_int [wp_w [fm cm]]]].
     rewrite gmultiset_disj_union_left_id in cm.
-    destruct (consistent_modulo_for_agree sd mbs gs sn (Unborrow bl al de)) as [bs' x]; trivial.
+    destruct (consistent_modulo_for_agree w mbs gs sn (Unborrow bl al de)) as [bs' x]; trivial.
     { unfold is_not_permanently_dead. trivial. }
-    { apply (consistent_modulo_mono w sd); trivial. set_solver. }
     destruct bs' as [|bl' al' de'].
     - unfold consistent_bs in x. destruct x as [Ha Hb]. discriminate.
     - unfold consistent_bs in x. destruct x as [Ha Hb]. rewrite Hb. trivial.
@@ -1155,20 +1185,26 @@ Section LlftHelperResources.
     unfold valid, cmra_valid, ltR, lt_valid in val. destruct val as [b lti].
     destruct b as [o a d g gs w wp|]; try contradiction.
     destruct o as [[sa' sd']|], g as [g|], w as [w|]; try contradiction.
-    simpl in lti. destruct lti as [sd_d [no_int [wp_p [wsub [fm cm]]]]].
+    simpl in lti. destruct lti as [sd_d [no_int [wp_p [fm cm]]]].
     rewrite gmultiset_disj_union_left_id in cm.
     apply (consistent_modulo_for_distinct sd g gs sn1 sn2 (Borrow al1 de1) (Borrow al2 de2)); trivial.
   Qed.
   
-  Local Instance pers_dead2 γlt k : Persistent (Dead γlt k).
+  Global Instance pers_dead2 γlt k : Persistent (Dead γlt k).
   Proof.
     apply own_core_persistent. unfold CoreId. trivial.
   Qed.
   
-  Local Instance pers_modulo_dead2 γlt k : Persistent (ModuloDeadPers γlt k).
+  Global Instance pers_modulo_deadB γb k : Persistent (ModuloDeadPersB γb k).
   Proof.
-    apply own_core_persistent. unfold CoreId. trivial.
+    rewrite /ModuloDeadPersB. apply own_core_persistent. unfold CoreId. trivial.
   Qed.
+  Global Instance pers_modulo_dead2 γlt γb k : Persistent (ModuloDeadPers γlt γb k).
+  Proof. rewrite /ModuloDeadPers. exact _. Qed.
+
+  Lemma modulo_dead_pers_implies_dead γlt γb d :
+      ModuloDeadPers γlt γb d -∗ Dead γlt d.
+  Proof. rewrite /ModuloDeadPers. by iIntros "[_ $]". Qed.
       
       (*
   Lemma get_all_deads γlt sa sd :
@@ -1185,40 +1221,38 @@ Section LlftHelperResources.
   Qed.
   *)
   
-  Lemma get_all_modulo_dead_pers γlt sd :
-      ModuloDead γlt sd ⊢ ModuloDead γlt sd ∗ (∀ d , ⌜d ∈ sd⌝ -∗ ModuloDeadPers γlt d).
+  Lemma get_all_modulo_dead_pers γlt γb sd :
+      (∀ d , ⌜d ∈ sd⌝ -∗ Dead γlt d) -∗ ModuloDead γb sd -∗
+      ModuloDead γb sd ∗ (∀ d , ⌜d ∈ sd⌝ -∗ ModuloDeadPers γlt γb d).
   Proof.
-    unfold LtState, lt_state. iIntros "o". 
-    iSplit.
+    iIntros "#Deads o". iSplit.
     - iFrame.
     - iIntros (d) "%Hin". unfold ModuloDead, modulo_dead, ModuloDeadPers, modulo_dead_pers.
-      replace (LtOk None ∅ sd None ∅ (Some sd) sd) with
-        (LtOk None ∅ sd None ∅ (Some sd) sd ⋅ LtOk None ∅ {[d]} None ∅ None {[d]}).
+      rewrite /ModuloDeadPers /ModuloDeadPersB.
+      iSplitL; last by iApply "Deads".
+      replace (LtOk None ∅ ∅ None ∅ (Some sd) sd) with
+        (LtOk None ∅ ∅ None ∅ (Some sd) sd ⋅ LtOk None ∅ ∅ None ∅ None {[d]}).
       + iDestruct "o" as "[o p]". iFrame "p".
       + unfold "⋅". simpl. f_equal; set_solver.
   Qed.
   
-  Lemma modulo_dead_pers_implies_dead γlt d :
-      ModuloDeadPers γlt d -∗ Dead γlt d.
-  Proof.
-      unfold ModuloDeadPers, modulo_dead_pers, Dead, dead.
-      iApply own_mono.
-      exists (LtOk None ∅ {[d]} None ∅ None {[d]}).
-      unfold "⋅", cmra_op, ltR. simpl. f_equal; set_solver.
-  Qed.
-      
+  (** Advancing the borrow side's view of the dead set.
+
+    [Dead γlt k] used to be a premise, and it was doing real work: the old
+    [modulo_dead] put [w] into the *global* dead component, so extending it
+    needed [k] to be there already.  Now that it does not, the update is at
+    the borrow name alone - which is the point, because the borrow name is
+    the one that has to be levelled.  What the premise used to enforce is
+    enforced by [inner_inv], which carries [∀ d ∈ dead, Dead γlt d]
+    persistently and so cannot be advanced past the real dead set. *)
   Lemma modulo_dead_new γlt k sd' :
-      Dead γlt k ∗ ModuloDead γlt sd' ==∗
-      ModuloDead γlt (sd' ∪ {[k]}).
+      ModuloDead γlt sd' ==∗ ModuloDead γlt (sd' ∪ {[k]}).
   Proof.
-    setoid_rewrite <- own_op.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
     intros o a d g gs w wp lti. destruct o as [[sa sd]|], g as [g|], w as [w|]; try contradiction.
-      simpl in lti. destruct lti as [sd_d [wp_p [wsub [no_int [fm cm]]]]].
+      simpl in lti. destruct lti as [sd_d [wp_p [wsub [fm cm]]]].
       simpl. split. { set_solver. } split. { set_solver. } split. { set_solver. }
-      split. { set_solver. } split. { set_solver. }
-      rewrite gmultiset_disj_union_left_id.
-      rewrite gmultiset_disj_union_left_id in cm.
+      split. { set_solver. }
       apply (consistent_modulo_for_kill_lt sd'). trivial.
   Qed.
 
@@ -1233,9 +1267,8 @@ Section LlftHelperResources.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
 
     intros o a d g gs w wp lti. destruct o as [s|], g as [g|], w as [w|]; try contradiction.
-    - simpl in lti. destruct lti as [sd_d [no_int [wp_p [wsub [fm cm]]]]].
+    - simpl in lti. destruct lti as [sd_d [no_int [wp_p [fm cm]]]].
       simpl. split. { set_solver. }
-      split. { set_solver. }
       split. { set_solver. }
       split. { set_solver. }
       split. {
@@ -1301,7 +1334,7 @@ Section LlftHelperResources.
         unfold lt_inv in lti.
         destruct g; try contradiction.
         destruct w; try contradiction.
-        destruct lti as [_ [_ [_ [_ [fm cm]]]]]. have fmk := fm k.
+        destruct lti as [_ [_ [_ [fm cm]]]]. have fmk := fm k.
         have h : Decision (k ∈ sa1) by solve_decision. destruct h as [h|n]; trivial.
         exfalso.
         destruct fmk as [_ fmk]. have fmk1 := fmk n. subst a.
@@ -1387,7 +1420,7 @@ Section LlftHelperResources.
     unfold "⋅", cmra_op, ltR, "✓", cmra_valid, alive, lt_op, lt_valid in Hv.
     unfold "⋅", cmra_op, ltR, lt_op in Hv.
     destruct Hv as [b Hv]. destruct b as [[[sa sd]|] a d [g|] gs [w|] wp|].
-    - unfold lt_inv in Hv. destruct Hv as [Hsd [Hdisj [Hwp_w [Hwsub [Hfm Hcm]]]]].
+    - unfold lt_inv in Hv. destruct Hv as [Hsd [Hdisj [Hwp_w [Hfm Hcm]]]].
       have Hm := Hfm k. destruct Hm as [Hm1 Hm2]. destruct (decide (k ∈ sa)) as [e|e].
       + have Hm := Hm1 e.
         rewrite multiplicity_disj_union in Hm.
@@ -1416,9 +1449,8 @@ Section LlftHelperResources.
     iIntros "a". iApply own_update. 2: { iFrame "a". } apply update_helper2.
 
     intros o a d g gs w wp lti. destruct o as [s|], g as [g|], w as [w|]; try contradiction.
-    - simpl in lti. destruct lti as [sd_d [no_int [wp_p [wsub [fm cm]]]]].
+    - simpl in lti. destruct lti as [sd_d [no_int [wp_p [fm cm]]]].
       simpl. split. { set_solver. }
-      split. { set_solver. }
       split. { set_solver. }
       split. { set_solver. }
       split. {

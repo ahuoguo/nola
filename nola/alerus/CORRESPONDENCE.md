@@ -32,6 +32,12 @@ Leaf's `guards_alloc`, which makes a guard persistent by allocating an Iris
 invariant, has no later-free counterpart; `nola/alerus/eternal.v` (78, new)
 replaces its one use with an authoritative set of eternalized keys.
 
+Nola proper gained one lemma for this port: `nola/iris/borrow.v`'s
+`borrow_wsat_alloc_name`, the analogue of `sinv_wsat_alloc_name`, which
+hands out a borrowing machinery's ghost *name* before the interpretation
+that mentions it is built.  Several machineries - one per execution level -
+need that order.
+
 ## `lambda_verus/lang/` → `nola/alerus/lang/`
 
 | upstream | here |
@@ -59,13 +65,21 @@ satisfaction, not `wp`.
 `reborrow`, `split`, `unborrow`, `unnest`); `lifetime_full.v` (1942 → 2167)
 keeps its name.
 
-Three structural changes:
+Four structural changes:
 
 * the lifetime invariant and the box become **world satisfactions**
   (`llft_wsat = llft_wsatG ∗ llft_inv_other`) threaded explicitly, instead
   of Iris invariants at `↑Nmain`/`↑Nbox`;
 * slices hold **formulas** interpreted by a `BorSem` parameter, not `iProp`s,
   so `inv.v` gains `BorSem`, `BorStateFml` and `ShrBorSem`;
+* `LtRa`'s two halves sit at **two ghost names**: `llft_name` for the
+  lifetime tokens (`LtState`, `Alive`, `Dead`), `bor_name` for the borrow
+  bookkeeping (`AuthBorState`, `OwnBorState`, `ModuloDead`).  Upstream has
+  one.  The camera is unchanged - `lt_inv`'s only cross term was `w ⊆ d`,
+  and `modulo_dead` no longer contributes to the global dead set - and
+  what the camera enforced is now `inner_inv`'s persistent
+  `∀ d ∈ dead, Dead llft_name d`.  This is what lets one borrowing
+  machinery per execution level sit over one lifetime algebra;
 * `idx_bor`/`full_bor` carry an abstract **`StBor`** (`st_incl`, `st_iff`)
   in place of the Leaf guard `κ ⊑ κ'` and the `□ (bor_sem Px' ↔ bor_sem Px)`,
   which is what makes a borrow storable in a formula.  `lifetime_full.v` is
@@ -92,7 +106,7 @@ One-to-one, same names, for: `atomic_inv`, `base`, `base_type`, `bool`,
 `soundness.v` (100 upstream, 182 here) is ported, and proves *termination*
 as well as the original's safety.
 
-Eight files are new here:
+Ten files are new here:
 
 | here | what |
 |---|---|
@@ -103,6 +117,8 @@ Eight files are new here:
 | `rec.v` (1661) | recursive types by `profix`: a type's data as a `prost`, the laws split into an unconditional `Ty` and a depth-indexed `TyProphAt`, **two** guarded formers proved `Productive` - `&shr{κ}` and the owning pointer, the latter with its pointee behind a stored guard - `ty_rec` with both laws, `xsum2_tyd`/`unit_tyd` for the body, the two worked recursive types `ty_shr_list` and `ty_own_list`, and their subtyping: `tyd_incl_at` (`type_incl` with the depth exposed), a congruence per former, and `ty_rec_incl` by depth induction |
 | `levels.v` (261) | execution levels as *ghost names*, following the thesis's Chapter 5 but without its global maximum level: `lvs_names_alloc` (names first, interpretation after), `lvs_below` (the thesis's `∗_{k<j} Winv_k`), `lv_tok`/`lvs_below_acc`/`lvs_below_alloc` (a reference at level `k` is reachable from, and allocatable at, execution level `j > k`) and `twpw_lvs_le` (its `ty-lev`) |
 | `strat.v` (1030) | the thesis's **Chapter 5 case study**, mechanized over `nola.lrust`: leveled types with `ref°ₖ`, `→ⱼ` and (5.1)'s `listₖ`, the interpretation as a level-indexed family *and* a derivability-indexed one ((5.4) and (5.5) both), the typing rules, the subtyping rules including `≤-ref` **used coinductively**, Corollary 5.3, § 5.1's closing iteration example and four closed terminating programs.  Not part of the port - it is what settles what the port's `fn` would need, and it is axiom-free |
+| `strat_bor.v` (611) | **levelled borrows**: the question `strat.v` leaves open and that neither source answers - the thesis's Chapter 5 has no borrows, `rust_halt` has no function type.  One borrowing machinery per execution level over *one* lifetime algebra, `typed_call_borrowed` (a closure stored in a borrow, retrieved and called, with `j ≤ k < i` forced), `knot_not_typable`, and a closed terminating program.  Not part of the port - it is what justifies the `lifetime/ra.v` refactor, and it is axiom-free |
+| `level_ctx.v` (363) | the port's **execution levels**: `alerusNames` (one level's ghost names), `alerusGS_of` (the thesis's `alerusGS_at`), `alerus_names_alloc`, the family `alerus_wsats`, `alerus_wsat_below` (`∗_{k<j} Winv_k`) and `ty-lev` as `twpw_alerus_le`.  `typing/soundness.v` takes its `alerusGpreS` and its allocation from here |
 | `syn_type.v` (942) | **dead**: not in `_CoqProject`, no `.vo`, imports `nola.lrust`.  A stale copy of `prophecy/syn_type.v`, which is the live grammar |
 
 Two upstream files are missing:

@@ -106,6 +106,9 @@ Section FullBorrows.
   Context `{!invGS_gen hlc Σ}.
   Context `{!boxG Σ, !sinvGS FML Σ, !BorSem FML Σ}.
   
+  (** The lifetime tokens' ghost name, and - separately - the borrow
+    bookkeeping's.  See the head of [nola/alerus/lifetime/inv.v]. *)
+  Context (γlt: gname).
   Context (γ: gname).
   Context (γo: gname).
   Context (γd: gname).
@@ -122,6 +125,45 @@ Section FullBorrows.
       A alive ==> B alive
       B dead ==> A dead
   *)
+  (** ** [alive] is redundant in the slice bookkeeping
+
+    Everywhere the borrow bookkeeping consults [alive] it consults it as
+    [al ⊆ alive], for a borrow's own alive set, and [map_wf] makes that
+    equivalent to [al ## dead]: well-formedness says [al ∪ de ⊆ alive ∪
+    dead], and [alive ## dead].
+
+    This is the fact PLAN.md's per-level design rests on, so it is checked
+    here rather than assumed.  A level that lags behind the real dead set
+    can be indexed by *its own* [dead_k] alone, and "κ is alive" then
+    transfers into it from the shared lifetime tokens: [κ ## dead] gives
+    [κ ## dead_k] for free, since [dead_k ⊆ dead].  Phrased with [alive] it
+    would not, because the level would need [κ ⊆ alive_k] and aliveness -
+    unlike death - has no persistent witness to carry across. *)
+  Lemma subseteq_alive_iff {alive dead al : gset lt_atom} :
+    alive ## dead → al ⊆ alive ∪ dead → (al ⊆ alive ↔ al ## dead).
+  Proof. set_solver. Qed.
+
+  Lemma subseteq_diff_singleton {X al : gset lt_atom} {k} :
+    al ⊆ X ∖ {[k]} ↔ al ⊆ X ∧ k ∉ al.
+  Proof.
+    split.
+    - move=> H. split.
+      + move=> x Hx. have Hx' := H _ Hx.
+        by apply elem_of_difference in Hx' as [? _].
+      + move=> Hk. have Hk' := H _ Hk.
+        apply elem_of_difference in Hk' as [_ Hne].
+        by apply Hne, elem_of_singleton.
+    - move=> [H1 H2] x Hx. apply elem_of_difference.
+      split; [by apply H1|]. rewrite elem_of_singleton=> ?. by subst.
+  Qed.
+
+  Definition boxmap_dead (dead : gset lt_atom) (m : gmap_bor_state)
+      : gmap slice_name bool :=
+    (λ bs , match bs with
+      | Borrow al de => bool_decide (al ## dead ∧ ¬(de ## dead))
+      | Unborrow _ _ _ => false
+    end) <$> m.
+
   Definition outlives_consistent (dead: gset lt_atom) (outlives : outlives_set)
     := ∀ (o: gset lt_atom * lt_atom) , o ∈ outlives → (o.2 ∈ dead) → ¬(o.1 ## dead).
   
@@ -397,6 +439,58 @@ Section FullBorrows.
     | Unborrow _ _ _ => false
   end.
   
+  Definition invalidated_dead (dead : gset lt_atom) (k: lt_atom) (bs: BorState) :=
+    match bs with
+    | Borrow al de => bool_decide (al ## dead ∧ ¬(de ## dead) ∧ k ∈ al)
+    | Unborrow _ al de => bool_decide (al ## dead ∧ ¬(de ## dead) ∧ k ∈ al)
+    end.
+
+  Definition revalidated_dead (dead : gset lt_atom) (k: lt_atom) (bs: BorState) :=
+    match bs with
+    | Borrow al de => bool_decide (al ## dead ∧ k ∉ al ∧ (de ## dead) ∧ k ∈ de)
+    | Unborrow _ _ _ => false
+    end.
+
+  (** The three places [alive] appears, with it eliminated.  Each is an
+    equality of the *boolean*, so it can be rewritten under [boxmap] and
+    under [borrow_sum] without touching any proof that follows. *)
+  Lemma boxmap_alive_free {alive dead blocked outlives m} :
+    map_wf alive dead blocked outlives m →
+    boxmap alive dead m = boxmap_dead dead m.
+  Proof.
+    move=> Hwf. apply map_eq=> sn. rewrite /boxmap /boxmap_dead !lookup_fmap.
+    destruct (m !! sn) as [[al de|bl al de]|] eqn:Hsn; rewrite Hsn /=;
+      [|done|done].
+    f_equal. apply bool_decide_ext.
+    destruct Hwf as [Hdisj [_ [_ [Hall _]]]].
+    have Hb := Hall sn _ Hsn. destruct Hb as [Hsub _]. clear Hall Hsn.
+    have Hiff := subseteq_alive_iff (al:=al) Hdisj ltac:(set_solver).
+    tauto.
+  Qed.
+
+  Lemma invalidated_alive_free {alive dead blocked outlives m} k sn bs :
+    map_wf alive dead blocked outlives m → m !! sn = Some bs →
+    invalidated alive dead k bs = invalidated_dead dead k bs.
+  Proof.
+    move=> Hwf Hsn. move: (Hwf)=> [Hdisj [_ [_ [Hall _]]]].
+    have Hb := Hall sn _ Hsn. clear Hall Hwf Hsn.
+    destruct bs as [al de|bl al de]; simpl; apply bool_decide_ext;
+      [destruct Hb as [Hsub _]|destruct Hb as [_ [_ [_ Hsub]]]];
+      have Hiff := subseteq_alive_iff (al:=al) Hdisj ltac:(set_solver); tauto.
+  Qed.
+
+  Lemma revalidated_alive_free {alive dead blocked outlives m} k sn bs :
+    map_wf alive dead blocked outlives m → m !! sn = Some bs →
+    revalidated alive dead k bs = revalidated_dead dead k bs.
+  Proof.
+    move=> Hwf Hsn. move: (Hwf)=> [Hdisj [_ [_ [Hall _]]]].
+    have Hb := Hall sn _ Hsn. clear Hall Hwf Hsn.
+    destruct bs as [al de|bl al de]; [|done]. simpl. apply bool_decide_ext.
+    destruct Hb as [Hsub _].
+    have Hiff := subseteq_alive_iff (al:=al) Hdisj ltac:(set_solver).
+    rewrite (subseteq_diff_singleton (X:=alive)). tauto.
+  Qed.
+
   Definition full_borrows_invalidated_via
     (alive dead : gset lt_atom) (k: lt_atom) (m: gmap_bor_state) (mprops: gmap_props FML Σ) : iProp Σ :=
       borrow_sum (invalidated alive dead k) m mprops.
@@ -436,7 +530,7 @@ Section FullBorrows.
      "for any possible future ordering sequence of lifetime expirations, we have the view
      shifts that we need".
      
-     Note that `Dead γ k` appears on the LHS of the view shift. This is useful for two reasons:
+     Note that `Dead γlt k` appears on the LHS of the view shift. This is useful for two reasons:
       - Because [†κ] appears in llftl_bor_acc
       - Because it's needed for unnest
   *)
@@ -447,7 +541,7 @@ Section FullBorrows.
     | 0 => True
     | S fuel' =>
       (∀ (k: lt_atom),
-        ⌜k ∈ alive ∧ outlives_consistent (dead ∪ {[k]}) outlives⌝ -∗ ModuloDeadPers γ k -∗ (
+        ⌜k ∈ alive ∧ outlives_consistent (dead ∪ {[k]}) outlives⌝ -∗ ModuloDeadPers γlt γ k -∗ (
         (⌜¬ swell k⌝ -∗ future_vs' fuel' (alive ∖ {[k]}) (dead ∪ {[k]}) outlives m mprops) ∧ (
           (full_borrows_invalidated_via alive dead k m mprops)
         ={↑NllftUsr ∪ ↑NllftUsr2}=∗ (full_borrows_revalidated_via alive dead k m mprops)
@@ -463,7 +557,7 @@ Section FullBorrows.
       (m: gmap_bor_state) (mprops: gmap_props FML Σ) :
     future_vs alive dead outlives m mprops ⊣⊢
     ∀ (k: lt_atom),
-      ⌜k ∈ alive ∧ outlives_consistent (dead ∪ {[k]}) outlives⌝ -∗ ModuloDeadPers γ k -∗ (
+      ⌜k ∈ alive ∧ outlives_consistent (dead ∪ {[k]}) outlives⌝ -∗ ModuloDeadPers γlt γ k -∗ (
       (⌜¬ swell k⌝ -∗ future_vs (alive ∖ {[k]}) (dead ∪ {[k]}) outlives m mprops) ∧ (
         (full_borrows_invalidated_via alive dead k m mprops)
       ={↑NllftUsr ∪ ↑NllftUsr2}=∗ (full_borrows_revalidated_via alive dead k m mprops)
@@ -687,10 +781,16 @@ Section FullBorrows.
   Qed.
       
 
+  (** The borrow side's view of which atoms are dead is now its own ghost
+    state - [ModuloDead γ dead] at the *borrow* name - so nothing in the
+    camera ties it to the lifetime tokens any more.  This conjunct ties it
+    instead, and it is persistent, so it costs nothing to carry and nothing
+    to duplicate: every atom this bookkeeping believes dead really is. *)
   Definition inner_inv (alive dead blocked : gset lt_atom) : iProp Σ :=
     ∃ (mbs: gmap_bor_state) (mprops: gmap_props FML Σ) Ptotal (outlives: outlives_set),
         AuthBorState γ mbs
           ∗ ModuloDead γ dead
+          ∗ □ (∀ d , ⌜d ∈ dead⌝ -∗ Dead γlt d)
           ∗ box bor_sem (boxmap alive dead mbs) Ptotal
           ∗ future_vs alive dead outlives mbs mprops
           ∗ ⌜dom mbs = dom mprops
@@ -700,6 +800,18 @@ Section FullBorrows.
           ∗ ([∗ map] sn ↦ Q ∈ mprops, sinv_tok sn Q)
           ∗ Outlives γo outlives.
           
+  (** Extending the borrow side's view of the dead set by an atom that
+    really is dead.  [inner_inv]'s death witness is what replaces the
+    camera-level coupling the [LtRa] split removed. *)
+  Lemma deads_extend (dead : gset lt_atom) (k : lt_atom) :
+    Dead γlt k -∗ □ (∀ d , ⌜d ∈ dead⌝ -∗ Dead γlt d) -∗
+    □ (∀ d , ⌜d ∈ dead ∪ {[k]}⌝ -∗ Dead γlt d).
+  Proof.
+    iIntros "#D #Ds !>" (d) "%Hd".
+    rewrite elem_of_union elem_of_singleton in Hd.
+    destruct Hd as [Hd| ->]; [by iApply "Ds"|done].
+  Qed.
+
   Lemma inner_fake (alive dead blocked al de : gset lt_atom) Qx :
     ¬(al ## dead) →
     ModuloDead γ dead ⊢ |=[box_wsat bor_sem]=> ∃ sn, 
@@ -841,7 +953,7 @@ Section FullBorrows.
   Lemma inv_get_dead alive dead blocked
     : inner_inv alive dead blocked ⊢ ⌜default_dead ∈ dead⌝.
   Proof.
-    iIntros "Inv". iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [modulo [box [vs [%pures [#slices outlives]]]]]]".
+    iIntros "Inv". iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [modulo [#DeadsLt [box [vs [%pures [#slices outlives]]]]]]]".
     unfold map_wf in pures. intuition.
   Qed.
     
@@ -903,7 +1015,7 @@ Section FullBorrows.
     iDestruct "Inv" as (opt_k) "[D Inv]".
     iDestruct (delayed_agree with "[D Delayed]") as "%Heq". { iFrame "D Delayed". }
     subst opt_k.
-    iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [box [vs [#pures [#slices outlives]]]]]]".
+    iDestruct "Inv" as (mbs mprops Ptotal outlives) "[auth [Modulo [#DeadsLt [box [vs [#pures [#slices outlives]]]]]]]".
     iMod (inner_fake alive dead blocked al de with "Modulo") as (sn) "(X & Y & Z)". { trivial. }
     iModIntro. iExists sn. iFrame. unfold inner_inv. iExists mbs. iExists mprops. iExists Ptotal. iExists outlives.
     iFrame. iFrame "#".
