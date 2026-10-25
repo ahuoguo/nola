@@ -62,8 +62,13 @@ satisfaction, not `wp`.
 
 `lifetime_internals/*.v` map one-to-one onto files of the same name
 (`augment_outlives`, `expire_lt`, `iff`, `inv`, `join`, `new_lt`, `ra`,
-`reborrow`, `split`, `unborrow`, `unnest`); `lifetime_full.v` (1942 → 2167)
-keeps its name.
+`reborrow`, `split`, `unborrow`, `unnest`); `lifetime_full.v` (1942 → 2606)
+keeps its name.  One file is new: `level.v` (1012), a per-level view of the dead
+set - see PLAN.md item 2, step 3.  `lifetime_full.v`'s invariant is
+*decoupled* from the borrow bookkeeping's view of the world: the
+bookkeeping keeps its own created/dead/blocked, the invariant carries the
+kill order those deads are a prefix of, and `Delayed` marks the one-atom
+gap between the shared dead set and that order.
 
 Four structural changes:
 

@@ -498,7 +498,7 @@ ones are large for reasons now understood rather than guessed at.
      the borrow name alone** - which is exactly the point, because that is
      the name that has to vary with the level.
 
-   #### What is still in the way: every level's view of the dead set
+   #### What was in the way: every level's view of the dead set
 
    The split is necessary and it is not sufficient, and the remaining
    obstruction is sharper than "lifetime death needs the box".
@@ -529,11 +529,12 @@ ones are large for reasons now understood rather than guessed at.
      world satisfaction is held, by running the existing `inner_kill_lt`
      over `sd ∖ sd_k`, which is sound precisely because the persistent
      witness says those atoms really are dead;
-   * `PLAN`'s lifetime-level invariant - *a lifetime carries a level,
-     every borrow of it lives strictly below that level, and it is
-     created and killed only at an execution level at least that high* -
-     is then what makes the lag invisible: a lifetime never has borrows
-     at a level that could lag behind its death.
+   * and this plan expected a *lifetime-level invariant* on top - a
+     lifetime carrying a level, created and killed only at an execution
+     level at least that high - to make the lag invisible.  It is not
+     needed, and the section after next says why: lifetimes are not
+     levelled at all, borrows are, and a level learns of a lifetime when
+     it is first borrowed there.
 
    #### Checked: the bookkeeping does not need `alive` at all
 
@@ -561,35 +562,139 @@ ones are large for reasons now understood rather than guessed at.
    alive" transfers into it for free: the user's `@[κ]` and the shared
    `LtState` give `κ ## dead`, and `dead_k ⊆ dead` gives `κ ## dead_k`.
 
-   #### And the reindexing that closes it
+   #### Done: the reindexing, in `lifetime/level.v`
 
-   With `alive` eliminable, `inner_inv` can be *reparametrized* rather
-   than rewritten: index it by the created atoms instead of the live
-   ones,
+   With `alive` eliminable, `inner_inv` is *reparametrized* rather than
+   rewritten: indexed by the created atoms instead of the live ones,
 
    >  `inner_inv_c created dead blocked  :=  inner_inv (created ∖ dead) dead blocked`
 
-   which is a pure change of variable - `alive ## dead` becomes a
-   theorem, `boxmap` and the two validity predicates lose their
-   dependence on the first index by the lemmas above, and `future_vs`
-   recurses on `size (created ∖ dead)` as before.
+   a pure change of variable, faithful exactly when `dead ⊆ created`,
+   which every operation preserves.  In these coordinates **death leaves
+   `created` alone** (`inner_kill_lt_c`), creation moves only `created`
+   (`inner_new_lt_c`), and an atom a level never heard of dies there by
+   `inner_instant_kill_c`, which moves both.  `inner_catch_up_one`
+   unifies the last two, and the file is closed under the global
+   context.
 
-   Level `k` then carries `(created_k, dead_k, blocked_k)`, both of the
-   first two monotone, and opening a borrow of `κ` at level `k` needs
+   Two things the construction forced, and both correct this plan.
 
-   * `κ ## dead_k` - free, from `κ ## dead` (the user's `@[κ]` against
-     the shared `LtState`) and `dead_k ⊆ dead` (the persistent witness);
-   * `κ ⊆ created_k` - free as well, and this is the part that was not
-     obvious: `map_wf`'s fourth conjunct says a borrow's own
-     `al ∪ de ⊆ alive ∪ dead`, i.e. `⊆ created_k`, so a borrow of `κ`
-     *being in level `k`'s map at all* is the witness.
+   **A level's invariant has to be a closed proposition.**  It may not
+   mention the shared `(sa, sd)` at all, because `∗_{k<j} Wbor_k` is
+   held on its own by a body that was passed nothing else.  The plan
+   above has `dead_k ⊆ sd` carried by the persistent witness, and that
+   much is right - but it is not even needed as a *statement*: what a
+   lagging level actually wants is that a lifetime the lender holds a
+   token for is not dead there, and that is `lv_alive_disj_dead`, the
+   level's own death witness against the lender's `Alive` token.  The
+   other half, `created_k ⊆ sa ∪ sd`, has **no** persistent witness -
+   aliveness is the non-persistent side - and it is exactly what
+   freshness would want.  So creation is made to need no freshness:
+   `lv_create` skips an atom the level believes dead and is the identity
+   on one it has already heard of.  What is left of a level's
+   well-formedness, `lv_dead s ⊆ lv_created s`, is local to the level,
+   and `llft_lv_inv` mentions nothing shared.  A kill in the shared
+   logic therefore leaves it *syntactically* unchanged - there is no
+   lemma to state, which is lazy catch-up in its sharpest form.
 
-   So neither index needs anything carried across from the shared
-   bookkeeping beyond what is already persistent.  What remains is
-   creation - `new_lt` for a lifetime of level `ℓ` has to reach the
-   levels below `ℓ`, which is exactly what a body at level `≥ ℓ` holds -
-   and then the mechanical reindexing itself, in `lifetime/inv.v` and
-   `lifetime/expire_lt.v`.
+   **Lifetime creation does not have to reach down the levels.**  The
+   plan said `new_lt` for a lifetime of level `ℓ` has to reach the
+   levels below `ℓ`.  It has to reach none of them.  `lv_borrow_ready`:
+   a borrow of `κ` can be made at a level that has never heard of `κ`,
+   because the level creates `κ`'s atoms on the spot and needs only that
+   it does not believe them dead.  So a lifetime reaches a level lazily
+   too, when it is first borrowed there.  That is the right design and
+   not merely a cheaper one - lifetimes are not levelled, *borrows* are,
+   and the argument that the knot cannot close never asked anything of
+   lifetime creation.
+
+   #### Done too: catching up, and the order it has to follow
+
+   A level catches up by replaying the shared kill order (`lv_catch_up`
+   over a `kill_run`).  Two facts about that, both checked:
+
+   * **It is a list, not a set.**  `no_greedy_kill_order` exhibits an
+     outlives set consistent with its dead set in which no atom may be
+     killed first - a two-cycle, `a` before `b` and `b` before `a`.
+     Such a state is unreachable, but unreachability is a fact about the
+     real kill order, not about `outlives_consistent`, so the level
+     replays that order rather than choosing its own.
+
+   * **A past run stays valid as the outlives relation grows**
+     (`kill_run_mono`).  `kill_run` quantifies over the relation as it
+     stands *now*, so a pair added later could in principle invalidate a
+     step the shared logic had already checked.  It cannot:
+     `llft_augment_outlives` adds `(κ, k)` only for `k ∈ κ' ⊆ sa`, so a
+     new pair's second component is alive and therefore not in the run.
+     Without this the levels would have to be caught up before every
+     augmentation, and a body at level `j` cannot catch up the levels at
+     or above `j` - which would have sunk the design.
+
+   One more thing falls out: **the levelled invariant has no use for
+   `Delayed`.**  `outer_inv`'s two phases exist because the shared kill
+   has to close the `NllftG` mask between taking `[†κ]` and updating the
+   borrows; at a level those steps are decoupled by construction.
+   `outer_inv_open`/`outer_inv_close` say the two invariants agree while
+   no kill is in flight, so `lv_inv` is built from `inner_inv` directly.
+
+   #### Done: the decoupling, in `lifetime_full.v`
+
+   `lifetime_full.v`'s `llft_inv_main` no longer ties the borrow
+   bookkeeping's indices to the shared `(sa, sd)`.  The bookkeeping keeps
+   its own view - created, dead, blocked - and all fourteen rules are
+   re-proved against it.  The user-facing statements never mentioned
+   those sets, so the whole of `typing/` is untouched and the tree is
+   green.  That makes the family a substitution: `llft_inv_main` holds
+   one `lv_inv`, and holding `llft_lv_inv ls` instead is a change of that
+   one conjunct.
+
+   What the invariant carries now:
+
+   * a **kill order** - a `mono_list` of the atoms in the order they
+     died, with `sd` its set.  A level's dead set is a prefix of it, and
+     `kill_run` records the outlives condition the shared logic checked
+     at each kill, which is what a lagging level needs verbatim;
+   * **a second half of the outlives relation**, at `oset_name`, so the
+     run's well-formedness - which mentions `outlives` - can be stated
+     where `sd` and the log are bound.  `o_name`'s two halves are
+     already spoken for, one by `inner_inv` and one by the client, and
+     that is the whole reason for the extra name;
+   * **`Delayed`, re-purposed.**  It used to mark the gap between the
+     shared dead set and a borrow invariant; it now marks the one-atom
+     gap between the shared dead set and the kill order.  That gap
+     exists only inside the vacuous branch of `llftl_end`, where the
+     kill is taken and the contradiction derived, and every rule that
+     holds `llft_inv_other` sees `pend = None`.  So the bookkeeping is
+     level with the order whenever a rule looks, and no rule ever has to
+     catch up.
+
+   Three things only the integration could settle:
+
+   * **`guard_helper2` asked the wrong question.**  It wanted
+     `set_map LtAtomSwell κ' ⊆ alive`, which a caller cannot produce once
+     the bookkeeping's dead set is its own.  It now asks `## dead` - the
+     same thing by `inv.subseteq_alive_iff` - and that is where the
+     `alive`-free lemmas earn their keep.
+   * **Creating a borrow does not need the coupling.**
+     `inner_borrow_create` threads an `LtState γlt alive dead` it never
+     uses, so `lv_borrow_create` goes through
+     `inner_borrow_create_empty` and `inner_reborrow` and asks nothing
+     of the shared lifetime state.
+   * **`outer_inv`'s two phases are gone from every rule.**  They kept a
+     borrow invariant in step with a kill; the bookkeeping is not in
+     step by construction any more.
+
+   One practical finding worth recording: `set_solver` does not
+   terminate in a context holding `kill_run`.  A fixpoint over a list in
+   scope is enough to make `naive_solver` diverge, so the set reasoning
+   in these proofs is done by named lemmas in small contexts.
+
+   #### What is left of step 4
+
+   `llft_inv_main` holds *one* `lv_inv`.  Making it `llft_lv_inv ls`,
+   and splitting `llft_wsatG` so that a body can hold `∗_{k<j} Wbor_k`
+   on its own, is the remaining half - and that split is what forces the
+   user-facing rules to carry a level index, which is step 5.
 
    ### Done: levelled borrows, mechanized
 
@@ -675,12 +780,20 @@ ones are large for reasons now understood rather than guessed at.
       (the port's `alerusGS_at`) and `alerus_wsat_below`.
    2. **`LtRa`'s two halves on two ghost names** - done, so that
       `bor_name` can vary with the level while `llft_name` does not.
-   3. **A per-level view of the dead set**, with lazy catch-up, and with
-      it the lifetime-level invariant: `lifetime/inv.v` and
-      `lifetime/expire_lt.v`.  This is the open piece, and the section
-      above says what shape it has to take.
-   4. **`bor_name` per level**, which is then only a matter of replacing
-      the one `bor_name` field by the level's.
+   3. **A per-level view of the dead set**, with lazy catch-up - done,
+      `lifetime/level.v`: the change of variable, the three operations
+      in it, `lv_borrow_ready`, `lv_catch_up`, `kill_run_mono`.  No
+      lifetime-level invariant was needed; two of this plan's
+      expectations were wrong and the sections above record how.
+   4. **Decouple `lifetime_full.v`'s invariant** - done; the piece this
+      plan did not foresee, and the one that settles whether the design
+      survives contact with the real rules.  It does: all fourteen sites
+      are re-proved in the bookkeeping's own coordinates, `typing/` is
+      untouched and the tree is green.  What remains of this step is the
+      family itself, `llft_lv_inv ls` in place of one `lv_inv`, which is
+      a change of one conjunct - but splitting `llft_wsatG` so a body can
+      hold `∗_{k<j} Wbor_k` alone is what forces the level index into the
+      API, and that is step 5.
    5. **A level on every type former and on `typed_body`**, with `ty-lev`
       and `≤-→` proved as in `strat.v` (`twpw_alerus_le` and nothing
       else).  This is the bulk, and it touches every file in `typing/`.

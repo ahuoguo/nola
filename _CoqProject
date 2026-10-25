@@ -145,6 +145,7 @@ nola/alerus/lifetime/reborrow.v
 nola/alerus/lifetime/unnest.v
 nola/alerus/lifetime/unborrow.v
 nola/alerus/lifetime/expire_lt.v
+nola/alerus/lifetime/level.v
 nola/alerus/lifetime/lifetime_full.v
 nola/alerus/lang/proofmode.v
 nola/alerus/lang/adequacy.v

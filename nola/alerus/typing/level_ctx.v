@@ -51,6 +51,11 @@
   the tower of lifetime logics PLAN.md calls prohibitive, and it is not
   the design.
 
+  (As of the [lifetime_full.v] decoupling this is the only thing left:
+  the borrow bookkeeping no longer shares the lifetime tokens' view of
+  the world, so what is still wrong here is only that each level gets a
+  whole [llft_logicGS] rather than its own borrow names.)
+
   What the design wants is [llft_name], [o_name] and [d_name] shared for
   the whole run and only [bor_name] - and with it the box and the
   shared-borrow family - varying with the level.  [lifetime/ra.v]'s split

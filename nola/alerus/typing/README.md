@@ -496,8 +496,7 @@ The split is what makes the way out expressible: each level keeps its own
 `ModuloDead`, so it can hold its own `sd_k ⊆ sd` and catch up lazily the
 next time its world satisfaction is held - sound because `inner_inv` now
 carries `□ ∀ d ∈ dead, Dead llft_name d` persistently, which is what
-replaced the camera-level coupling.  Giving a lifetime a level, and
-keeping its borrows below it, is then what makes the lag invisible.
+replaced the camera-level coupling.
 
 The one thing that could have sunk that design is checked rather than
 assumed, in `lifetime/inv.v`: a lagging level can be *bounded* by a
@@ -508,10 +507,56 @@ Each consults it only as `al ⊆ alive` for a borrow's own alive set, and
 `al ⊆ alive ↔ al ## dead` (`subseteq_alive_iff`); `boxmap_alive_free`,
 `invalidated_alive_free` and `revalidated_alive_free` carry the
 substitution out as equalities of the *boolean*, so they rewrite under
-`boxmap` and `borrow_sum` without disturbing a proof.  A level can then
-be indexed by its own dead set alone, and "κ is alive" transfers in for
-free.  The remaining work is in `lifetime/inv.v` and
-`lifetime/expire_lt.v`; PLAN.md item 2 has the shape of it.
+`boxmap` and `borrow_sum` without disturbing a proof.
+
+`lifetime/level.v` is that design, built.  The change of variable is
+`inner_inv_c created dead blocked := inner_inv (created ∖ dead) dead
+blocked`, in which **death leaves `created` alone**, so both indices are
+monotone and a level may lag in either.  Two expectations it corrected:
+
+* a level's invariant has to be a **closed proposition** - it may not
+  mention the shared `(sa, sd)`, since `∗_{k<j} Wbor_k` is held on its
+  own - and that is affordable because what a lagging level actually
+  wants is `lv_alive_disj_dead`, the level's own death witness against
+  the lender's `Alive` token, rather than any arithmetic against the
+  shared sets;
+* **lifetime creation does not reach down the levels.**  A borrow of `κ`
+  can be made at a level that has never heard of `κ`
+  (`lv_borrow_ready`): the level creates `κ`'s atoms on the spot.  So
+  giving a lifetime a level, which this file previously said was what
+  would make the lag invisible, is not needed at all - lifetimes are not
+  levelled, *borrows* are.
+
+Catching up replays the shared kill order (`lv_catch_up`), which has to
+be a list rather than a set (`no_greedy_kill_order` is the two-cycle that
+shows consistency does not order it), and a past run stays valid as the
+outlives relation grows (`kill_run_mono`), because
+`llft_augment_outlives` only ever relates lifetimes that are alive.
+
+`lifetime_full.v` runs that design.  Its `llft_inv_main` no longer ties
+the borrow bookkeeping's indices to the shared `(sa, sd)`: the
+bookkeeping keeps its own view and all fourteen rules are re-proved
+against it, with the user-facing statements unchanged, so the whole of
+`typing/` is untouched.  The invariant now carries a **kill order** (a
+`mono_list` of the atoms in the order they died, of which a level's dead
+set is a prefix) and a second half of the outlives relation so that the
+order's well-formedness can be stated in one place; `Delayed` survives,
+re-purposed to mark the one-atom gap between the shared dead set and the
+order, which exists only inside the vacuous branch of `llftl_end`.
+
+Two things only that integration could settle.  `guard_helper2` used to
+ask for `set_map LtAtomSwell κ' ⊆ alive`, which no caller can produce
+once the bookkeeping's dead set is its own; it now asks `## dead`, which
+is the same thing by `subseteq_alive_iff` and is where the `alive`-free
+lemmas earn their keep.  And `inner_borrow_create` threads an `LtState`
+it never uses, so creating a borrow needs no agreement with the shared
+lifetime state at all.
+
+What is left is the family: `llft_inv_main` holds one `lv_inv`, and
+holding `llft_lv_inv ls` instead is a change of that one conjunct -
+but splitting `llft_wsatG` so that a body can hold `∗_{k<j} Wbor_k`
+alone is what forces the level index into the user-facing rules.
+PLAN.md item 2 has the order of work.
 
 ## What this means for the earlier plan
 
