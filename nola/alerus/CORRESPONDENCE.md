@@ -92,16 +92,17 @@ One-to-one, same names, for: `atomic_inv`, `base`, `base_type`, `bool`,
 `soundness.v` (100 upstream, 182 here) is ported, and proves *termination*
 as well as the original's safety.
 
-Seven files are new here:
+Eight files are new here:
 
 | here | what |
 |---|---|
-| `ctx.v` (2078) | the interface the whole typing layer is parametric in: `alerusGS` (ghost state), `AlerusSem` (the interpretation), `TypeFml`, `GsrcSem`, `HeapSem`, `AltSem` - the rules for stored guards, indexed borrows and inclusions at a derivability candidate - and the relaxed borrow (`dFullBor`, `dIdxBor`, `dalter`) |
-| `model.v` (1579) | the concrete model: `FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`, the four judgments, and the instances of the classes above |
+| `ctx.v` (2120) | the interface the whole typing layer is parametric in: `alerusGS` (ghost state), `AlerusSem` (the interpretation), `TypeFml`, `GsrcSem`, `HeapSem`, `AltSem` - the rules for stored guards, indexed borrows and inclusions at a derivability candidate - and the relaxed borrow (`dFullBor`, `dIdxBor`, `dalter`) |
+| `model.v` (1833) | the concrete model: `FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`, the four judgments, and the instances of the classes above |
 | `model_inst.v` (74) | the `typeG` bundle and the remaining formula-language classes |
 | `inst.v` (364) | a concrete `CON` and `JUDG` with their semantics, and the two soundness theorems at them |
 | `rec.v` (1661) | recursive types by `profix`: a type's data as a `prost`, the laws split into an unconditional `Ty` and a depth-indexed `TyProphAt`, **two** guarded formers proved `Productive` - `&shr{κ}` and the owning pointer, the latter with its pointee behind a stored guard - `ty_rec` with both laws, `xsum2_tyd`/`unit_tyd` for the body, the two worked recursive types `ty_shr_list` and `ty_own_list`, and their subtyping: `tyd_incl_at` (`type_incl` with the depth exposed), a congruence per former, and `ty_rec_incl` by depth induction |
-| `levels.v` (202) | execution levels as *ghost names*, following the thesis's Chapter 5 but without its global maximum level: `lvs_wsat_alloc`, `lvs_below` (the thesis's `∗_{k<j} Winv_k`), `lv_tok`/`lvs_below_acc` (a reference at level `k` is reachable from execution level `j > k`) and `twpw_lvs_le` (its `ty-lev`) |
+| `levels.v` (261) | execution levels as *ghost names*, following the thesis's Chapter 5 but without its global maximum level: `lvs_names_alloc` (names first, interpretation after), `lvs_below` (the thesis's `∗_{k<j} Winv_k`), `lv_tok`/`lvs_below_acc`/`lvs_below_alloc` (a reference at level `k` is reachable from, and allocatable at, execution level `j > k`) and `twpw_lvs_le` (its `ty-lev`) |
+| `strat.v` (1030) | the thesis's **Chapter 5 case study**, mechanized over `nola.lrust`: leveled types with `ref°ₖ`, `→ⱼ` and (5.1)'s `listₖ`, the interpretation as a level-indexed family *and* a derivability-indexed one ((5.4) and (5.5) both), the typing rules, the subtyping rules including `≤-ref` **used coinductively**, Corollary 5.3, § 5.1's closing iteration example and four closed terminating programs.  Not part of the port - it is what settles what the port's `fn` would need, and it is axiom-free |
 | `syn_type.v` (942) | **dead**: not in `_CoqProject`, no `.vo`, imports `nola.lrust`.  A stale copy of `prophecy/syn_type.v`, which is the live grammar |
 
 Two upstream files are missing:
@@ -121,8 +122,9 @@ in the tree.
   interpretation, because it has to live inside a borrow.  `type.v` carries
   the `_at` versions of every ghost-assertion law, quantified over a
   candidate interpretation.
-* `κ ⊑ κ'` as *data* becomes `dincl` (= `st_incl`) and, as a formula,
-  `incl_fml` (notation `κ ⊑x κ'`).
+* `κ ⊑ κ'` as *data* becomes `dincl` (= `st_incl`, the family
+  `□ ∀ δ, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']` over *every*
+  interpretation) and, as a formula, `incl_fml` (notation `κ ⊑x κ'`).
 * An indexed borrow in a formula is `idxbor_fml`, a judgment; `&{κ,i} Px`
   itself no longer mentions the interpretation.
 * `⧖d`/`⧗d`/`£n` and the steps that pay for laters are gone throughout; the

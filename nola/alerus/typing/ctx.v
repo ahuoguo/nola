@@ -1132,8 +1132,25 @@ Class AltSem (FML : oFunctor) Σ
     it is for.  In the model it is the family
     [□ ∀ δ good, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']], and this field
     instantiates it. *)
-  st_incl_at {sem} : alt_sem sem → ∀ κ κ',
+  st_incl_at {sem} : alt_any sem → ∀ κ κ',
     st_incl κ κ' ⊢ @[κ] &&{alt_WGuard sem}&&> @[κ'];
+  (** ...and it is *introduced* from exactly that family.
+
+    This is the rule [typing/function.v]'s [fn_incl_of_all] asked for and
+    the one the token form of [st_incl] could not give.  [type_call_iris']
+    creates a fresh lifetime [ϝ] for the call and the inclusion it then has
+    is *semantic* - a guard manufactured from the caller's local lifetime
+    context, not a structural containment and not an eternalized lifetime.
+
+    [alt_any] rather than [alt_sem] throughout: "good" is [Deriv], [Deriv]
+    is defined from [Jsem], and [st_incl] sits inside [idx_bor], which is a
+    judgment's semantics - so a family over the good candidates only would
+    close the cycle [typing/inst.v] records.  Over *every* interpretation
+    there is no cycle, and nothing is lost, because every proof the
+    lifetime logic has about a guard is parametric in [BorSem]. *)
+  st_incl_of_all {κ κ'} :
+    (□ ∀ sem (_ : alt_any sem), @[κ] &&{alt_WGuard sem}&&> @[κ']) ⊢
+      st_incl κ κ';
   (** The lifetime logic's greatest-lower-bound rule for stored inclusions.
     The other inclusion rules are closed facts, so [dincl_of_incl] covers
     them; this one transforms two stored inclusions, so like [dguard_trans]
@@ -1149,7 +1166,7 @@ Class AltSem (FML : oFunctor) Σ
     [frac_key_wsat llctx_interp] is part of [alerus_WG], which every
     candidate's guarding world satisfaction contains and which does not
     mention the interpretation. *)
-  Ltok_guard_frac_at {sem} : alt_sem sem → ∀ γ L q,
+  Ltok_guard_frac_at {sem} : alt_any sem → ∀ γ L q,
     frac_key_tok γ L ⊢ frac_tok γ q &&{alt_WGuard sem}&&> llctx_interp L;
   (** [llftl_borrow_shared] at the formula level.  The shared borrow it
     allocates is a [sinv_tok], which does not mention the interpretation, and
@@ -1157,7 +1174,7 @@ Class AltSem (FML : oFunctor) Σ
     one of the places where a guard can be stored in the first place. *)
   guard_fml_borrow_shared {κ Px} :
     bor_sem Px -∗ |=[alerus_WGuard]=>
-      (□ ∀ sem (_ : alt_sem sem), @[κ] &&{alt_WGuard sem}&&> sem Px) ∗
+      (□ ∀ sem (_ : alt_any sem), @[κ] &&{alt_WGuard sem}&&> sem Px) ∗
       ([†κ] -∗ |=[alerus_WGuard]=> bor_sem Px);
   (** [bor_to_guard] at the formula level.  A full borrow token [&{κ} Px] is
     plain CMRA ownership - it does not mention the interpretation - and
@@ -1832,7 +1849,7 @@ Section alt_sem.
     stronger: [fguardx_dguard_all] stores one, and nothing goes the other
     way. *)
   Local Definition fguardx_def (Px Qx : FML $oi Σ) : iProp Σ :=
-    □ ∀ sem (_ : alt_sem sem), sem Px &&{alt_WGuard sem}&&> sem Qx.
+    □ ∀ sem (_ : alt_any sem), sem Px &&{alt_WGuard sem}&&> sem Qx.
   Local Lemma fguardx_aux : seal fguardx_def. Proof. by eexists. Qed.
   Definition fguardx := fguardx_aux.(unseal).
   Local Lemma fguardx_unseal : fguardx = fguardx_def.
@@ -1841,32 +1858,35 @@ Section alt_sem.
   #[export] Instance fguardx_persistent {Px Qx} : Persistent (fguardx Px Qx).
   Proof. rewrite fguardx_unseal. exact _. Qed.
 
-  Lemma fguardx_at {sem} (H : alt_sem sem) {Px Qx} :
+  Lemma fguardx_at_any {sem} (H : alt_any sem) {Px Qx} :
     fguardx Px Qx ⊢ sem Px &&{alt_WGuard sem}&&> sem Qx.
   Proof. rewrite fguardx_unseal. iIntros "#g". iApply ("g" $! sem H). Qed.
+  Lemma fguardx_at {sem} (H : alt_sem sem) {Px Qx} :
+    fguardx Px Qx ⊢ sem Px &&{alt_WGuard sem}&&> sem Qx.
+  Proof. exact (fguardx_at_any (alt_sem_any H)). Qed.
   Lemma fguardx_of_all {Px Qx} :
-    □ (∀ sem (_ : alt_sem sem), sem Px &&{alt_WGuard sem}&&> sem Qx) ⊢
+    □ (∀ sem (_ : alt_any sem), sem Px &&{alt_WGuard sem}&&> sem Qx) ⊢
       fguardx Px Qx.
   Proof. rewrite fguardx_unseal. by iIntros "#g". Qed.
   Lemma fguardx_trans {Px Qx Rx} :
     fguardx Px Qx -∗ fguardx Qx Rx -∗ fguardx Px Rx.
   Proof.
     iIntros "#g #g'". iApply fguardx_of_all. iIntros "!>" (sem H).
-    iApply (guard_trans with "[] []"); by iApply (fguardx_at H).
+    iApply (guard_trans with "[] []"); by iApply (fguardx_at_any H).
   Qed.
   Lemma fguardx_rhs_iff {Px Qx Qx'} :
-    (∀ sem, alt_sem sem → sem Qx ⊣⊢ sem Qx') →
+    (∀ sem, alt_any sem → sem Qx ⊣⊢ sem Qx') →
     fguardx Px Qx ⊢ fguardx Px Qx'.
   Proof.
     move=> eq. iIntros "#g". iApply fguardx_of_all. iIntros "!>" (sem H).
-    iApply (guard_rhs_iff (eq sem H)). by iApply (fguardx_at H).
+    iApply (guard_rhs_iff (eq sem H)). by iApply (fguardx_at_any H).
   Qed.
   Lemma fguardx_lhs_iff {Px Px' Qx} :
-    (∀ sem, alt_sem sem → sem Px ⊣⊢ sem Px') →
+    (∀ sem, alt_any sem → sem Px ⊣⊢ sem Px') →
     fguardx Px' Qx ⊢ fguardx Px Qx.
   Proof.
     move=> eq. iIntros "#g". iApply fguardx_of_all. iIntros "!>" (sem H).
-    iApply (guard_lhs_iff (eq sem H)). by iApply (fguardx_at H).
+    iApply (guard_lhs_iff (eq sem H)). by iApply (fguardx_at_any H).
   Qed.
   (** At the ambient interpretation *)
   Lemma fguardx_sem {Px Qx} :
@@ -1880,7 +1900,8 @@ Section alt_sem.
   Lemma fguardx_dguard_all {Px Qx} : fguardx Px Qx ⊢ dguard_all Px Qx.
   Proof.
     iIntros "#g". iApply dguard_all_of_all. iIntros "!>" (sem H).
-    iApply (dguard_of_all_at H). iIntros (sem' Hs _). by iApply (fguardx_at Hs).
+    iApply (dguard_of_all_at H). iIntros (sem' Hs _).
+    by iApply (fguardx_at_any (alt_sem_any Hs)).
   Qed.
   Lemma fguardx_dguard {Px Qx} : fguardx Px Qx ⊢ dguard Px Qx.
   Proof. rewrite fguardx_dguard_all. exact dguard_all_dguard. Qed.
@@ -1900,10 +1921,31 @@ Section alt_sem.
   #[export] Instance dincl_persistent {κ κ'} : Persistent (dincl κ κ').
   Proof. rewrite /dincl. exact _. Qed.
 
-  (** Reading an inclusion at a candidate, as a Leaf guard *)
-  Lemma dincl_guard_at {sem} (H : alt_sem sem) {κ κ'} :
+  (** Reading an inclusion at an interpretation, as a Leaf guard *)
+  Lemma dincl_guard_at_any {sem} (H : alt_any sem) {κ κ'} :
     dincl κ κ' ⊢ @[κ] &&{alt_WGuard sem}&&> @[κ'].
   Proof. exact: st_incl_at. Qed.
+  Lemma dincl_guard_at {sem} (H : alt_sem sem) {κ κ'} :
+    dincl κ κ' ⊢ @[κ] &&{alt_WGuard sem}&&> @[κ'].
+  Proof. exact (dincl_guard_at_any (alt_sem_any H)). Qed.
+
+  (** The raw family of guards between two lifetime tokens **is** an
+    inclusion.  This is [typing/function.v]'s [fn_incl_of_all], and with
+    [st_incl] the family over every interpretation it is one line. *)
+  Lemma dincl_fguardx {κ κ'} :
+    fguardx (alive_fml κ) (alive_fml κ') ⊢ dincl κ κ'.
+  Proof.
+    iIntros "#g". rewrite /dincl. iApply st_incl_of_all. iIntros "!>" (sem H).
+    rewrite -(alive_sem_at_any H κ) -(alive_sem_at_any H κ').
+    by iApply (fguardx_at_any H).
+  Qed.
+  Lemma fguardx_of_dincl {κ κ'} :
+    dincl κ κ' ⊢ fguardx (alive_fml κ) (alive_fml κ').
+  Proof.
+    iIntros "#g". iApply fguardx_of_all. iIntros "!>" (sem H).
+    rewrite (alive_sem_at_any H κ) (alive_sem_at_any H κ').
+    by iApply (dincl_guard_at_any H).
+  Qed.
   Lemma dincl_sem {κ κ'} : dincl κ κ' ⊢ @[κ] &&{alerus_WGuard}&&> @[κ'].
   Proof. rewrite -alt_WGuard_here. exact (dincl_guard_at alt_here). Qed.
 
@@ -1973,7 +2015,7 @@ Section alt_sem.
   Proof.
     iIntros "Px W". iMod (guard_fml_borrow_shared with "Px W") as "[$ [#g $]]".
     iModIntro. iApply fguardx_of_all. iIntros "!>" (sem H).
-    rewrite (alive_sem_at H). by iApply "g".
+    rewrite (alive_sem_at_any H). by iApply "g".
   Qed.
   Lemma dguard_borrow_shared {κ Px} :
     bor_sem Px -∗ |=[alerus_WGuard]=>

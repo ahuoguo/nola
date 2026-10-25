@@ -43,11 +43,17 @@ guarded former and is *proved* productive; the owning pointer is
 
 One checkable statement fixes what is left:
 
-* **`FnFml` is the only class in `typing/` with no instance anywhere.**  Its
-  two fields, `fn_fml_sem_2` and `fn_incl_of_all`, are what an execution-level
-  stratification has to supply - item 2 below.  (`TypeContractive` has none
+* **`FnFml` is the only class in `typing/` with no instance anywhere**, and
+  it is down to **one** field: `fn_fml_sem_2`.  Its other open field,
+  `fn_incl_of_all`, is closed - a lifetime inclusion is the family of
+  guards at every interpretation again, so the rule is the derived
+  `dincl_fguardx` (item 2 below).  (`TypeContractive` has no instance
   either, but it is superseded: `rec.v` uses `Productive` over `cif`'s
   `prost`, which is what the model actually has.)
+
+`typing/strat.v` then mechanizes the thesis's Chapter 5 - the device that
+`fn_fml_sem_2` is missing - end to end and axiom-free, so what remains is
+a refactor with a known shape rather than a question.
 
 File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
 Performance traps, four of which present as a hang: `nola/alerus/PERF.md`.
@@ -87,9 +93,15 @@ were instead made **constant** in δ, and the only way to make a guard
 constant in δ is to quantify over every δ - which has to be restricted to
 the *good* ones, which is `Deriv`, which is defined from `Jsem`.
 
-Both offenders are gone: `st_incl` is a token, and `st_iff` quantifies over
-every interpretation rather than the good ones.  See step 0 below for what
-that cost.
+Both offenders are gone, and in the same way: `st_incl` and `st_iff` both
+quantify over **every** interpretation rather than over the good ones.  The
+cycle is the *restriction*, not the family.  See step 0 below for what that
+cost.
+
+(An earlier version of this plan recorded `st_incl` as a *token* instead -
+a covering set of eternalized lifetimes.  That was wrong, and the place it
+was wrong is `fn_incl_of_all`: the inclusion `type_call_iris'` manufactures
+for the call's own lifetime is *semantic*, and no token expresses it.)
 
 ## Next
 
@@ -113,10 +125,18 @@ ones are large for reasons now understood rather than guessed at.
    the bracket list, which silently shifts every branch.
 
 2. **`fn` must be stratified by an execution level** (thesis § 5).
-   `FnFml`'s `fn_fml_sem_2` and `fn_incl_of_all` have no model, so `fn` is
-   the one type former the model does not interpret - which is why
-   `soundness.v` is stated about a typing judgment, as `rust_halt`'s adequacy
-   is.
+   `FnFml`'s `fn_fml_sem_2` has no model, so `fn` is the one type former
+   the model does not interpret - which is why `soundness.v` is stated
+   about a typing judgment, as `rust_halt`'s adequacy is.
+
+   Its sibling `fn_incl_of_all` **is** closed, and separately from the
+   levels: see "Done: a lifetime inclusion is a guard family again" below.
+
+   And the device itself is no longer a plan.  `typing/strat.v` mechanizes
+   Chapter 5 - leveled types, the level-indexed interpretation, the
+   function type, the list type, the typing rules and Corollary 5.3 -
+   axiom-free, over `nola.lrust`.  What that settles, and what it says the
+   port would have to change, is "Done: Chapter 5, mechanized" below.
 
    ### The thesis's recipe, read off Chapter 5
 
@@ -203,11 +223,33 @@ ones are large for reasons now understood rather than guessed at.
      cut: a single `⟦⟧ᶜ(δ)` that mentions `fn` is exactly the loop
      `Deriv_factor'` runs into.  A family of `Csem`s indexed by level is a
      new class and a real change, though a smaller one than indexing `FML`.
-   * **Not every world satisfaction need be levelled.**  The thesis levels
-     only `Winv`, the thing a function body may access.  Here that is the
-     borrow machinery; the lifetime machinery, which a body does not open,
-     looks like it can stay single.  Which of `alerus_wsat`'s components
-     must be per-level is the one genuinely open question left in this item.
+   * **Which world satisfactions must be levelled** was the one genuinely
+     open question, and `typing/strat.v` answers it by construction:
+     **all of the invariant-carrying ones, and as separate ghost
+     families**, not merely at separate interpretations.
+
+     This plan previously guessed otherwise, on the grounds that `⟦⟧ᶜ_i` is
+     *monotone* - `fn_fml` is the only constructor whose semantics mentions
+     the level, and `⟦fn →ⱼ⟧ᶜ_i` is the same for every `i ≥ j` - so that a
+     run of top level `L` could keep one `alerus_wsat ⟦⟧ᶜ_L` with the
+     levelled part beside it.  **That does not work**, and the reason is
+     one line of `strat.v`'s `twp_read_lv`: a caller at level `i` must hand
+     a callee at level `j ≤ i` a world satisfaction *it can give away*,
+     and the callee's is interpreted by `⟦⟧ᶜ_j`.  One family cannot be
+     read at two interpretations at once - `alerus_wsat ⟦⟧ᶜ_j` and
+     `alerus_wsat ⟦⟧ᶜ_i` are the same ghost state under different `BorSem`s
+     and neither entails the other - so the split has to be in the *ghost
+     state*, which is exactly `∗_{k<j} Winv_k` and exactly `lvs_below`.
+
+     So `alerusGS` becomes a chain: `L` instances sharing the `inG`s and
+     differing in their ghost names, for everything that holds a formula -
+     `llft_logicGS`, the box's and the shared borrow's `sinvGS`, `cnaGS`,
+     `naInvGS`, `fracGuardGS`, the two `fracKeyGS`, the eternal and store
+     names.  The heap stays single, as it does in the thesis, where it
+     lives in the state interpretation rather than in `Winv`.  Each of
+     those classes needs the `sinvGS`-style split into a `_pre` and a bare
+     ghost name before `L` of them can be allocated from one `Σ`, which is
+     the first concrete task.
    * **A level on every type former, and on `typed_body`, does remain**, and
      that is the bulk of the work - it touches every file in `typing/`.
 
@@ -223,6 +265,207 @@ ones are large for reasons now understood rather than guessed at.
    and nothing else.  A port whose types' ghost assertions are themselves
    formulas has no such luxury, so `fn_fml` stays a judgment and the level
    is what makes its introduction dischargeable.
+
+   ### Done: a lifetime inclusion is a guard family again
+
+   `fn_incl_of_all` is gone from `FnFml`, and what removed it is a
+   one-line change of definition.
+
+   `lifetime_full.v`'s note on `StBor` always gave the intended instance of
+   `st_incl` as the *family* of lifetime guards, one at every good
+   interpretation.  It had been weakened to a token - `⌜κ' ⊆ κ⌝` together
+   with a finite set of eternalized lifetimes - to keep `Deriv` out of
+   `Jsem`, since `st_incl` sits inside `idx_bor`.  **The cycle is the
+   restriction, not the family.**  Drop the `⌜Deriv ⊤ δ⌝`:
+
+   ```coq
+   st_incl κ κ' := □ ∀ δ, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']
+   ```
+
+   mentions no `Deriv`, so `Jsem` may be defined from it, and nothing is
+   lost, because every proof the lifetime logic has about a guard is
+   parametric in `BorSem` - `st_sub_at`, `st_glb_at`, `eternal_incl_at`
+   and `shr_tok_guard_at` all took an arbitrary `δ` already.
+
+   What it buys is exactly the rule that had no model.  `type_call_iris'`
+   creates a fresh `ϝ` for the call and guards its aliveness by the
+   caller's local lifetime context; the inclusion it then has is
+   *semantic*, and a token cannot express it.  The rule is now
+   `dincl_fguardx` in `ctx.v` and its proof is three lines.
+
+   The token survives as `eternal_incl_cif` - it is what eternalizing a
+   lifetime produces, and it implies the family.  The cost of the
+   weakening is that every *producer* of a guard family produces it at
+   every interpretation rather than at the good ones: `fguardx`,
+   `lctx_lft_alive_all`, `guard_fml_borrow_shared`, `Ltok_guard_frac_at`
+   and `st_incl_at` are all over `alt_any` now, and each was already
+   proved that way.
+
+   ### Done: Chapter 5, mechanized
+
+   `typing/strat.v` (1030 lines) is the thesis's Chapter 5 case study, in
+   Nola, axiom-free: leveled types `unit | nat | ref°ₖ T | T →ⱼ U |
+   listₖ T`, the interpretation as a family `⟦⟧ᵢᵟ` indexed by *both* the
+   level (5.4) and a derivability candidate (5.5), the typing rules, the
+   subtyping rules, Corollary 5.3, and three closed programs that it
+   types and that therefore terminate - including a function stored in a
+   shared mutable reference and called back (`ex_horef_total`), and a
+   *cyclic* list walked one step (`ex_clist_total`).
+
+   Both of the thesis's devices are there, and the file exists to show
+   they compose, because the port needs both: the level for `fn`, the
+   indirection for `&shr`.  (5.5) is what `≤-ref` needs - a reference
+   stores a *different* type, tied to the declared one by two
+   derivability assertions, because an invariant token names the formula
+   it holds - and `subty_ref` is then three lines of transitivity.
+
+   It is built over `nola.lrust`, not `nola.alerus.lang`, for a reason the
+   stratification is about: the thesis keeps the heap in the **state
+   interpretation** and only the invariants in `Winv`, and the port's own
+   language keeps guards over `alerus_WGuard` in the heap's read and write
+   banks.  Separating them is the point, so the demonstration uses the
+   language in which they are already separate.
+
+   Three things it settles.
+
+   * **The function type needs no derivability at all.**  (5.4) is a total
+     Hoare triple whose world satisfaction is `∗_{k<j} Winv_k`, and the
+     recursion on the level is well-founded because `k < j ≤ i`.
+     `tsem_fn` is that equation and it is an `⊣⊢` - no `Deriv`, no
+     candidate, no `Deriv_factor'`.  The level *replaces* magic
+     derivability for this one connective, which is what this plan claimed
+     and what is now checked.
+   * **The price is per-level ghost state**, as recorded above.
+   * **In the thesis a type is syntax**, so its `nPropᵢ` is literally
+     `loc × Typ` and poses no domain equation.  `strat.v`'s formulas are
+     `loc * styp` pairs and there is no `cif` in the file.  The port's
+     types are semantic records whose ghost assertions must be formulas
+     because they are borrowable; that difference, and not the level, is
+     why `fn_fml` has to be a judgment.
+
+   `subty_list` is § 5.1 fn. 1: `≤-ref` used **coinductively**, by
+   `Deriv_ind` over an induction hypothesis that is the pair of list
+   judgments.  One deviation from the footnote, and it is forced rather
+   than a gap: the footnote also relaxes the level, but `≤-ref` wants the
+   body types related in *both* directions, so the tail reference of
+   `listᵢ T` needs `listⱼ U ≤ listᵢ T` too, which is itself a `≤-ref` at
+   the tail and asks for `j ≤ i`.  The two force `i = j`.
+
+   That is the exact counterpart of item 3 below, from the other side.
+   `rec.v` proves subtyping of the port's recursive types by *induction
+   on the depth* and needs neither coinduction nor `Deriv`, because the
+   port's guarded formers carry an index to descend on and `type_incl` is
+   already quantified over every candidate; the thesis's `rec` is plain
+   substitution, has no index, and the loop is cut coinductively.  And
+   `rec.v`'s owning pointer had no rule until its pointee moved behind a
+   stored guard - the same move (5.5) makes, for the same reason.
+
+   § 5.1's closing example is there too, in semantic form
+   (`twp_iter_list`, `ex_iter_total`): an arbitrary terminating function
+   iterated a bounded number of times over a list that may be *cyclic*.
+   That is the one the thesis cites as the point of the whole exercise.
+
+   What `strat.v` leaves out is a general `rec Xⱼ. Tⱼ`.  `listₖ T` is a
+   constructor instead, and that is not a shortcut past the interesting
+   part - it *is* the interesting part.  Mechanizing a general `rec` needs
+   a measure on types that descends through substitution, and the measure
+   exists exactly because every recursive occurrence is guarded by `ref`,
+   whose interpretation (5.3) never looks at the body.  Taking the guarded
+   unfolding as primitive makes `⟦listₖ T⟧` outright non-recursive: two
+   invariant tokens holding *syntax*, so `typed_list_tail` needs no level
+   conversion at all.  `rec.v` records the same fact from the other side -
+   a former is `Productive` over `cif` exactly when its argument reaches
+   only `cdom` children, which an `Ecsem` may hand to `δ` but never
+   interpret.
+
+   ### What remains, and what the audit says about it
+
+   The step this plan previously listed first - "split each ghost-state
+   class into a `_pre` and a bare ghost name" - **is already done**, in
+   every class that would have to be levelled.  `llft_logicGS` is
+   `llft_logicGpreS` plus three gnames, `naInvGS` is `sinvGpreS` plus one,
+   `cnaGS`, `fracGuardGS`, `fracKeyGS` and `sinvGS` likewise.  `L`
+   instances can be allocated from one `Σ` today; `soundness.v`'s
+   `alerus_wsat_alloc` is already the one-level case of it.
+
+   And the components divide more favourably than feared.  Of what
+   `alerus_wsat` and `alerus_WGuard` contain:
+
+   | carries the interpretation | does not |
+   |---|---|
+   | `shr_wsat`, `box_wsat bor_sem`, `cna_wsat … bor_sem`, `na_inv_wsat … bor_sem`, `frac_wsat bor_sem`, `alerus_store_wsat` | `llft_inv_main`, `eternal_wsat`, the two `frac_key_wsat`s, `send_wsat` |
+
+   In particular **`llft_inv_main` is interpretation-free** - `LtState`,
+   `outer_inv` and two alive sets, no `bor_sem` anywhere - so the lifetime
+   logic's *bookkeeping*, and with it the lifetime tokens `@[κ]` and
+   `[†κ]`, could stay single while only the slice families are levelled.
+   That is the difference between a tower of lifetime logics and a tower
+   of `sinv` families, and it is the former that would have been
+   prohibitive.
+
+   What is genuinely open is one thing, and it is sharper than "which
+   world satisfactions": **the borrow slices and the lifetime tokens are
+   the same camera.**  `lifetime/ra.v`'s
+
+   ```coq
+   Inductive LtRa := LtOk : option (gset lt_atom * gset lt_atom) →
+     gmultiset lt_atom → gset lt_atom →            (* alive, dead atoms *)
+     option gmap_bor_state → gmultiset_bor_state → (* borrow states *)
+     option (gset lt_atom) → gset lt_atom → LtRa
+   ```
+
+   carries the lifetime atoms *and* the borrow states in one record under
+   one `llft_name`, so `Alive llft_name k` (which is `@[κ]`) and
+   `OwnBorState llft_name sn bs` cannot be given different ghost names.
+   Levelling the borrows therefore levels the lifetime tokens - a
+   lifetime at level 0 and "the same" lifetime at level 1 would be
+   unrelated - and that is the tower.  Splitting `LtRa` in two, tokens in
+   one camera and borrow bookkeeping in another, is the change that makes
+   the rest mechanical, and it is a change inside `lifetime/ra.v` and
+   `inv.v`.  The thesis has no counterpart: it has no lifetimes.
+
+   ### Why the cheap design does not work
+
+   It is worth writing down why the borrows have to be levelled at all,
+   because the cheap alternative is tempting and `strat.v` is what rules
+   it out.
+
+   The cheap design: keep **one** `alerus_wsat` at `⟦⟧ᶜ_L`, and put the
+   levelled part beside it as `lvs_below γs (λ k, ⟦⟧ᶜ_k) j`, which
+   `typing/levels.v` already builds.  A body at level `j` would then run
+   under `alerus_wsat ∗ lvs_below γs _ j`.
+
+   It is unsound, and Landin's knot is the counterexample.  Take
+   `f : fn →ⱼ` and store it in an ordinary borrow.  The borrow's content
+   is interpreted at `⟦⟧ᶜ_L`, which interprets `fn →ⱼ` for every `j < L`;
+   so `f`'s own body, running at level `j` and holding `alerus_wsat`, can
+   open that borrow, read `f` back, and call it - because calling
+   `fn →ⱼ` asks for `lvs_below … j`, which the body has.  The knot
+   closes.
+
+   What stops it in the thesis is that a reference at level `k` holds a
+   type interpreted at `⟦⟧ₖ`, and `⟦fn →ⱼ⟧ₖ` is `False` unless `j ≤ k`.
+   So anything a level-`i` body can reach through a reference has
+   execution level `≤ k < i`, and that function's body cannot reach the
+   reference back.  `strat.v`'s `tsem_gen` carries that `⌜j ≤ length l⌝`
+   for exactly this reason, and `typed_call_stored` is the rule where it
+   bites.
+
+   In the port, "a reference at level `k`" means a borrow whose content
+   is interpreted at `⟦⟧ᶜ_k` - so the borrow families must be levelled,
+   and there is no way round it.
+
+   After that, and only after that:
+
+   1. `alerusGS_at : nat → alerusGS FML Σ` and
+      `alerus_wsat_below j := ∗_{k<j} alerus_wsat (GS k) (Sem k)`, which is
+      `lvs_below` with `alerus_wsat` in place of `lv_wsat`;
+   2. a level on every type former and on `typed_body`, with `ty-lev` and
+      `≤-→` proved as in `strat.v` (`twpw_lvs_le` and nothing else);
+   3. `fn_fml`'s judgment carrying its execution level as a discrete `nat`,
+      its semantics the body at the *level-`j` package* and hence constant
+      in the candidate - at which point `fn_fml_sem_1` is `der_sound` and
+      `fn_fml_sem_2` is `Deriv_factor'` with nothing left to prove.
 
 3. **Recursive types** - done, in `typing/rec.v`; what follows is the
    record of how, because every step of it was forced.

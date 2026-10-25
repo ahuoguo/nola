@@ -120,24 +120,6 @@ Class FnFml `{!typeG FML Σ} := {
     ∀ {A : Type} {𝔄l 𝔅 ℭ} (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
       (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)),
     Persistent (sem (fn_fml fp spec x));
-  (** A *semantic* lifetime inclusion is storable.
-
-    [st_incl]'s other two sources - a structural inclusion [κ' ⊆ κ] and an
-    eternalized lifetime - are interpretation-free ghost state, so a guard
-    built from either is readable at every candidate for free, and that is
-    what lets [st_incl] be a token (see the note in [typing/inst.v]).  This
-    one is not of either shape: [type_call_iris'] creates a fresh [ϝ] whose
-    aliveness is guarded by the caller's local lifetime context, and the
-    resulting inclusion holds only semantically.
-
-    Nola has no counterpart - [nola/examples/rust_halt/] has no function type
-    at all, and its [lft_sincl] is a token precisely because it never has to
-    express this.  So this is one of the things an execution-level
-    stratification has to supply, and it sits here beside [fn_fml_sem_2]
-    rather than in [AltSem], which is otherwise realizable. *)
-  fn_incl_of_all {κ κ'} :
-    (□ ∀ sem (_ : alt_sem sem), @[κ] &&{alt_WGuard sem}&&> @[κ']) ⊢
-      dincl κ κ';
   (** Specialising a function type's parameter.  [fn_fml] is a judgment, so
     like [idxbor_fml_iff_at] in [AltSem] this transformation is [Deriv_map]
     in the model: the body it asks for is exactly the body of the judgment
@@ -543,8 +525,7 @@ Section typing.
     { iDestruct (fguardx_alive_sem with "fGuardsG0") as "#G".
       iApply (guard_rhs_iff (gsrc_fml_sem (GFrac γ q))). iApply "G". }
     iAssert (dincl ϝ (lft_intersect_list κl)) as "#Borκl".
-    { iApply fn_incl_of_all. iIntros "!>" (sem H).
-      setoid_rewrite <-(alive_sem_at H). iApply (fguardx_at H).
+    { iApply dincl_fguardx.
       iApply (fguardx_trans with "fGuardsG0 Gguardsκl"). }
     iDestruct (guard_trans with "fGuardsG [] ") as "fGuardsL";
       [iApply (Ltok_guard_frac with "key")|].
@@ -645,7 +626,7 @@ Section typing.
     iApply (type_call_iris' with
       "LFT PROPH UNIQ E [] [$key $tok] I p ql [Obs]"); [done|done|..].
     { iApply fguardx_of_all. iIntros "!>" (sem Hs).
-      rewrite (gsrc_sem_at Hs) (alive_sem_at Hs).
+      rewrite (gsrc_sem_at_any Hs) (alive_sem_at_any Hs).
       iApply (guard_trans with "[] []").
       - iApply (Ltok_guard_frac_at Hs with "key").
       - iApply ("AlvAll" $! sem with "[//]"). }

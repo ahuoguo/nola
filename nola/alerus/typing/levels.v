@@ -66,6 +66,29 @@ Section levels.
     iPureIntro. by rewrite Hlen.
   Qed.
 
+  (** The same, but handing out the *names* first and taking the
+    interpretation afterwards.
+
+    This is the shape an actual use needs, and [lvs_wsat_alloc] above does
+    not have it: level [k]'s interpretation [smf k] mentions the levels'
+    ghost names, because a reference at level [k] *is* a token of family
+    [k], so [smf] cannot be chosen before [γs] exists.  Same lesson as the
+    rest of this port - an allocation lemma hands out the ghost name, not
+    the record. *)
+  Lemma lvs_names_alloc L :
+    ⊢ |==> ∃ γs, ⌜length γs = L⌝ ∗
+      ∀ smf : nat → _, (∀ k i, internal_ne (smf k i)) -∗ lvs_wsat γs smf.
+  Proof.
+    induction L as [|L IH].
+    { iIntros "!>". iExists []. iSplitR; [done|]. iIntros (?) "_".
+      by rewrite /lvs_wsat. }
+    iMod IH as (γs Hlen) "W". iMod (sinv_wsat_alloc_name (FML:=FML)) as (γ) "W0".
+    iModIntro. iExists (γ :: γs). iSplitR; [iPureIntro; by rewrite /= Hlen|].
+    iIntros (smf) "#Ne". rewrite /lvs_wsat /=. iSplitL "W0".
+    { iApply "W0". iIntros (?). iApply "Ne". }
+    iApply "W". iIntros (??). iApply "Ne".
+  Qed.
+
   (** [lvs_below γs smf j]: the thesis's [∗_{k<j} Winv_k], the world
     satisfaction a function of execution level [j] runs under *)
   Definition lvs_below γs (smf : nat → _) j : iProp Σ :=
@@ -90,6 +113,20 @@ Section levels.
   Proof.
     move=> Hle. rewrite /lvs_below (lvs_wsat_split (γs:=take j' γs) j).
     by rewrite take_take Nat.min_l.
+  Qed.
+
+  (** Only the levels below [j] are looked at, so two interpretations that
+    agree there give the same world satisfaction.  This is what lets a
+    function type's semantics be written against the level-indexed family
+    it was defined with and then read against the global one. *)
+  Lemma lvs_below_ext {γs smf smf' j} :
+    (∀ k, (k < j)%nat → smf k = smf' k) →
+    lvs_below γs smf j ⊣⊢ lvs_below γs smf' j.
+  Proof.
+    move=> eq. rewrite /lvs_below /lvs_wsat. apply big_sepL_proper=> k γ Hk.
+    have Hkj : (k < j)%nat.
+    { apply lookup_lt_Some in Hk. rewrite length_take in Hk. lia. }
+    by rewrite (eq k Hkj).
   Qed.
 
   #[export] Instance wsat_incl_lvs_below {γs smf j j'} (Hle : (j ≤ j')%nat) :
@@ -138,6 +175,27 @@ Section lv_tok.
     { by rewrite lookup_take_lt. }
     iDestruct (lv_tok_acc with "tok Wk") as "[$ back]".
     iIntros "P". iApply "→W". by iApply "back".
+  Qed.
+
+  (** **** Allocating a reference at a level below the execution level
+
+    The thesis's [winv-alloc], restricted the way [ty-ref] restricts it:
+    [𝛤 ⊢ ref e :ⱼ ref⁰ₖ T] asks for [k < j].  The index is chosen outside a
+    finite set, as [sinv_tok_alloc_suspend] has it, and the content is
+    deposited at [smf k] - level [k]'s interpretation, not level [j]'s. *)
+  Lemma lvs_below_alloc {γs smf j k γ} (Px : FML $oi Σ) :
+    (k < j)%nat → γs !! k = Some γ →
+    lvs_below γs smf j -∗ ∃ I : gset positive, ∀ i, ⌜i ∉ I⌝ ==∗
+      lv_tok γ i Px ∗ (smf k i Px -∗ lvs_below γs smf j).
+  Proof.
+    move=> Hk Hγ. iIntros "W". rewrite /lvs_below /lvs_wsat.
+    iDestruct (big_sepL_lookup_acc _ _ k γ with "W") as "[Wk →W]".
+    { by rewrite lookup_take_lt. }
+    iDestruct (sinv_tok_alloc_suspend
+      (sinvGS0 := SinvGS FML Σ sinvGS_pre γ) Px with "Wk") as (I) "cl".
+    iExists I. iIntros (i Hi). iMod ("cl" $! i Hi) as "[tok back]".
+    iModIntro. iSplitL "tok"; [done|]. iIntros "P". iApply "→W".
+    by iApply "back".
   Qed.
 End lv_tok.
 

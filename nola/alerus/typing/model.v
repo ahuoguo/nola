@@ -443,7 +443,29 @@ Section stbor.
   Definition covers (κ : lft) (S : gset lft) (κ' : lft) : Prop :=
     ∀ a, a ∈ κ' → a ∈ κ ∨ ∃ κ0, κ0 ∈ S ∧ a ∈ κ0.
 
+  (** The storable inclusion: the lifetime guard at *every* interpretation,
+    good or not.
+
+    [lifetime_full.v]'s note on [StBor] gives the intended instance as the
+    family over the *good* interpretations, and that is what it was at
+    first; the quantifier had to be weakened to all of them for the reason
+    recorded in [typing/inst.v], since "good" is [Deriv], [Deriv] is defined
+    from [Jsem], and [st_incl] sits inside [idx_bor] = [idxborJT_sem].
+    Weakening is enough - the cycle is the *restriction*, not the family -
+    and the lifetime logic never needs an interpretation to be sound,
+    because every proof it has about a guard is parametric in [BorSem].
+
+    The token form below ([eternal_lfts] and a covering set) was the
+    previous instance.  It is still what [st_incl_cif_eternalize] produces
+    and it implies the family, but it is strictly weaker: a *semantic*
+    inclusion, which [typing/function.v]'s [type_call_iris'] manufactures
+    for the call's own lifetime, is not of that shape.  That is the whole
+    of [fn_incl_of_all]. *)
   Definition st_incl_cif (κ κ' : lft) : iProp Σ :=
+    (□ ∀ δ : JUDG -n> iProp Σ,
+      @[κ] &&{alerus_WGuard_at δ}&&> @[κ'])%I.
+  (** The token that used to be the instance *)
+  Definition eternal_incl_cif (κ κ' : lft) : iProp Σ :=
     ∃ S : gset lft, ⌜covers κ S κ'⌝ ∧ eternal_lfts S.
   (** The storable alteration: the equivalence at *every* interpretation,
     good or not.
@@ -528,12 +550,25 @@ Section stbor.
         [by subst|done].
   Qed.
 
-  (** The elimination rule: a storable inclusion is a guard at every
-    candidate.  [κ' ∩ κ] comes from the left-hand side by [llftl_incl_sub],
-    [κ' ∖ κ] from the eternalized lifetimes, and [llftl_incl_glb] joins
-    them. *)
+  (** The elimination rule is now the definition: the family instantiates
+    at the interpretation asked for. *)
   Lemma st_incl_cif_at δ {κ κ'} :
     st_incl_cif κ κ' ⊢ @[κ] &&{alerus_WGuard_at δ}&&> @[κ'].
+  Proof. iIntros "#g". iApply "g". Qed.
+  (** ...and the introduction rule is the family itself, which is what
+    [AltSem]'s [st_incl_of_all] - [typing/function.v]'s [fn_incl_of_all] -
+    asks for. *)
+  Lemma st_incl_cif_of_all {κ κ'} :
+    (□ ∀ δ : JUDG -n> iProp Σ, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']) ⊢
+      st_incl_cif κ κ'.
+  Proof. by iIntros "#g". Qed.
+
+  (** The token implies the family: [κ' ∩ κ] comes from the left-hand side
+    by [llftl_incl_sub], [κ' ∖ κ] from the eternalized lifetimes, and
+    [llftl_incl_glb] joins them - at each interpretation separately, since
+    none of the three looks at it. *)
+  Lemma eternal_incl_cif_at δ {κ κ'} :
+    eternal_incl_cif κ κ' ⊢ @[κ] &&{alerus_WGuard_at δ}&&> @[κ'].
   Proof.
     iIntros "(%S & %Hc & #e)".
     iApply (st_glb_eq_at δ (lft_inter_diff_union κ κ') with "[] []").
@@ -541,20 +576,21 @@ Section stbor.
     iApply (eternal_lfts_guard_at δ S with "e").
     move=> a. rewrite elem_of_difference=> -[/Hc[?|?] ?]; [done|by right].
   Qed.
+  Lemma st_incl_cif_of_eternal {κ κ'} :
+    eternal_incl_cif κ κ' ⊢ st_incl_cif κ κ'.
+  Proof.
+    iIntros "#e !>" (δ). by iApply (eternal_incl_cif_at δ).
+  Qed.
 
   Lemma st_incl_cif_of_sub {κ κ'} : κ' ⊆ κ → ⊢ st_incl_cif κ κ'.
-  Proof.
-    move=> ?. iExists ∅. iSplit; [iPureIntro; exact: covers_sub|].
-    iApply eternal_lfts_empty.
-  Qed.
+  Proof. move=> ?. iIntros "!>" (δ). by iApply st_sub_at. Qed.
   Lemma st_incl_cif_refl {κ} : ⊢ st_incl_cif κ κ.
   Proof. by iApply st_incl_cif_of_sub. Qed.
   Lemma st_incl_cif_trans {κ κ' κ''} :
     st_incl_cif κ κ' -∗ st_incl_cif κ' κ'' -∗ st_incl_cif κ κ''.
   Proof.
-    iIntros "(%S & %H & #e) (%S' & %H' & #e')". iExists (S ∪ S').
-    iSplit; [iPureIntro; exact: covers_trans|].
-    iApply (eternal_lfts_union with "e e'").
+    iIntros "#g #g' !>" (δ).
+    iApply (guard_trans with "[] []"); [iApply "g"|iApply "g'"].
   Qed.
   Lemma st_incl_cif_meet_l {κ κ'} : ⊢ st_incl_cif (κ ⊓ κ') κ.
   Proof.
@@ -567,16 +603,15 @@ Section stbor.
   Lemma st_incl_cif_glb {κ κ' κ''} :
     st_incl_cif κ κ' -∗ st_incl_cif κ κ'' -∗ st_incl_cif κ (κ' ⊓ κ'').
   Proof.
-    iIntros "(%S & %H & #e) (%S' & %H' & #e')". iExists (S ∪ S').
-    iSplit; [iPureIntro; exact: covers_union|].
-    iApply (eternal_lfts_union with "e e'").
+    iIntros "#g #g' !>" (δ).
+    iApply (st_glb_at δ with "[] []"); [iApply "g"|iApply "g'"].
   Qed.
 
   (** Eternalizing a lifetime gives a storable inclusion from [static] *)
   Lemma st_incl_cif_eternalize {κ} :
     eternal_tok alerus_eternal_name κ ⊢ st_incl_cif static κ.
   Proof.
-    iIntros "#tok". iExists {[κ]}. iSplit.
+    iIntros "#tok". iApply st_incl_cif_of_eternal. iExists {[κ]}. iSplit.
     { iPureIntro=> a ?. right. exists κ. split=>//. set_solver. }
     iIntros "!>" (κ0 Hκ0). move: Hκ0=> /elem_of_singleton->. iApply "tok".
   Qed.
@@ -1207,6 +1242,12 @@ Section altSem.
     ∃ δ : JUDG -n> iProp Σ, cand_asem S = AlerusSem_at δ.
   Lemma alt_sem_any_cif {S} : alt_sem_cif S → alt_any_cif S.
   Proof. move=> [δ[_ ?]]. by exists δ. Qed.
+  (** The candidate at an interpretation, and the proof that it is one.
+    Named, because [ex_intro] cannot guess the predicate. *)
+  Definition cand_at (δ : JUDG -n> iProp Σ) : Cand (cifOF CON) Σ :=
+    MkCand (AlerusSem_at δ).
+  Lemma alt_any_cand_at {δ} : alt_any_cif (cand_at δ).
+  Proof. by exists δ. Qed.
   Lemma alt_any_cif_ne {S} : alt_any_cif S → NonExpansive S.
   Proof. move=> [δ Heq]. rewrite /cand_fun Heq. exact _. Qed.
 
@@ -1639,10 +1680,10 @@ Section altSem.
     iApply (Deriv_map with "[] g"). iIntros (δ' ? _ _). rewrite !idxborJ_sem.
     iApply (llftl_idx_shorten (FML:=cifOF CON) κ κ' idx Px' with "i").
   Qed.
-  Lemma Ltok_guard_frac_at_cif {S} (H : alt_sem_cif S) γ L q :
+  Lemma Ltok_guard_frac_at_cif {S} (H : alt_any_cif S) γ L q :
     frac_key_tok γ L ⊢ frac_tok γ q &&{alt_WGuard S}&&> llctx_interp L.
   Proof.
-    move: H=> [δ[Hδ Heq]]. rewrite /alt_WGuard /= Heq.
+    move: H=> [δ Heq]. rewrite /alt_WGuard /= Heq.
     exact (Ltok_guard_frac_at' δ).
   Qed.
 
@@ -1651,13 +1692,13 @@ Section altSem.
     is one of the two places where a guard can be stored. *)
   Lemma guard_fml_borrow_shared_cif {κ} {Px : cif CON Σ} :
     bor_sem Px -∗ |=[alerus_WGuard]=>
-      (□ ∀ S (_ : alt_sem_cif S), @[κ] &&{alt_WGuard S}&&> S Px) ∗
+      (□ ∀ S (_ : alt_any_cif S), @[κ] &&{alt_WGuard S}&&> S Px) ∗
       ([†κ] -∗ |=[alerus_WGuard]=> bor_sem Px).
   Proof.
     iIntros "P W".
     iMod (llftl_borrow_shared_tok (FML:=cifOF CON) κ Px with "P W")
       as "[$ (%γc & %sn & #tok & $)]".
-    iIntros "!> !>" (S HS). move: HS=> [δ[Hδ Heq]].
+    iIntros "!> !>" (S HS). move: HS=> [δ Heq].
     rewrite /alt_WGuard /cand_fun /= Heq /=.
     iApply (shr_tok_guard_at δ). iApply "tok".
   Qed.
@@ -1710,11 +1751,22 @@ Section altSem.
     by iApply (guard_rhs_sep_r with "G").
   Qed.
 
-  Lemma st_incl_at_cif {S} (H : alt_sem_cif S) κ κ' :
+  Lemma st_incl_at_cif {S} (H : alt_any_cif S) κ κ' :
     st_incl κ κ' ⊢ @[κ] &&{alt_WGuard S}&&> @[κ'].
   Proof.
-    move: H=> [δ[Hδ Heq]]. rewrite /alt_WGuard /= Heq.
+    move: H=> [δ Heq]. rewrite /alt_WGuard /= Heq.
     exact (st_incl_cif_at δ).
+  Qed.
+  (** The introduction rule: the family *is* the inclusion.  [cand_at] is
+    the candidate at an interpretation, and [alt_any_cand_at] the proof
+    that it is one - named, because [ex_intro] cannot guess the
+    predicate. *)
+  Lemma st_incl_of_all_cif {κ κ'} :
+    (□ ∀ S (_ : alt_any_cif S), @[κ] &&{alt_WGuard S}&&> @[κ']) ⊢
+      st_incl κ κ'.
+  Proof.
+    iIntros "#g". iApply st_incl_cif_of_all. iIntros "!>" (δ).
+    iApply ("g" $! (cand_at δ) alt_any_cand_at).
   Qed.
 
   (** ** The [AltSem] instance *)
@@ -1771,6 +1823,7 @@ Section altSem.
     incl_fml_mono_at := @incl_fml_mono_at_cif;
     st_incl_of_sub := @st_incl_of_sub_cif;
     st_incl_at := @st_incl_at_cif;
+    st_incl_of_all := @st_incl_of_all_cif;
     st_incl_eternalize := @st_incl_eternalize_cif;
     Ltok_guard_frac_at := @Ltok_guard_frac_at_cif;
     guard_fml_borrow_shared := @guard_fml_borrow_shared_cif;

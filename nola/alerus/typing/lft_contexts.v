@@ -183,21 +183,23 @@ Section lft_contexts.
   Definition lctx_lft_alive (κ : lft) : Prop :=
     llctx_interp L ⊢ elctx_interp E -∗ (llctx_interp L &&{Wguard}&&> @[κ]).
 
-  (** The same at *every* candidate interpretation.
+  (** The same at *every* interpretation, good or not.
 
-    A function call stores the inclusions of [fp_E], and it builds them out of
-    this guard; a stored guard can only come from a source that holds at
-    every candidate, so [type_call] asks for this stronger form.  See
-    [AltSem] in [typing/ctx.v]. *)
+    A function call stores the inclusions of [fp_E], and it builds them out
+    of this guard; a stored guard can only come from a source that holds at
+    every interpretation, so [type_call] asks for this stronger form.  See
+    [AltSem] in [typing/ctx.v], and [st_incl_of_all] in particular: the
+    inclusion a call manufactures for its own lifetime comes from exactly
+    this family, which is why the family has to be the unrestricted one. *)
   Definition lctx_lft_alive_all (κ : lft) : Prop :=
-    ∀ sem, alt_sem sem →
+    ∀ sem, alt_any sem →
       llctx_interp L ⊢ elctx_interp E -∗
         (llctx_interp L &&{alt_WGuard sem}&&> @[κ]).
 
   Lemma lctx_lft_alive_all_now κ : lctx_lft_alive_all κ → lctx_lft_alive κ.
   Proof.
     move=> Alv. rewrite /lctx_lft_alive -alt_WGuard_here.
-    exact: (Alv _ alt_here).
+    exact: (Alv _ (alt_sem_any alt_here)).
   Qed.
 
   Lemma lctx_lft_alive_static : lctx_lft_alive static.
@@ -294,7 +296,7 @@ Section lft_contexts.
     before the local lifetime context is consumed *)
   Lemma lctx_lft_alive_all_guards κ : lctx_lft_alive_all κ →
     llctx_interp L -∗ elctx_interp E -∗
-      ∀ sem, ⌜alt_sem sem⌝ → llctx_interp L &&{alt_WGuard sem}&&> @[κ].
+      ∀ sem, ⌜alt_any sem⌝ → llctx_interp L &&{alt_WGuard sem}&&> @[κ].
   Proof.
     move=> Alv. iIntros "L #E" (sem Hs). iApply (Alv sem Hs with "L E").
   Qed.

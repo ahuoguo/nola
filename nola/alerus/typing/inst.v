@@ -117,10 +117,8 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
 
     [st_incl κ κ' := □ ∀ δ, ⌜Deriv ⊤ δ⌝ → @[κ] &&{alerus_WGuard_at δ}&&> @[κ']]
 
-  That quantification has to be restricted to the good candidates (an
-  unrestricted one cannot be produced where a type's semantic equality is
-  what produces it), "good" is [Deriv], [Deriv] is defined from [Jsem], and
-  [st_incl] sits inside [idx_bor] = [idxborJT_sem].  Hence the cycle.
+  "Good" is [Deriv], [Deriv] is defined from [Jsem], and [st_incl] sits
+  inside [idx_bor] = [idxborJT_sem].  Hence the cycle.
 
   *** The fix, in two parts
 
@@ -128,26 +126,38 @@ Definition alerusJUDG Σ : ofe := sigTO (alerusJUDGF Σ).
   uses.  (A third change followed, on the stored borrow itself; see "The
   relaxed borrow" below.)
 
-  (1) [st_incl] becomes a **token**.  Nola's persistent lifetime inclusion is
-  [lft_sincl α β := [†α] ∨ [∞ lft_diff β α]] ([nola/iris/lft.v]) - plain
-  ghost state, mentioning no interpretation, hence readable at every
-  candidate for free.  The counterpart here is
+  (1) **[st_incl] drops the [⌜Deriv ⊤ δ⌝].**  The cycle is the
+  *restriction*, not the family:
 
-    [st_incl κ κ' := ⌜κ' ⊆ κ⌝ ∨ ∃ κ0, ⌜κ' ⊆ κ ∪ κ0⌝ ∗ [∗ set] k ∈ κ0, eternal_tok k]
+    [st_incl κ κ' := □ ∀ δ, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']]
 
-  and [st_incl_at] stops being a field of [AltSem]: it is derived by
-  replaying [llftl_incl_sub] and [eternal_tok_guard] at the candidate's own
-  [alt_WGuard sem], both of which are parametric in [BorSem].  This is sound
-  because those two are the *only* sources of an inclusion in the whole
-  typing layer - every [dincl] in [typing/] comes from [dincl_refl],
-  [dincl_of_sub], [dincl_trans], [dincl_glb] or [st_incl_eternalize].
+  mentions no [Deriv], so [Jsem] may be defined from it.  And nothing is
+  lost, because the lifetime logic never needs an interpretation to be
+  sound - every proof it has about a guard is parametric in [BorSem], which
+  is why [st_sub_at], [st_glb_at], [eternal_incl_at] and
+  [shr_tok_guard_at] in [model.v] all take an arbitrary [δ] already.
 
-  The one casualty is [st_incl_of_all], which turns an arbitrary family into
-  a storable inclusion.  It has exactly one use, [dincl_fguardx], which has
-  exactly one use, [typing/function.v]'s [type_call_iris'] - and [function.v]
-  is already the one file whose [AltSem] obligation ([fn_fml_sem_2]) has no
-  model pending stratification.  So the two open issues still close together,
-  but not for the reason previously recorded here.
+  An earlier version of this file made [st_incl] a **token** instead -
+  [⌜κ' ⊆ κ⌝] together with a finite set of eternalized lifetimes - on the
+  grounds that an unrestricted family "cannot be produced where a type's
+  semantic equality is what produces it".  That was wrong, and the place it
+  was wrong is exactly [st_incl_of_all]: a *semantic* inclusion is produced
+  by [typing/function.v]'s [type_call_iris'], which creates a fresh [ϝ] for
+  the call and guards its aliveness by the caller's local lifetime context,
+  and a token cannot express that.  The token form survives as
+  [eternal_incl_cif], which is what [st_incl_eternalize] produces and which
+  implies the family; the family is what [AltSem] carries.
+
+  The one thing the weakening costs is that every *producer* of a guard
+  family has to produce it at every interpretation rather than at the good
+  ones: [fguardx], [lctx_lft_alive_all], [guard_fml_borrow_shared] and
+  [Ltok_guard_frac_at] are all stated over [alt_any].  Each was already
+  proved that way.
+
+  This closes [FnFml]'s [fn_incl_of_all], which is now the derived rule
+  [dincl_fguardx] in [typing/ctx.v].  [fn_fml_sem_2] is left as the one
+  field of the whole typing layer with no model, and it is the one the
+  execution-level stratification has to supply.
 
   (2) [st_iff] moves **out of the borrow and into the δ layer**.  Nola's
   borrow token carries the formula literally and has no alteration at all,

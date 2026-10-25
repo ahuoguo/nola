@@ -270,11 +270,21 @@ That is how stored *guards* work: `dguard_all Px Qx` is
 `guard_fml_borrow_shared` and `guard_fml_of_bor`, whose tokens mention no
 interpretation.
 
-`dincl` was a family of this shape too, and is **no longer one**: it is
-`st_incl`, a token (below).  A token is strictly better than a family here,
-because it needs no `Deriv` to state and so does not drag `Jsem` into its
-own definition - which is what the family did, and what kept the model from
-being concrete.
+`dincl` is a family too, and of a *stronger* shape: it is `st_incl`, the
+raw family of guards
+
+```coq
+st_incl κ κ' := □ ∀ δ, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']
+```
+
+over **every** interpretation, good or not.  It was briefly a token - a
+covering set of eternalized lifetimes - on the grounds that a token needs
+no `Deriv` to state and so does not drag `Jsem` into its own definition.
+The second half of that is right and the first is not the way to get it:
+dropping the `⌜Deriv ⊤ δ⌝` removes `Deriv` just as well, and keeps the
+family.  The token lost `fn_incl_of_all` - the *semantic* inclusion
+`type_call_iris'` manufactures for a call's own lifetime - which the
+family gives back as `dincl_fguardx`.
 
 **Resolved, and not by a family: the indexed borrow.**
 `idxbor_fml_into : sem (idxbor_fml κ idx Px) ⊢ sem' (idxbor_fml κ idx Px)`
@@ -436,6 +446,20 @@ its subformulas or a judgment - in particular `guard_fml` and `idxbor_fml`
 are judgments and so, like `⟦ref^o_k T⟧`, do not depend on the
 interpretation of their contents at all.
 
+`typing/strat.v` now carries that construction out, on a self-contained
+type system over `nola.lrust`: the interpretation as a level-indexed
+family, (5.4) for the function type, (5.5) for the reference type, the
+typing and subtyping rules, Corollary 5.3 and four closed terminating
+programs, all axiom-free.  It is also where the cost is visible.  A single
+`alerus_wsat`, however it is interpreted, will not do: a body at level `j`
+that holds it can read its own `f : fn →ⱼ` back out of a borrow and call
+it, because calling asks for the `lvs_below … j` the body already has.
+What stops that in the thesis is that a reference at level `k` interprets
+`fn →ⱼ` only for `j ≤ k`, so the borrow families themselves have to be
+levelled - and in this port they cannot be yet, because `lifetime/ra.v`'s
+`LtRa` carries the lifetime atoms and the borrow states in one record
+under one ghost name.  See PLAN.md's item 2.
+
 ## What this means for the earlier plan
 
 An earlier version of this file proposed making `typed_body` candidate-
@@ -525,12 +549,15 @@ st_iff Px Qx := □ ∀ δ' (_ : Deriv (λ _, True) δ'),
 which is defined from `Jsem`, while `idx_bor` *is* `idxborJT_sem`.**  That
 is what kept the model from being concrete, and closing it took two moves.
 
-`st_incl` became a token, as Nola's `lft_sincl α β := [†α] ∨ [∞ lft_diff β α]`
-is - every atom of `κ'` supplied by `κ` or covered by one of a finite set of
-eternalized lifetimes.  It mentions no interpretation, so it reads at every
-candidate for free, and `st_incl_at` is derived by replaying
-`llftl_incl_sub` and `eternal_tok_guard` at the candidate's own world
-satisfaction, both being parametric in `BorSem`.
+`st_incl` lost its `⌜Deriv ⊤ δ'⌝` and quantifies over every interpretation.
+The cycle is the *restriction*, not the family: without the `Deriv` there is
+nothing for `Jsem` to depend on, and nothing is lost, because every proof
+the lifetime logic has about a guard is parametric in `BorSem` -
+`st_sub_at`, `st_glb_at`, `eternal_incl_at` and `shr_tok_guard_at` all take
+an arbitrary `δ` already.  (It was a *token* for one commit, as Nola's
+`lft_sincl α β := [†α] ∨ [∞ lft_diff β α]` is.  That form survives as
+`eternal_incl_cif`, which is what eternalizing a lifetime produces and
+which implies the family, but it cannot express a semantic inclusion.)
 
 `st_iff` lost its `Deriv` restriction, quantifying over every interpretation
 instead.  That alone made `Jsem` definable, but it moved the cost to

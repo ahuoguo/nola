@@ -796,11 +796,16 @@ Infix "⊑" := llft_incl (at level 70) : bi_scope.
   Neither is a thing the lifetime logic *inspects*: the inclusion is only ever
   composed ([guard_trans], [llftl_incl_glb]) and eliminated into a guard, and
   the alteration is only ever composed and eliminated into the [↔].  So both
-  become parameters.  The intended instance interprets each at *every* good
+  become parameters.  The intended instance interprets each at *every*
   interpretation at once, which is what makes a borrow storable:
 
-    [st_incl κ κ' := □ ∀ δ good, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']]
-    [st_iff Px Qx := □ ∀ δ good, ⟦ Px ⟧ᶜ(δ) ∗-∗ ⟦ Qx ⟧ᶜ(δ)]
+    [st_incl κ κ' := □ ∀ δ, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']]
+    [st_iff Px Qx := □ ∀ δ, ⟦ Px ⟧ᶜ(δ) ∗-∗ ⟦ Qx ⟧ᶜ(δ)]
+
+  Over *every* [δ] and not just the good ones: "good" is [Deriv], [Deriv]
+  is defined from [Jsem], and both of these sit inside a judgment's
+  semantics, so restricting the quantifier would close that cycle.  See
+  [nola/alerus/typing/inst.v].
 
   The closure properties live in [StBor], which does not mention the
   interpretation; the two elimination rules live in [StBorSem], which does,
