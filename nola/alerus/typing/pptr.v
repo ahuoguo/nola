@@ -23,7 +23,7 @@ Section ptr.
   Context `{!typeG FML Σ}.
 
   Program Definition ptr_ty : type locₛ :=
-    {| pt_size := 1;
+    {| pt_size := 1; pt_lev := 0;
        pt_ghox (l: ~~locₛ) _ := empty_fml;
        pt_phys (l: ~~locₛ) _ := [ FVal (LitV (LitLoc l)) ];
     |}.
@@ -72,6 +72,7 @@ Section points_to.
   Program Definition tracked_ty_with_prop {𝔄} (ty: type 𝔄) (Px : FML $oi Σ)
       : type (trackedₛ 𝔄) := {|
     ty_size := 0;
+    ty_lev := 0;
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
     ty_ghox x d g tid := (Px ∗ ty.(ty_ghox) x d g tid)%FML;

@@ -35,19 +35,54 @@ Section typing.
 
   (** Function Body *)
   (* This is an iProp because it is also used by the function type. *)
-  Definition typed_body {𝔄l 𝔅} (E: elctx) (L: llctx) (I: invctx) (C: cctx 𝔅)
+  (** The body's world satisfaction is a *parameter*.
+
+    PLAN.md item 2's step 5 wants the judgment at the thesis's
+    [∗_{k<j} Winv_k], and the shape of that is a world satisfaction, not
+    a level: which worlds exist is [typing/level_ctx.v]'s business, and
+    the only thing this file needs is that the judgment is stated over
+    one of them.  [typed_body] is the instance at the ambient world, so
+    every rule below - and all of [typing/] - is unchanged.
+
+    What this buys is [ty-lev]: raising a body's execution level is
+    [typed_body_at_wsat], one application of [twpw_incl_fupd], and
+    nothing else.  See [typed_body_lv_le] in [typing/level_ctx.v]. *)
+  Definition typed_body_at {𝔄l 𝔅} (W : iProp Σ)
+    (E: elctx) (L: llctx) (I: invctx) (C: cctx 𝔅)
     (T: tctx 𝔄l) (e: expr) (tr: predl_trans' 𝔄l 𝔅) : iProp Σ :=
     ∀tid xl mask post iκs,
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
     llctx_interp L -∗ invctx_interp tid mask iκs I -∗
     cctx_interp tid iκs post C -∗ tctx_interp tid T xl -∗
       ⟨π, tr post xl mask π⟩ -∗
-      WP[alerus_wsat] e [{ _, cont_postcondition }].
+      WP[W] e [{ _, cont_postcondition }].
+
+  Definition typed_body {𝔄l 𝔅} (E: elctx) (L: llctx) (I: invctx) (C: cctx 𝔅)
+    (T: tctx 𝔄l) (e: expr) (tr: predl_trans' 𝔄l 𝔅) : iProp Σ :=
+    typed_body_at alerus_wsat E L I C T e tr.
   Global Arguments typed_body {_ _} _ _ _ _ _ _%E _%type.
+
+  (** **** [ty-lev]
+
+    A body proved over a smaller world satisfaction holds over a bigger
+    one.  This is the thesis's [≤-→] and it is [twpw_incl_fupd] and
+    nothing else, exactly as [typing/strat.v] has it. *)
+  Lemma typed_body_at_wsat {𝔄l 𝔅} {W W' : iProp Σ}
+      {E L} {I : invctx} {C : cctx 𝔅} {T : tctx 𝔄l} {e tr} :
+    □ (W ={∅}=∗ W' ∗ (W' ={∅}=∗ W)) -∗
+    typed_body_at W' E L I C T e tr -∗ typed_body_at W E L I C T e tr.
+  Proof.
+    iIntros "#∝ body" (tid xl mask post iκs) "A B C D E F G H I".
+    iApply (twpw_incl_fupd (E:=∅) with "[] [-]"); [set_solver| |].
+    { iExact "∝". }
+    by iApply ("body" with "A B C D E F G H I").
+  Qed.
 
   Global Instance typed_body_proper 𝔄l 𝔅 E L I C T e :
     Proper ((≡) ==> (≡)) (@typed_body 𝔄l 𝔅 E L I C T e).
-  Proof. intros ?? EQ. unfold typed_body. do 21 f_equiv. apply EQ. Qed.
+  Proof.
+    intros ?? EQ. unfold typed_body, typed_body_at. do 21 f_equiv. apply EQ.
+  Qed.
 
   (** [cont_postcondition] is [True], which absorbs an update over the world
     satisfaction.  So a body's weakest precondition eats
@@ -67,7 +102,7 @@ Section typing.
     (∀post xl mask π, tr post xl mask π → tr' post xl mask π) →
     typed_body E L I C T e tr' -∗ typed_body E L I C T e tr.
   Proof.
-    move=> Imp. rewrite /typed_body.
+    move=> Imp. rewrite /typed_body /typed_body_at.
     iIntros "x * A B C D E F G H I".
     iDestruct ("x" with "A B C D E F G H") as "X".
     iApply "X".
@@ -79,7 +114,7 @@ Section typing.
       (I: invctx) (C: cctx 𝔅) (T: tctx 𝔄l) e :
     ⊢ typed_body E L I C T e (λ _ _ _ _, False%type).
   Proof.
-    rewrite /typed_body.
+    rewrite /typed_body /typed_body_at.
     iIntros "* A PROPH C D E F G H Obs".
     iApply (twp_mono _ _ _ (λ _, (|=[alerus_wsat]{⊤}=> cont_postcondition)%I));
       [by iIntros|].

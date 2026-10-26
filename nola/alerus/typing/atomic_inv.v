@@ -202,6 +202,7 @@ Section atomic_invariants.
       (pred: abstracted_syn_type 𝔄 → ~~ℭ → proph_asn → Prop)
       : type (invₛ ℭ) := {|
     ty_size := 0;
+    ty_lev := 0;
     ty_lfts := [];
     ty_E := [];
     ty_gho_persx x d g tid := empty_fml;
@@ -232,6 +233,7 @@ Section atomic_invariants.
       (pred: abstracted_syn_type 𝔄 → ~~ℭ → proph_asn → Prop)
       : type (invₛ ℭ) := {|
     ty_size := 0;
+    ty_lev := 0;
     ty_lfts := [];
     ty_E := [];
     ty_gho_persx x d g tid := empty_fml;

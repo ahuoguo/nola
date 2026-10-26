@@ -49,6 +49,7 @@ Section uniq_bor.
   Program Definition uniq_bor {𝔄} (κ: lft) (ty: type 𝔄)
     : type (uniq_borₛ 𝔄) := {|
     ty_size := 1;
+    ty_lev := ty.(ty_lev);
     ty_lfts := κ :: ty.(ty_lfts);
     ty_E := ty.(ty_E) ++ ty_outlives_E ty κ;
 
@@ -197,8 +198,9 @@ Section uniq_bor_sem.
 
   Global Instance uniq_bor_ne {𝔄} κ : NonExpansive (@uniq_bor _ _ _ 𝔄 κ).
   Proof.
-    move=> n ty ty' [Hsz Hlfts HE Hgho Hpers Hphys]. split=>/=.
+    move=> n ty ty' [Hsz Hlev Hlfts HE Hgho Hpers Hphys]. split=>/=.
     - done.
+    - by rewrite Hlev.
     - by rewrite Hlfts.
     - by rewrite HE /ty_outlives_E Hlfts.
     - move=> [[[[[l x0] ξi] d'] g'] idx] d g tid /=.

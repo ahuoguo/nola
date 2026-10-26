@@ -181,3 +181,33 @@ stopped terminating here was not edited at all.  What changed was
 witness; `subG_alerusGpreS` is two levels above that and went from
 compiling to not finishing.  A `solve_inG` that passes today is not
 evidence that it will pass after an unrelated `Σ` grows.
+
+## 7. A world satisfaction left to unification
+
+Giving `fn` its execution level meant the callee's body is stated over
+`∗_{k<j} Winv_k` while the caller holds the whole world, so somewhere the
+two have to be related.  Three ways of writing that one step:
+
+```coq
+(* ~10 min, killed *)  iApply (twpw_incl_fupd (E:=∅) with "[] [-]").
+(* ~10 min, killed *)  iApply (twpw_incl_fupd (E:=∅) (W:=…) (W':=…) with "[] [-]").
+(* ~10 min, killed *)  rewrite fn_gho_1'.   (* the lifted form, by rewrite *)
+(*   0.3s         *)   iDestruct (fn_gho_1' with "gho") as (…) "…".
+```
+
+The file is 4.8s without the level and 5.1s with it, so the level itself
+costs nothing; what costs is leaving either world satisfaction to be
+solved rather than named.  Note the second line: pinning `W` and `W'`
+explicitly did **not** help, because the expensive unification was not
+theirs — it was `typed_body_at`'s own implicit arguments, six of them,
+against a goal the size of a function-call rule.
+
+The shape that works is to do the lifting **once, in its own lemma**,
+where the goal is small and both sides are written out, and to use the
+result by `iDestruct` rather than `rewrite`.  `rewrite` has to match the
+lemma's whole right-hand side against the goal; `iDestruct` applies it to
+a named hypothesis and never searches.
+
+Same family as § 4 and § 5: in this development, anything that leaves a
+world satisfaction, a size or a transformer to be inferred rather than
+passed will not terminate in any time worth waiting for.  Pass it.

@@ -60,7 +60,7 @@ Section pcell.
   Qed.
 
   Program Definition pcell_ty n : type (pcellₛ n) :=
-    {| ty_size := n;
+    {| ty_size := n; ty_lev := 0;
        ty_lfts := [];
        ty_E := [];
        ty_ghox x _ _ _ := pure_fml (length x = n);
@@ -102,7 +102,7 @@ Section points_to.
 
   Program Definition cell_points_to_ty {𝔄} (ty: type 𝔄)
       : type (trackedₛ (pcellₛ (ty.(ty_size)) * 𝔄)) :=
-    {| ty_size := 0%nat;
+    {| ty_size := 0%nat; ty_lev := 0;
        ty_lfts := ty.(ty_lfts);
        ty_E := ty.(ty_E);
        ty_ghox x d g tid := [Sx(d') := d]

@@ -17,6 +17,7 @@ Section uninit.
 
   Program Definition uninit n : type (uninitₛ n) := {|
     ty_size := n;
+    ty_lev := 0;
     ty_lfts := [];
     ty_E := [];
     ty_ghox vπ _ _ _ := empty_fml;

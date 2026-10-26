@@ -319,13 +319,19 @@ Section alerus.
     stored at level [k] is usable exactly where that level's machinery
     is still present - the thesis's [∗_{k<j} Winv_k] for [j] above it.
 
-    With one level there is no such [j], so the family is empty and
-    [fguard] is [llft_wsatG]'s guard again ([fguard_here] and
-    [fguard_of_here] are mutually inverse here).  Filling this in with
-    the levels is PLAN.md item 2's step 4; it is a change *here*, not
-    in the lifetime logic, which is the point of the parameter. *)
-  Definition alerus_Wix : Type := Empty_set.
-  Definition alerus_Wmore (i : alerus_Wix) : iProp Σ := match i with end.
+    The honest content of that is **upward closure**, and it needs no
+    list of levels to say: a stored guard works in *any* world that
+    extends the one it was made in.  So the index is an arbitrary
+    [iProp Σ] and the family is [∀ W, P &&{llft_wsatG ∗ W}&&> Q].
+
+    That is equivalent to the plain guard - [guard_wsat_sep] one way,
+    [W := emp] the other - which is exactly why it costs nothing, and
+    it is not vacuous: it is the property [∗_{k<j} Winv_k] needs of a
+    guard stored at a level below [j], and it is the property that
+    *fails* in the other direction, which is the open question recorded
+    in PLAN.md. *)
+  Definition alerus_Wix : Type := iProp Σ.
+  Definition alerus_Wmore (W : alerus_Wix) : iProp Σ := W.
 
   (** Fix the lifetime logic's parameters *)
   #[export] Instance alerus_LlftWG : LlftWG Σ :=

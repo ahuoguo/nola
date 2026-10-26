@@ -464,10 +464,37 @@ the formula map `mprops` beside `AuthBorState … mbs`, tied by
 `dom mbs = dom mprops`.  Levelling the box therefore means levelling the
 borrow bookkeeping, which used to sit at `llft_name` with the lifetime
 tokens - and that is why `lifetime/ra.v`'s `LtRa` had to be split after
-all.  It now is: `llft_logicGS` carries a `bor_name` beside `llft_name`,
-and the split needed no new camera, because `lt_inv`'s only cross term
-was `w ⊆ d` and `consistent_modulo` was always about the borrow side's
-own copy of the dead set.
+all.  It now is, and the split needed no new camera, because `lt_inv`'s
+only cross term was `w ⊆ d` and `consistent_modulo` was always about the
+borrow side's own copy of the dead set.
+
+**Where that has got to.**  `bor_name` and `o_name` are now
+`LlftBorNames`, a class of their own, so `llft_wsatG` is a function of
+the level's borrow names; `llft_bor_wsat_alloc` builds a further level's
+machinery against the lifetime logic that is already there, born at the
+*empty* prefix of the kill order, which is sound because a level's dead
+set and outlives relation may both lag the shared ones; and
+`typing/level_ctx.v` allocates one `llft_logicGS` for the whole run with
+a list of levels over it, so `@[κ]` is one proposition rather than one
+per level.  `alerus_wsat_below P ns j` is `∗_{k<j} Winv_k` beside a
+single shared copy.
+
+`typed_body` is stated over a world satisfaction that is a *parameter*,
+so `≤-→` is one `twpw_incl_fupd` (`typed_body_at_wsat`, and
+`typed_body_lv_le` at the levels); every `type` carries a `ty_lev`, which
+the structural formers compute; and `fn_params` carries `fp_lev`, with
+`fn_fml_sem_1`/`fn_fml_sem_2` and `type_fn`'s premise stated at
+`fn_wsat_lv (fp_lev …)` - the thesis's (5.4) rather than a body at the
+ambient world.
+
+What is still open is one thing: `fn_fml_sem_2` wants the body to be
+**constant in the candidate interpretation**, and it is not, because the
+body's types are interpreted by `bor_sem`, which is the ambient
+`⟦⟧ᶜ(der)`, and a judgment's semantics may not mention `der`.  The level
+breaks that only once the body's types are interpreted at a *lower
+level's* package - which means `fn_params` must be a record at a lower
+level's `typeG`.  That is "a level on every type former" in its strong
+sense: the ghost state, not the `nat`.
 
 `typing/strat_bor.v` then checks that the levelled design is *sound* with
 borrows in it, which neither source establishes: the thesis's Chapter 5

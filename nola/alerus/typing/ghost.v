@@ -20,6 +20,7 @@ Section ghost.
   Program Definition ghost_ty {𝔄} (ty: type 𝔄) : type (ghostₛ 𝔄) :=
     @ty_of_st _ _ _ (ghostₛ 𝔄) ({|
       st_size := 0;
+      st_lev := ty.(ty_lev);
       st_lfts := ty.(ty_lfts);
       st_E := [];
       st_ghox x d g tid := empty_fml;

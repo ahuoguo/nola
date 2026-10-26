@@ -43,14 +43,14 @@ Section alloc.
            (@lrustGpreS_alc _ _ alerus_preG_lrust)
            _ alerus_NaSem heapSem_cif = alerus_lrustGS⌝ ∧ alerus_wsat.
   Proof.
-    iMod alerus_names_alloc as (n) "W".
+    iMod alerus_names_alloc as (Hllft n) "[_ W]".
     (* [uniq_init] allocates the atomic pool against a [cnaGS]; any level's
       will do, because [send_wsat] is [cna_lifetimes atomic_pool_name ∅],
       whose [own] is at an [inG] of [cnaGpreS] and not at [cna_name]. *)
-    pose (Hllft := an_llft n). pose (Hcna := an_cna n).
+    pose (Hcna := an_cna n).
     iMod (proph_init ⊤) as (Hproph) "#PROPH"; [done|].
     iMod (uniq_init ⊤) as (Huniq) "[#UNIQ Wsend]"; [done|].
-    iModIntro. iExists (alerusGS_of hGS Hproph Huniq n).
+    iModIntro. iExists (alerusGS_of Hllft hGS Hproph Huniq n).
     do 2 (iSplit; [done|]). iFrame "PROPH UNIQ". iIntros (????).
     iSplit; [done|]. iSplitR "Wsend"; [|iExact "Wsend"].
     by iApply "W".

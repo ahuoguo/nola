@@ -20,7 +20,7 @@ Section product.
   Context `{!typeG FML Σ}.
 
   Program Definition unit0 : type (Π! []) :=
-    {| ty_size := 0;
+    {| ty_size := 0; ty_lev := 0;
        ty_lfts := [];
        ty_E := [];
        ty_ghox x d g tid := empty_fml;
@@ -60,6 +60,7 @@ Section product.
 
   Program Definition prod_ty {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) : type (𝔄 * 𝔅) := {|
     ty_size := ty.(ty_size) + ty'.(ty_size);
+    ty_lev := ty.(ty_lev) `max` ty'.(ty_lev);
     ty_lfts := ty.(ty_lfts) ++ ty'.(ty_lfts);
     ty_E := ty.(ty_E) ++ ty'.(ty_E);
     ty_ghox x d g tid :=

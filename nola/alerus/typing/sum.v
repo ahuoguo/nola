@@ -15,6 +15,7 @@ Import GuardNotation ModwNotation.
 Implicit Type (𝔄 𝔅: syn_type) (𝔄l 𝔅l: syn_typel).
 
 Notation max_ty_size := (max_hlist_with (λ _, ty_size)).
+Notation max_ty_lev := (max_hlist_with (λ _, ty_lev)).
 
 Section sum.
   Context `{!typeG FML Σ}.
@@ -67,6 +68,7 @@ Section sum.
 
   Program Definition xsum_ty {𝔄l} (tyl: typel 𝔄l) : type (Σ! 𝔄l) := {|
     ty_size := S (max_ty_size tyl);
+    ty_lev := max_ty_lev tyl;
     ty_lfts := tyl_lfts tyl;
     ty_E := tyl_E tyl;
     ty_ghox x d g tid :=
@@ -162,6 +164,7 @@ Section sum.
     { elim: Eqv=>/= [|>Eqv ? ->]; [done|]. f_equiv. apply Eqv. }
     split=>/=.
     - by rewrite EqMsz.
+    - elim: Eqv=>/= [|>Eqv ? ->]; [done|]. f_equiv. apply Eqv.
     - rewrite /tyl_lfts. elim: Eqv=>/= [|>Eqv ? ->]; [done|]. f_equiv. apply Eqv.
     - rewrite /tyl_E. elim: Eqv=>/= [|>Eqv ? ->]; [done|]. f_equiv. apply Eqv.
     - intros [x pad] d g tid.

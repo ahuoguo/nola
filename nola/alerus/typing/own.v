@@ -33,6 +33,7 @@ Section own.
 
   Program Definition own_ptr {𝔄} (n: nat) (ty: type 𝔄) : type (at_locₛ 𝔄) := {|
     ty_size := 1;
+    ty_lev := ty.(ty_lev);
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
 

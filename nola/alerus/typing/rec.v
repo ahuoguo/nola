@@ -152,7 +152,7 @@ Section tyd.
     see the note at the top of the file. *)
   Program Definition type_of_tyd {𝔄} (lfts : list lft) (E : elctx)
     (T : tydata 𝔄) (HT : Ty T) (HP : ∀ d, TyProphAt lfts T d) : type 𝔄 := {|
-    ty_size := tyd_size T; ty_lfts := lfts; ty_E := E;
+    ty_size := tyd_size T; ty_lev := 0; ty_lfts := lfts; ty_E := E;
     ty_ghox := tyd_ghox T; ty_gho_persx := tyd_persx T; ty_phys := tyd_phys T;
   |}.
   Next Obligation. move=> *. exact: tyd_size_eq. Qed.

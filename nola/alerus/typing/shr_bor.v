@@ -31,6 +31,8 @@ Section shr_bor.
   Program Definition shr_bor_st {𝔄} (κ: lft) (ty: type 𝔄)
     : simple_type (at_clocₛ 𝔄) := {|
     st_size := 1;
+    (* a shared borrow is at its pointee's level *)
+    st_lev := ty.(ty_lev);
     st_lfts := κ :: ty.(ty_lfts);
     st_E := ty.(ty_E) ++ ty_outlives_E ty κ;
 

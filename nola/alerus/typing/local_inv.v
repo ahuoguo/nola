@@ -75,6 +75,7 @@ Section local_invariants.
   Program Definition local_inv_ty {𝔄 ℭ} (ty: type 𝔄)
       (pred: abstracted_syn_type 𝔄 → ~~ℭ → Prop) : type (local_invₛ ℭ) := {|
     ty_size := 0;
+    ty_lev := 0;
     ty_lfts := [];
     ty_E := [];
     ty_gho_persx x d g tid := empty_fml;
@@ -115,6 +116,7 @@ Section local_invariants.
   Program Definition local_closer_ty {𝔄 ℭ} (κ: lft) (ty: type 𝔄)
       (pred: abstracted_syn_type 𝔄 → ~~ℭ → Prop) : type (local_invₛ ℭ) := {|
     ty_size := 0;
+    ty_lev := 0;
     ty_lfts := [];
     ty_E := [];
     ty_gho_persx x d g tid := empty_fml;

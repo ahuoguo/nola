@@ -18,6 +18,7 @@ Section base.
 
   Program Definition base {𝔄} : type 𝔄 := {|
     ty_size := size_of 𝔄;
+    ty_lev := 0;
     ty_lfts := [];
     ty_E := [];
     ty_gho_persx x d g tid := false_fml;

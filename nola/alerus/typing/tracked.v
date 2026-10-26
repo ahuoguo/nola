@@ -17,6 +17,7 @@ Section tracked.
 
   Program Definition tracked_ty {𝔄} (ty: type 𝔄) : type (trackedₛ 𝔄) := {|
     ty_size := 0;
+    ty_lev := 0;
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
     ty_ghox x d g tid := ty.(ty_ghox) x d g tid ;

@@ -55,14 +55,31 @@ One checkable statement fixes what is left:
 `fn_fml_sem_2` is missing - end to end and axiom-free, so what remains is
 a refactor with a known shape rather than a question.
 
-Of that refactor (item 2 below), **steps 1-4 are done**: the lifetime
-logic no longer fixes the execution level anywhere.  A level's dead set
-and its outlives relation may both lag the shared ones; its piece of the
-invariant is a closed proposition; the guards it *stores* are a family
-over worlds the client supplies; and its borrow names are a class of
-their own.  What is left is to *build* the family - one lemma allocating
-a level's borrow machinery against the existing shared state, and the
-split of `alerus_wsat_core` - and then step 5, which is the bulk.
+Of that refactor (item 2 below), **steps 1-5 are done** and step 6 is
+half done.  The execution levels share one lifetime logic - `@[κ]` is one
+proposition for the whole run, not one per level - and
+`alerus_wsat_below P ns j` is the thesis's `∗_{k<j} Winv_k` beside one
+shared copy.  `typed_body` is stated over a world satisfaction that is a
+parameter, `≤-→` is one `twpw_incl_fupd`, every type former carries a
+level, and `fn` carries its arrow's.
+
+`fn_fml_sem_2`, the one field in the development that had no model, is
+now a **lemma**: `nola/bi/deriv.v`'s `der_const` says a judgment whose
+semantics ignores the candidate *is* its body, in both directions, so
+`FnFml` collapses to one equation.  And the formula side of `fn` turns
+out to need no judgment at all - this port's `fn` is capture-free, so
+`pure_fml (⊢ fn_body …)` satisfies every obligation, candidate-
+independent for free.
+
+What is left is therefore **not** carrying the interpretation through the
+program logic.  It is the **borrow-slot level discipline**: `&uniq`,
+`&shr` and the owning pointers must record the level of the machinery
+they use, so that storing a function of execution level `j` in a slot of
+level `k` forces `j ≤ k` while opening it forces `> k`.  That is what
+blocks Landin's knot - `typing/strat_bor.v`'s `knot_not_typable`, not
+totality - and it is where all of `fn`'s soundness sits.  `ty_lev`
+records the level, `strat_bor.v` is the specification, and
+`alerus_wsat_below … j` is the world satisfaction it indexes.
 
 File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
 Performance traps, five of which present as a hang - one of them for
@@ -1007,9 +1024,27 @@ ones are large for reasons now understood rather than guessed at.
       two items under "What is left: construction, not expressibility"
       above are *building* the family of levels, not making it
       sayable.
-   5. **A level on every type former and on `typed_body`**, with `ty-lev`
-      and `≤-→` proved as in `strat.v` (`twpw_alerus_le` and nothing
-      else).  This is the bulk, and it touches every file in `typing/`.
+   5. **A level on every type former and on `typed_body`** - **done**.
+
+      `typed_body`'s world satisfaction is a parameter (`typed_body_at`),
+      and `typed_body` is the instance at the ambient world, so all 162
+      of its use sites across `typing/` are unchanged.  `≤-→` is
+      `typed_body_at_wsat` - one `twpw_incl_fupd` - and
+      `typed_body_lv_le` is that over `alerus_wsat_below_le`.  Nothing
+      else is needed for it: no induction on the level, no condition on
+      the context's types, nothing about the interpretation, because the
+      family is built so that `below j` is literally a conjunct of
+      `below j'`.
+
+      The `type` record gains `ty_lev`, threaded exactly as `ty_size` is,
+      and the structural formers compute it: a product is the max of its
+      components', a sum the max over its variants, a modification, an
+      owning pointer and a unique borrow inherit their pointee's, and the
+      fixpoint's is the chain's.
+
+      The order was the opposite of how this item used to read, and the
+      note that got it right is kept below: adding `ty_lev` *first* would
+      have bought a hundred edits and no theorem.
 
       Its two halves are *not* independent, and the order is forced the
       other way round from how it reads.  Adding `ty_lev : nat` to the
@@ -1028,11 +1063,64 @@ ones are large for reasons now understood rather than guessed at.
       `twpw_alerus_le` and `alerus_wsat_below_le` (`typing/level_ctx.v`)
       are already proved, so `ty-lev` itself costs nothing when the time
       comes.
-   6. **`fn_fml`'s judgment carrying its execution level** as a discrete
-      `nat`, its semantics the body at the *level-`j` package* and hence
-      constant in the candidate - at which point `fn_fml_sem_1` is
-      `der_sound` and `fn_fml_sem_2` is `Deriv_factor'` with nothing left
-      to prove.
+   6. **`fn_fml`'s judgment carrying its execution level** - the shape of
+      what is left changed twice while doing it, and both times toward
+      something smaller.
+
+      Done: `fn_params` carries nothing, `fn` carries the arrow's level
+      `j` and sits strictly above it (`fn_ty_lev : ty_lev (fn j fp spec)
+      = S j`); `FnFml` carries `fn_wsat_lv : nat → iProp Σ`; and the
+      class has **collapsed to one equation**.  `fn_fml_sem_2`, the field
+      with no model, is now a *lemma*: `nola/bi/deriv.v`'s
+
+      ```coq
+      Deriv_const : (∀ δ', ⟦J⟧(δ') ⊣⊢ Body) → Body ⊢ δ J
+      der_const   : (∀ δ', ⟦J⟧(δ') ⊣⊢ Body) → der J ⊣⊢ Body
+      ```
+
+      says that a judgment whose semantics ignores the candidate *is* its
+      body, introduction as well as elimination.  So `FnFml`'s obligation
+      is `fn_fml_sem`, one `⊣⊢` at every candidate; persistence,
+      specialisation and both directions follow.
+
+      **And the formula side needs no judgment at all.**  This port's
+      `fn` is capture-free - `type_fn`'s premise is `∀x ϝ k wl, ⊢
+      typed_body …`, a *tautology* - so the body's derivability is a fact
+      about the code, carrying no resources.  `fn_pure_candidate` in
+      `typing/function.v` takes the ghost assertion to be
+      `pure_fml (⊢ fn_body Wlv j fp spec x)` and checks all five
+      obligations, closed under the global context: `pure_sem_at_any`
+      makes it candidate-independent for free, which is exactly what
+      `der_const` wants.
+
+      What it does *not* do is instantiate `FnFml` as stated - `pure_fml`
+      gives elimination and a Coq-level introduction, not the `⊣⊢`, and
+      the missing direction `fn_body ⊢ ⌜⊢ fn_body⌝` is false.
+
+      **Where the soundness actually sits**, which is the part worth
+      carrying forward.  With `Wlv := λ _, alerus_wsat` the level does no
+      work and that introduction rule is far too permissive: the knot's
+      body - read a function out of the slot holding you and call it - is
+      provable as a tautology under the slot's declared type, so a
+      diverging program would satisfy `alerus_type_soundness`.  Totality
+      does not rescue it: the knot's body needs no Löb step, because the
+      callee's specification arrives as a hypothesis from the context
+      rather than from an induction.  What rescues it is the level, and
+      `typing/strat_bor.v`'s `knot_not_typable` is the argument in one
+      line - a borrow slot of level `k` admits a function of execution
+      level `j ≤ k`, while *opening* that slot asks for `> k`.
+
+      So what is left is **not** "carry the interpretation through the
+      program logic" - that estimate, 226 occurrences of
+      `tctx_interp`/`cctx_interp`/`ty_own` plus every rule replayed at an
+      arbitrary candidate, was for the judgment route and the judgment
+      route is no longer needed.  What is left is the **borrow-slot level
+      discipline**: `&uniq`, `&shr` and the owning pointers must record
+      the level of the machinery they use, so that storing a function of
+      execution level `j` in a slot of level `k` forces `j ≤ k` while
+      opening it forces `> k`.  `ty_lev` is the field that records it,
+      `strat_bor.v` is the specification, and `alerus_wsat_below … j` -
+      built on this branch - is the world satisfaction it indexes.
 
 3. **Recursive types** - done, in `typing/rec.v`; what follows is the
    record of how, because every step of it was forced.
@@ -1661,34 +1749,75 @@ ones are large for reasons now understood rather than guessed at.
 
    The obvious merge is `store_tok`'s shape - hold an exclusive `token γ`
    and store `Px ∨ token γ`, so that the guard rules out the right disjunct
-   while extraction deposits the token.  **It does not work, and the reason
-   is structural.**  `guard W P Q` is
+   while extraction deposits the token.  This plan recorded that as
+   **structurally impossible**.  Half of that is wrong: the half it
+   argued for.  `nola/alerus/two_state.v` settles it.
+
+   The argument had been: narrowing a guard on a disjunction needs
+   `guard_or_false`, whose side condition is itself a guard on `False` and
+   so sits under a `□` that an owned token cannot discharge; or
+   `guard_cancel_or`, whose side condition is `Q ∧ R ⊢ False`, "which two
+   copies of the same exclusive resource do not give - `P ∧ P ⊣⊢ P`".
+
+   The second half is right about *two copies of one* token and wrong
+   about the method.  `guard_cancel_or`'s conjunction is the
+   **non-separating** one, and for two *different and incompatible* states
+   at one ghost name it does give a contradiction - which is what Iris's
+   `own_and` is for, and what `nola/alerus/own_and.v` had already bridged
+   into this development for exactly this kind of argument.  One name, two
+   states, in `csumR (exclR unitO) (exclR unitO)`:
 
    ```coq
-   □ ∀ T, P ∗ (P -∗ W ∗ T) -∗ Q ∗ (Q -∗ W ∗ T)
+   ts_full  γ := own γ (Cinl (Excl ()))   (* the content is inside *)
+   ts_taken γ := own γ (Cinr (Excl ()))   (* it has been extracted *)
+
+   ts_and_false γ   : ts_full γ ∧ ts_taken γ ⊢ False
+   ts_take γ        : ts_full γ ==∗ ts_taken γ
+   guard_two_state γ : (P &&{W}&&> ts_full γ) -∗
+                       (P &&{W}&&> (ts_taken γ ∨ Px)) -∗ P &&{W}&&> Px
    ```
 
-   - note the `□`.  Narrowing a guard on `Px ∨ token γ` to one on `Px` needs
-   `guard_or_false` or `guard_cancel_or`, and both ask for a side condition
-   that is *persistent*: `guard_or_false` wants `token γ &&{W}&&> False`,
-   which a `□` body cannot prove while the only evidence is an owned token,
-   and `guard_cancel_or` wants `Q ∧ R ⊢ False`, which two copies of the same
-   exclusive resource do not give - `P ∧ P ⊣⊢ P`.  (`&uniq` can use
-   `guard_or_false` because its discriminator, a lifetime being dead, *is*
-   persistent.)
+   `Cinl` and `Cinr` are not ordered by `≼` and their composition is
+   `CsumBot`, so no *valid* resource includes both.  The token is still
+   exclusive, so extraction is a frame-preserving update from one state to
+   the other, and what it deposits in the store is the very thing that
+   falsifies the guard.  Nothing is under a `□` that needs the token:
+   `guard_cancel_or`'s side condition is the pure `ts_and_false`, and the
+   token enters only through the guard's own left-hand side, which is
+   supplied at use.  All three are *closed under the global context* - not
+   even `Eq_rect_eq`.
 
-   And the general form of the obstruction is the same: whatever
-   distinguishes "content still inside" from "content extracted" has to be
-   persistent for a `□` guard to use it, yet it must be falsified by
-   extraction.  So the two cannot be merged while `ty_guard_proph` is
-   guard-shaped.
+   **What that does and does not buy**, because the merge needs two
+   things and this is one of them.  It buys the reversible accessor
+   (`ebox_acc`, checked): hold the token, get the content, give it back,
+   get the token back.  It does **not** buy extraction, and no
+   arrangement of the disjunction will: `guard_acc` is
+   `Q ∗ (Q -∗ W ∗ P)`, so the only route back to `W` consumes the
+   content.  That is a guard being a guard - the thing that cannot write
+   to the store.  Running `ts_take` and depositing the marker *where the
+   content was* needs write access, i.e. the store token.
 
-   The ways out, none of them small:
+   So the obstruction this plan argued for - that no side condition could
+   rule the marker disjunct out - is gone, and option 1 below is no
+   longer forced by *it*.  The remaining obstacle is the other one
+   recorded above, and it is a different one: a store token names the
+   formula it stores, so a former holding one admits no subtyping rule.
+   Having extraction *and* subtyping needs the stored formula fixed with
+   the variation behind a judgment, as an indexed borrow's content is
+   altered.  That is a design question rather than an impossibility, and
+   it is now the only thing in the way.
 
+   The ways out, now four and one of them small:
+
+   0. **the two-state token above**, *plus* a judgment for the stored
+      formula so the store token survives subtyping.  The token half is
+      checked and confined to `rec.v`; the judgment half is the open
+      design question.  This is the route that was thought closed.
    1. reshape `ty_guard_proph` so its premise is ownership under the world
       satisfaction rather than a guard, which is `rust_halt`'s `TyOpAt`
       shape - its prophecy law is a fupd and it has no Leaf guards at all.
-      This is the honest fix and it touches every type former.
+      This was recorded as the honest fix and it touches every type
+      former; with 0 available it is no longer forced.
    2. leave the two formers side by side, which is where the tree is: the
       recursion uses `sown_tyd` and the typing rules use `own_ptr`, and a
       recursive type is readable but not destructurable.

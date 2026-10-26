@@ -14,6 +14,7 @@ Section bool.
   Program Definition bool_ty: type boolₛ :=
     {|
       pt_size := 1;
+      pt_lev := 0;
       pt_ghox (b: ~~boolₛ) _ := empty_fml ;
       pt_phys (b: ~~boolₛ) _ := [ FVal #b ] ;
     |}%I.

@@ -161,7 +161,8 @@ Section S.
   Qed.
 
   Program Definition Tn' n : type 𝔄 := {|
-    ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
+    ty_size := (Tn 0).(ty_size);  ty_lev := (Tn 0).(ty_lev);
+    ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
     ty_ghox := (Tn n).(ty_ghox);  ty_gho_persx := (Tn n).(ty_gho_persx);
     ty_phys := (Tn 0).(ty_phys);
   |}.
@@ -187,7 +188,8 @@ Section S.
   Next Obligation. move=> >. apply ty_gho_pers_impl. Qed.
 
   Program Definition fix_ty: type 𝔄 := {|
-    ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
+    ty_size := (Tn 0).(ty_size);  ty_lev := (Tn 0).(ty_lev);
+    ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
     ty_ghox := (compl gho_chain).1;  ty_gho_persx := (compl gho_chain).2;
     ty_phys := (Tn 0).(ty_phys);
   |}.
@@ -257,15 +259,15 @@ Section fix_ty.
     { move=> *. apply equiv_dist=> n. etrans; [apply dist_S, conv_compl|].
       rewrite/= (EqOwn n). symmetry. apply HT=>// *; [apply lft_equiv_refl| |].
       - move: n=> [|n]; [apply dist_later_0|].
-        case (fix_ty_Tn'_dist T (S n))=> [_ _ _ Eq _]. intros. apply dist_dist_later, Eq.
-      - case (fix_ty_Tn'_dist T n)=> [_ _ _ _ Eq]. intros. apply dist_dist_later, Eq. }
+        case (fix_ty_Tn'_dist T (S n))=> [_ _ _ _ Eq _]. intros. apply dist_dist_later, Eq.
+      - case (fix_ty_Tn'_dist T n)=> [_ _ _ _ _ Eq]. intros. apply dist_dist_later, Eq. }
     have EqShr': ∀vπ d tid l, (fix_ty T).(ty_gho_persx) vπ d tid l ≡
       (T (fix_ty T)).(ty_gho_persx) vπ d tid l.
     { move=> *. apply equiv_dist=> n. etrans; [apply dist_S, conv_compl|].
       rewrite/= (EqShr n). symmetry. apply HT=>// *; [apply lft_equiv_refl| |].
       - move: n=> [|n]; [apply dist_later_0|].
-        case (fix_ty_Tn'_dist T (S n))=> [_ _ _ Eq _]. intros. apply dist_dist_later, Eq.
-      - case (fix_ty_Tn'_dist T n)=> [_ _ _ _ Eq]. intros. apply dist_dist_later, Eq. }
+        case (fix_ty_Tn'_dist T (S n))=> [_ _ _ _ Eq _]. intros. apply dist_dist_later, Eq.
+      - case (fix_ty_Tn'_dist T n)=> [_ _ _ _ _ Eq]. intros. apply dist_dist_later, Eq. }
     apply eqtype_id_unfold. iIntros "*_!>_". iSplit; [iPureIntro; by apply HT|].
     iSplit.
     { case type_contractive_type_lft_morphism=> [α βs E' Hα HE'|α E' Hα HE'].

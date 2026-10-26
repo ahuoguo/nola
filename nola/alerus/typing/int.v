@@ -15,7 +15,7 @@ Section int.
   Context `{!typeG FML Σ}.
 
   Program Definition int: type Zₛ :=
-    {| pt_size := 1;
+    {| pt_size := 1; pt_lev := 0;
        pt_ghox (z: ~~Zₛ) _ := empty_fml;
        pt_phys (z: ~~Zₛ) _ := [ FVal #z ];
     |}.

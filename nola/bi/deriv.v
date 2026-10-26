@@ -144,6 +144,37 @@ Section deriv.
   (** [der] is sound w.r.t. the semantics at [der] *)
   Lemma der_sound {J} : der J ⊢ ⟦ J ⟧(der).
   Proof. move: J. exact (psg_post (OT:=JUDG -n> PROP)). Qed.
+
+  (** ** A judgment whose semantics ignores the candidate
+
+    [Deriv_factor'] asks for the semantics at *every* valid candidate,
+    and that is what makes a judgment hard to introduce: the body has to
+    be proved without knowing which interpretation it will be read at.
+    When the semantics does not depend on the candidate at all, the
+    quantifier is vacuous and the judgment is *equivalent* to its body -
+    introduction as well as elimination.
+
+    This is the hinge for a stratified function type.  Such a type's
+    ghost assertion has to be a formula, so its semantics must not
+    mention [der]; but if it is pinned to the interpretation of a
+    *lower* execution level - one that is already constructed when this
+    one is being defined - then it mentions no candidate either, and
+    [der_const] gives both directions at once.  See
+    [nola/alerus/typing/function.v]'s [FnFml] and PLAN.md item 2. *)
+  Lemma Deriv_const `{!Deriv ih δ} {J} {Body : PROP} :
+    (∀ δ', ⟦ J ⟧(δ') ⊣⊢ Body) → Body ⊢ δ J.
+  Proof.
+    move=> Heq. iIntros "B". iApply Deriv_factor'. iIntros (δ' _ _ _).
+    by rewrite Heq.
+  Qed.
+
+  Lemma der_const {J} {Body : PROP} :
+    (∀ δ', ⟦ J ⟧(δ') ⊣⊢ Body) → der J ⊣⊢ Body.
+  Proof.
+    move=> Heq. apply bi.equiv_entails; split.
+    - rewrite der_sound. by rewrite Heq.
+    - by apply Deriv_const.
+  Qed.
 End deriv.
 
 Module DsemNotation.

@@ -28,6 +28,7 @@ Section mod_ty.
 
   Program Definition mod_ty {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) `{!Isoₛ f fⁱ} (ty: type 𝔄) : type 𝔅 := {|
     ty_size := ty.(ty_size);
+    ty_lev := ty.(ty_lev);
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
     ty_gho_persx x d g tid := ty.(ty_gho_persx) (fⁱ ~~$ₛ x) d g tid ;
