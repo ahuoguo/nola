@@ -57,7 +57,7 @@ Section lifetimes.
   Proof.
     induction κs as [ | κ' κs' IH ] in κ |- *; first set_solver.
     intros [ -> | Hin ]%elem_of_cons => /=.
-    - iApply llftl_incl_weaken_lhs_l. iApply guard_refl.
+    - iApply llftl_incl_weaken_lhs_l. iApply fguard_refl.
     - iApply llftl_incl_weaken_lhs_r. by iApply IH.
   Qed.
 
@@ -86,7 +86,7 @@ Section lifetimes.
   Qed.
 
   Lemma lft_incl_refl κ : ⊢ κ ⊑ κ.
-  Proof. iApply guard_refl. Qed.
+  Proof. iApply fguard_refl. Qed.
 
   Lemma lft_equiv_refl κ : ⊢ lft_equiv κ κ.
   Proof. by iSplit; iApply dincl_refl. Qed.
@@ -149,12 +149,15 @@ Section lifetimes.
     (⊢ κ1 ≡ₗ κ3) → (⊢ κ2 ≡ₗ κ4) → κ1 ⊑ κ2 ⊣⊢ κ3 ⊑ κ4.
   Proof.
     intros H1 H2.
-    iDestruct H1 as "[A1 A2]". iDestruct (dincl_sem with "A1") as "#A1'".
-    iDestruct (dincl_sem with "A2") as "#A2'".
-    iDestruct H2 as "[B1 B2]". iDestruct (dincl_sem with "B1") as "#B1'".
-    iDestruct (dincl_sem with "B2") as "#B2'".
-    by iSplit; iIntros "#H";
-    (iApply llftl_incl_trans; [|iApply llftl_incl_trans]; [|iApply "H"|]).
+    iDestruct H1 as "[A1 A2]". iDestruct (dincl_incl with "A1") as "#A1'".
+    iDestruct (dincl_incl with "A2") as "#A2'".
+    iDestruct H2 as "[B1 B2]". iDestruct (dincl_incl with "B1") as "#B1'".
+    iDestruct (dincl_incl with "B2") as "#B2'".
+    iSplit; iIntros "#H".
+    - iApply (llftl_incl_trans with "A2' []").
+      iApply (llftl_incl_trans with "H B1'").
+    - iApply (llftl_incl_trans with "A1' []").
+      iApply (llftl_incl_trans with "H B2'").
   Qed.
 
   Lemma lft_incl_equiv_proper_l κ1 κ2 κ3 :
@@ -196,7 +199,8 @@ Section lifetimes.
     iDestruct "W" as "[We Wr]".
     iMod (eternal_tok_alloc with "K We") as "[#tok We]". iModIntro.
     iSplitL "We Wr"; [by iFrame|]. rewrite /llft_incl /static.
-    iApply (guard_wsat_incl
+    iApply fguard_of_here.
+    iApply (guard_wsat_incl (W:=llft_wsatG)
       (W':=eternal_wsat alerus_eternal_name llft_alive)).
     iApply (eternal_tok_guard with "tok").
   Qed.

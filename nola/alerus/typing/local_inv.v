@@ -229,9 +229,10 @@ Section local_invariants.
         iApply (Halive2 _ Hin with "L E").
       - rewrite elem_of_list_to_set_disj in Hin.
         iDestruct (Halive1 with "L E") as "#Incl".
-        iDestruct (guard_trans with "Incl ϝincl") as "#Incl2".
+        iDestruct (fguard_here with "ϝincl") as "#ϝinclh".
+        iDestruct (guard_trans with "Incl ϝinclh") as "#Incl2".
         iApply (guard_trans with "Incl2 []").
-        iApply (lft_intersect_list_elem_of_incl _ _ Hin). }
+        iApply fguard_here. iApply (lft_intersect_list_elem_of_incl _ _ Hin). }
     iMod (cna_destroy with "inv cna_lft active Alive L W")
       as "(W & cna_lft & L & P)".
     rewrite local_inv_body_sem.

@@ -100,9 +100,9 @@ Section uniq_bor.
       !vo_fml_sem !idx_bor_tok_fml_sem.
     iIntros "#LFT #Incl1 (%Hle & #Pers & #Bor) #Rk #Rg".
     iAssert (κ0 ⊑ κ)%I as "#Inκ".
-    { iApply (guard_trans with "Incl1 []"). iApply llftl_intersect_incl_l. }
+    { iApply (fguard_trans with "Incl1 []"). iApply llftl_intersect_incl_l. }
     iAssert (κ0 ⊑ ty_lft ty)%I as "#Inty".
-    { iApply (guard_trans with "Incl1 []"). iApply llftl_intersect_incl_r. }
+    { iApply (fguard_trans with "Incl1 []"). iApply llftl_intersect_incl_r. }
     iDestruct "Pers" as "[bd|InnerPers]".
     { (* The lifetime is already dead, so [@[κ0]] is absurd. *)
       iModIntro. iIntros (ξ _).
@@ -110,7 +110,8 @@ Section uniq_bor.
       iDestruct (dincl_sem with "Incl0") as "#Incl'". iApply guard_false.
       iApply (guard_trans with "Rk []").
       iApply (guard_trans with "[] []");
-        [iApply (guard_trans with "Inκ Incl'")|].
+        [iApply (guard_trans with "[] Incl'"); iApply fguard_here;
+         iExact "Inκ"|].
       iApply guard_intro. iIntros "!> Alive".
       iExFalso. iApply (llftl_not_own_end with "Alive †κ'"). }
     (* Open the borrow through the guard and pin its witnesses. *)
@@ -124,7 +125,8 @@ Section uniq_bor.
       iIntros "!> (A & B & (C & D & E) & F & G)". iFrame "D". iIntros "D".
       iFrame. }
     iAssert (R &&{Wguard}&&> @[κ])%I as "#Rκ".
-    { iApply (guard_trans with "Rk Inκ"). }
+    { iDestruct (fguard_here with "Inκ") as "#Inκh".
+      iApply (guard_trans with "Rk Inκh"). }
     iDestruct (idxbor_fml_dIdxBor with "Bor") as "#Bor1".
     iDestruct (dIdxBor_guard (κ:=κ) (idx:=idx) (G:=R) with "LFT Bor1 Rκ Rtok")
       as "#Ginner".
@@ -242,7 +244,7 @@ Section uniq_bor_sem.
     move=> Alv γ q F [[[[[l x0] ξi] d'] g'] idx] d g tid ?.
     iIntros "#LFT #PROPH #UNIQ #E tok gho". rewrite uniq_bor_gho.
     iDestruct "gho" as "(#In0 & %Hle & uniq & _ & _)".
-    iDestruct (dincl_sem with "In0") as "#In". iIntros "W".
+    iDestruct (dincl_incl with "In0") as "#In". iIntros "W".
     iMod (resolve_uniq_body with "LFT PROPH UNIQ In E tok uniq W")
       as "[$ (#Obs & $ & _)]"; [done|done|].
     iModIntro. iApply proph_obs_eq; [|done]=> ? /=. by f_equal.
@@ -552,7 +554,8 @@ Section uniq_bor_typing.
     iIntros "#LFT #UNIQ lfts #gs K gho W". rewrite uniq_bor_gho.
     iDestruct "gho" as "(#Incl & %Hle & (ξVo & Tok & #Bor) & #PtBase & #Pers)".
     iDestruct (idxbor_fml_to_full with "Bor Tok") as "Bor0".
-    iDestruct (dFullBor_exact (E:=NalerusE) with "LFT Bor0") as "Ex".
+    iDestruct (dFullBor_exact (E:=NalerusE) with "LFT Bor0") as "Ex";
+      [rewrite /NalerusE; set_solver|].
     iDestruct (fupdw_incl_mask (W:=alerus_wsat_core) (E':=NalerusE) with "Ex")
       as "Ex'"; [done|].
     iMod ("Ex'" with "W") as "[W Bor2]".

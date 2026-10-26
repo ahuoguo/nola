@@ -390,11 +390,11 @@ Section stbor_at.
   Lemma st_refl_at {κ} : ⊢ @[κ] &&{alerus_WGuard_at δ}&&> @[κ].
   Proof. exact: guard_refl. Qed.
   Lemma st_meet_l_at {κ κ'} : ⊢ @[κ ⊓ κ'] &&{alerus_WGuard_at δ}&&> @[κ].
-  Proof. exact: llftl_intersect_incl_l. Qed.
+  Proof. exact: llftl_intersect_incl_l_at. Qed.
   Lemma st_meet_r_at {κ κ'} : ⊢ @[κ' ⊓ κ] &&{alerus_WGuard_at δ}&&> @[κ].
-  Proof. exact: llftl_intersect_incl_r. Qed.
+  Proof. exact: llftl_intersect_incl_r_at. Qed.
   Lemma st_sub_at {κ κ'} : κ' ⊆ κ → ⊢ @[κ] &&{alerus_WGuard_at δ}&&> @[κ'].
-  Proof. exact (llftl_incl_sub κ κ'). Qed.
+  Proof. exact (llftl_incl_sub_at κ κ'). Qed.
   Lemma eternal_incl_at {κ} :
     eternal_tok alerus_eternal_name κ ⊢
       @[static] &&{alerus_WGuard_at δ}&&> @[κ].
@@ -409,7 +409,7 @@ Section stbor_at.
     (@[κ] &&{alerus_WGuard_at δ}&&> @[κ']) -∗
     (@[κ] &&{alerus_WGuard_at δ}&&> @[κ'']) -∗
     @[κ] &&{alerus_WGuard_at δ}&&> @[κ' ⊓ κ''].
-  Proof. exact: llftl_incl_glb. Qed.
+  Proof. exact: llftl_incl_glb_at. Qed.
 
   (** The same, with the meet given by an equation: [llftl_incl_glb] joins
     two lifetimes, and the caller usually knows the join by a set fact
@@ -666,7 +666,8 @@ Section stbor_sem.
   Lemma stBorSem_at (Hδ : Deriv (λ _, True) δ) : StBorSem.
   Proof.
     split.
-    - iIntros (κ κ') "#g". iApply (st_incl_cif_at δ with "g").
+    - iIntros (κ κ') "#g". iApply fguard_of_here.
+      iApply (st_incl_cif_at δ with "g").
     - iIntros (Px Qx) "#g !>". iApply ("g" $! δ).
     - iIntros (Px Px' Qx Qx') "g g'". iApply (st_iff_cif_sep with "g g'").
   Qed.

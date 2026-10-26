@@ -131,8 +131,9 @@ Section inv_contexts.
      - unfold invctx_to_multiset in Hin. rewrite elem_of_list_to_set_disj in Hin.
        iApply (Alv2 κ Hin with "L E").
      - iDestruct (Alv1 with "L E") as "#G1".
-       iApply (guard_trans with "G1 []"). iApply (guard_trans with "Incl []").
-       iApply lft_intersect_list_elem_of_incl.
+       iDestruct (fguard_here with "Incl") as "#Inclh".
+       iApply (guard_trans with "G1 []"). iApply (guard_trans with "Inclh []").
+       iApply fguard_here. iApply lft_intersect_list_elem_of_incl.
        by rewrite elem_of_list_to_set_disj in Hin.
   Qed.
 
@@ -144,7 +145,7 @@ Section inv_contexts.
       iSplit; first by (iPureIntro; set_solver).
       unfold invctx_to_multiset. simpl.
       rewrite gmultiset_disj_union_right_id. iFrame.
-      iSplit. { iApply guard_refl. }
+      iSplit. { iApply fguard_refl. }
       iSplit; last by done.
       replace (⊤) with (mask ∪ (⊤ ∖ mask)).
        - rewrite cna_own_union. { iDestruct "na_own" as "[$ _]". } set_solver.

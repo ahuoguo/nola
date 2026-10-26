@@ -125,7 +125,8 @@ Section uniq_util.
         uniq_body ty x ξi d g idx κ tid l ∗
         ⟨π, π (PrVar (at_locₛ 𝔄 ↾ prval_to_inh (@vπ (at_locₛ 𝔄) (l.1, x))) ζi)
               = (l.1, π (PrVar (𝔄 ↾ prval_to_inh (vπ x)) ξi))⟩ ∗
-        ([†κ] =[alerus_wsat]=∗ bor_sem (uniq_body_fml ty x ξi tid l)).
+        ([†κ] =[alerus_wsat]{↑NllftUsr ∪ ↑NllftUsr2}=∗
+          bor_sem (uniq_body_fml ty x ξi tid l)).
   Proof.
     move=> ?. iIntros "#LFT #PROPH #UNIQ gho pt W".
     iMod (uniq_intro x (vπ x) (d, g) with "PROPH UNIQ") as (ξi) "[ξVo ξPc]";
@@ -149,7 +150,7 @@ Section uniq_util.
     iMod ("B'" with "W") as "[$ [Bor Back]]".
     rewrite idxbor_fml_of_bor. iDestruct "Bor" as (idx) "[Bor Tok]".
     iModIntro. iExists ξi, ζi, idx. iFrame "ζObs Bor Tok ξVo".
-    iIntros "†". by iApply (bupdw_incl (W:=alerus_wsat) with "(Back †)").
+    iIntros "†". by iApply (fupdw_incl (W:=alerus_wsat) with "(Back †)").
   Qed.
 
   (** [idx_bor_tok] is ghost ownership of a borrow state, so the formula
@@ -298,6 +299,8 @@ Section uniq_util.
         (ty.(ty_ghox) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid)%FML.
   Proof.
     move=> Alv HF.
+    have HFm : ↑NllftUsr ∪ ↑NllftUsr2 ⊆ F.
+    { etrans; [|exact HF]; solve_ndisj. }
     have ? : Inhabited (~~𝔄) := populate x.
     iIntros "#LFT #PROPH #UNIQ #In #E [#key f] (ξVo & ξTok & #ξBor) W".
     (* The share guards [@[κ]]. *)
@@ -317,29 +320,31 @@ Section uniq_util.
     iDestruct (bupdw_incl (W:=alerus_wsat) with "Sh") as "Sh'".
     iMod ("Sh'" with "W") as "[W [#Sh0 ToF1]]".
     iAssert (κ' ⊑ κ)%I as "#Incl".
-    { iApply (guard_trans with "[] Gκ").
+    { iApply fguard_of_here. iApply (guard_trans with "[] Gκ").
       iApply (guard_rhs_iff (gsrc_fml_sem (GFrac γ (q/2)))). iApply "Sh0". }
     (* Freeze the three existentials away. *)
     iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor".
-    iDestruct (dFullBor_exact (E:=F) with "LFT Bor") as "Ex".
+    iDestruct (dFullBor_exact (E:=F) with "LFT Bor") as "Ex";
+      [etrans; [|exact HF]; solve_ndisj|].
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Ex") as "Ex'";
       [done|].
     iMod ("Ex'" with "W") as "[W Bor]".
     iDestruct (llftl_bor_freeze F κ
       (λ y, ex_fml (λ e, ex_fml (λ h, uniq_body_at_fml ty x ξi y e h tid l)))
-      (uniq_body_fml ty x ξi tid l) (exs_fml_sem _) with "LFT Bor") as "Fr".
+      (uniq_body_fml ty x ξi tid l) HFm (exs_fml_sem _)
+      with "LFT Bor") as "Fr".
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Fr") as "Fr'";
       [done|].
     iMod ("Fr'" with "W") as "[W (%x1 & Bor)]".
     iDestruct (llftl_bor_freeze F κ
       (λ e, ex_fml (λ h, uniq_body_at_fml ty x ξi x1 e h tid l)) _
-      (ex_fml_sem _) with "LFT Bor") as "Fr".
+      HFm (ex_fml_sem _) with "LFT Bor") as "Fr".
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Fr") as "Fr'";
       [done|].
     iMod ("Fr'" with "W") as "[W (%d1 & Bor)]".
     iDestruct (llftl_bor_freeze F κ
       (λ h, uniq_body_at_fml ty x ξi x1 d1 h tid l) _
-      (ex_fml_sem _) with "LFT Bor") as "Fr".
+      HFm (ex_fml_sem _) with "LFT Bor") as "Fr".
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Fr") as "Fr'";
       [done|].
     iMod ("Fr'" with "W") as "[W (%g1 & Bor)]".
@@ -350,7 +355,7 @@ Section uniq_util.
     iMod ("Rb'" with "W") as "[W [Bor' Back]]".
     iDestruct (llftl_bor_acc' F _ κ' (κ ⊓ κ') with "LFT [] Bor' κ'tok")
       as "Acc";
-      [iApply llftl_incl_glb; [iFrame "Incl"|iApply guard_refl]|].
+      [iApply llftl_incl_glb; [iFrame "Incl"|iApply fguard_refl]|].
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Acc") as "Acc'";
       [done|].
     iMod ("Acc'" with "W") as "[W [Inner ForallQ]]".
@@ -387,7 +392,8 @@ Section uniq_util.
       [etrans; [|exact HF]; rewrite /NalerusE; set_solver|].
     iMod ("End'" with "W") as "[W #†κ']".
     iDestruct ("Back" with "†κ'") as "Bk".
-    iDestruct (bupdw_incl (W:=alerus_wsat) with "Bk") as "Bk'".
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=F) with "Bk") as "Bk'";
+      [exact HFm|].
     iMod ("Bk'" with "W") as "[W Bor]".
     iDestruct ("ToF1" with "†κ'") as "ToF1'".
     iDestruct (bupdw_incl (W:=alerus_wsat) with "ToF1'") as "ToF1''".
@@ -512,7 +518,8 @@ Section uniq_util.
     move=> ? HE.
     iIntros "#LFT #PROPH #UNIQ wand #Gκ [#key f] (ξVo & ξTok & #ξBor) W".
     iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor0".
-    iDestruct (dFullBor_exact (E:=E) with "LFT Bor0") as "Ex".
+    iDestruct (dFullBor_exact (E:=E) with "LFT Bor0") as "Ex";
+      [etrans; [|exact HE]; solve_ndisj|].
     iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=E) with "Ex") as "Ex'";
       [done|].
     iMod ("Ex'" with "W") as "[W Bor]".

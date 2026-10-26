@@ -368,7 +368,8 @@ Section product_split.
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
     iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
     iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBorFull0".
-    iDestruct (dFullBor_exact (E:=⊤) with "LFT ξBorFull0") as "Ex".
+    iDestruct (dFullBor_exact (E:=⊤) with "LFT ξBorFull0") as "Ex";
+      [set_solver|].
     iDestruct (fupdw_incl (W:=alerus_wsat) with "Ex") as "Ex'".
     iMod ("Ex'" with "W") as "[W ξBorFull]".
     iAssert (bor_sem (gsrc_fml (GFrac γ (1/2))) &&{Wguard}&&> @[κ])%I

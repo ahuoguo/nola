@@ -73,7 +73,10 @@ Section borrow.
       by iRight. }
     iSplit; [|done]. rewrite /tctx_elt_interp /=. iExists v.
     iSplit; [done|]. iIntros "†κ W".
-    iMod ("Back" with "†κ W") as "[W Body]".
+    iDestruct ("Back" with "†κ") as "Back'".
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "Back'")
+      as "Back2"; [set_solver|].
+    iMod ("Back2" with "W") as "[W Body]".
     iEval (rewrite uniq_body_fml_sem) in "Body".
     iDestruct "Body" as (x'' d'' g'') "(pc & gho2 & pt2)".
     iModIntro. iFrame "W". iExists (l, x''), (S d'' `max` g'').
@@ -115,7 +118,7 @@ Section borrow.
       iDestruct (guard_acc with "G3 L Wg") as "[Alive _]".
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
     iMod (Ltok_alloc with "L W") as "[W (%γ & tok)]".
-    iDestruct (dincl_sem with "Incl") as "#Incl'".
+    iDestruct (dincl_incl with "Incl") as "#Incl'".
     iMod (resolve_uniq_body ty x0 ξi d' g' idx κ tid l E L γ 1 ⊤
       with "LFT PROPH UNIQ Incl' E tok UniqBody W")
       as "[W (#Obs2 & tok & #ShrGuard)]"; [done|done|].
@@ -210,11 +213,11 @@ Section borrow.
     iDestruct (dincl_dguard with "Inκ'κ") as "#Inκ'κd".
     iDestruct (dincl_trans with "Inκ'κ Incl") as "#Inclκ'".
     iDestruct (dguard_trans with "Inκ'κd PtBase") as "#PtBase'".
-    iDestruct (dincl_sem with "Inκ'κ") as "#Inκ'κs".
+    iDestruct (dincl_incl with "Inκ'κ") as "#Inκ'κs".
     iDestruct "Pers" as "[Dead|#Pers2]".
     { (* [κ] is already dead, so everything can be faked. *)
       iDestruct "Dead" as (κ3) "[#Incl3 #Dead3]".
-      iDestruct (dincl_sem with "Incl3") as "#Incl3s".
+      iDestruct (dincl_incl with "Incl3") as "#Incl3s".
       iDestruct (llftl_incl_dead_implies_dead ⊤ κ κ3 with "LFT Incl3s Dead3")
         as "A".
       iDestruct (fupdw_incl (W:=alerus_wsat) with "A") as "A'".
@@ -223,9 +226,10 @@ Section borrow.
         as "B".
       iDestruct (fupdw_incl (W:=alerus_wsat) with "B") as "B'".
       iMod ("B'" with "W") as "[W #†κ']".
-      iDestruct (llftl_bor_fake ⊤ κ' (uniq_body_fml ty x0 ζi tid l)
+      iDestruct (llftl_bor_fake κ' (uniq_body_fml ty x0 ζi tid l)
         with "LFT †κ'") as "C".
-      iDestruct (fupdw_incl (W:=alerus_wsat) with "C") as "C'".
+      iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "C") as "C'";
+        [set_solver|].
       iMod ("C'" with "W") as "[W Fake]".
       rewrite idxbor_fml_of_bor.
       iDestruct "Fake" as (fidx) "[#FBor FTok]".
@@ -252,7 +256,8 @@ Section borrow.
       iLeft. iExists κ. iFrame "†κ". iApply dincl_refl. }
     (* The main case. *)
     iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBor20".
-    iDestruct (dFullBor_exact (E:=⊤) with "LFT ξBor20") as "Ex".
+    iDestruct (dFullBor_exact (E:=⊤) with "LFT ξBor20") as "Ex";
+      [set_solver|].
     iDestruct (fupdw_incl (W:=alerus_wsat) with "Ex") as "Ex'".
     iMod ("Ex'" with "W") as "[W ξBor2]".
     iDestruct (llftl_reborrow ⊤ κ κ' (uniq_body_fml ty x0 ξi tid l)
@@ -275,9 +280,10 @@ Section borrow.
       iMod (llftl_bor_acc_atomic ⊤ _ κ' with "LFT Bor Wl")
         as "[[P Back]|[Wl #†κ']]"; last first.
       { iDestruct (wsat_join (W:=alerus_wsat) with "Wl Wr") as "W".
-        iDestruct (llftl_bor_fake ⊤ κ' (uniq_body_fml ty x0 ζi tid l)
+        iDestruct (llftl_bor_fake κ' (uniq_body_fml ty x0 ζi tid l)
           with "LFT †κ'") as "D".
-        iDestruct (fupdw_incl (W:=alerus_wsat) with "D") as "D'".
+        iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "D") as "D'";
+          [set_solver|].
         iApply ("D'" with "W"). }
       iEval (rewrite bor_sep_sem uniq_body_fml_sem reborrow_mid_fml_sem) in "P".
       iDestruct "P" as "[(%x1 & %d1 & %g1 & ξPc1 & Gho1 & Pt1)
@@ -311,15 +317,18 @@ Section borrow.
     iSplit; [|done]. rewrite /tctx_elt_interp /=. iExists v.
     iSplit; [done|]. iIntros "#†κ' W".
     iDestruct ("ToξBor" with "†κ'") as "A".
-    iDestruct (bupdw_incl (W:=alerus_wsat) with "A") as "A'".
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "A") as "A'";
+      [set_solver|].
     iMod ("A'" with "W") as "[W ξBor4]".
     iDestruct ("ToζBig" with "†κ'") as "B".
-    iDestruct (bupdw_incl (W:=alerus_wsat) with "B") as "B'".
+    iDestruct (fupdw_incl_mask (W:=alerus_wsat) (E':=⊤) with "B") as "B'";
+      [set_solver|].
     iMod ("B'" with "W") as "[W Mid]".
     iEval (rewrite reborrow_mid_fml_sem) in "Mid".
     iDestruct "Mid" as (x'' d'' g'') "[ξVo ζPc']".
     iDestruct (llftl_bor_pers_from_wand2 ⊤ κ _
-      (ty_gho_pers ty x'' d'' g'' tid) with "LFT ξBor4 [] ξVo") as "C".
+      (ty_gho_pers ty x'' d'' g'' tid) with "LFT ξBor4 [] ξVo") as "C";
+      [set_solver| |].
     { iIntros "ξVo Body". iEval (rewrite uniq_body_fml_sem) in "Body".
       iDestruct "Body" as (y e h) "(ξPc & Gho & _)".
       iDestruct (uniq_agree with "ξVo ξPc") as %[<- Heq]. inversion Heq.
@@ -666,7 +675,8 @@ Section borrow.
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'"). }
     (* Open the outer borrow. *)
     iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "ξBorFull0".
-    iDestruct (dFullBor_exact (E:=⊤) with "LFT ξBorFull0") as "Ex".
+    iDestruct (dFullBor_exact (E:=⊤) with "LFT ξBorFull0") as "Ex";
+      [set_solver|].
     iDestruct (fupdw_incl (W:=alerus_wsat) with "Ex") as "Ex'".
     iMod ("Ex'" with "W") as "[W ξBorFull]".
     iAssert (bor_sem (gsrc_fml (GFrac γ (1/2))) &&{Wguard}&&> @[κ])%I
@@ -732,7 +742,8 @@ Section borrow.
       (Px:=uniq_body_fml ty x1 ωi tid l1) with "LFT ωBor1 BorTok") as "D".
     iDestruct (fupdw_incl (W:=alerus_wsat) with "D") as "D'".
     iMod ("D'" with "W") as "[W BorInner0]".
-    iDestruct (dFullBor_exact (E:=⊤) with "LFT BorInner0") as "Ex2".
+    iDestruct (dFullBor_exact (E:=⊤) with "LFT BorInner0") as "Ex2";
+      [set_solver|].
     iDestruct (fupdw_incl (W:=alerus_wsat) with "Ex2") as "Ex2'".
     iMod ("Ex2'" with "W") as "[W BorInner]".
     rewrite (idxbor_fml_of_bor (κ:=κ) (Px:=ccells_fml l [FVal (LitV l1.1)])).

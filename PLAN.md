@@ -55,8 +55,18 @@ One checkable statement fixes what is left:
 `fn_fml_sem_2` is missing - end to end and axiom-free, so what remains is
 a refactor with a known shape rather than a question.
 
+Of that refactor (item 2 below), **steps 1-4 are done**: the lifetime
+logic no longer fixes the execution level anywhere.  A level's dead set
+and its outlives relation may both lag the shared ones; its piece of the
+invariant is a closed proposition; the guards it *stores* are a family
+over worlds the client supplies; and its borrow names are a class of
+their own.  What is left is to *build* the family - one lemma allocating
+a level's borrow machinery against the existing shared state, and the
+split of `alerus_wsat_core` - and then step 5, which is the bulk.
+
 File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
-Performance traps, four of which present as a hang: `nola/alerus/PERF.md`.
+Performance traps, five of which present as a hang - one of them for
+over eight hours: `nola/alerus/PERF.md`.
 
 ## Not ported
 
@@ -689,12 +699,204 @@ ones are large for reasons now understood rather than guessed at.
    scope is enough to make `naive_solver` diverge, so the set reasoning
    in these proofs is done by named lemmas in small contexts.
 
-   #### What is left of step 4
+   #### Done too: the last tie, by a persistent witness
 
-   `llft_inv_main` holds *one* `lv_inv`.  Making it `llft_lv_inv ls`,
-   and splitting `llft_wsatG` so that a body can hold `∗_{k<j} Wbor_k`
-   on its own, is the remaining half - and that split is what forces the
-   user-facing rules to carry a level index, which is step 5.
+   One pure conjunct still tied a level to the shared world:
+   `lv_created s ⊆ sa ∪ sd`.  It cannot survive the family - with one
+   bookkeeping per level the shared invariant cannot see the levels'
+   states - so it is carried by a persistent witness instead.  `sa ∪ sd`
+   only ever grows, so an authority with duplicable fragments is enough:
+   `Minted X := own γmint (◯ X)`, held by the level for its own created
+   set, against `MintAuth (sa ∪ sd)` in the shared part.
+
+   With that, everything a level needs is inside `lv_inv`: the kill
+   order's prefix, the minted atoms, its own well-formedness.
+   `llft_inv_main`'s pure part now says nothing about the level except
+   that it is in step with the order while no kill is in flight - and
+   that is exactly the clause the family replaces by a per-level prefix.
+
+   One incident worth recording: adding
+   `inG Σ (authUR (gsetUR lt_atom))` made typeclass resolution pick
+   `lt_atom` for `eternal_wsat_alloc` in `typing/level_ctx.v`, where it
+   has to be `lft`.  A second `authUR (gsetUR _)` in scope is enough to
+   make that ambiguous, and the fix is to give `K` at the use site.
+
+   #### Done: a level may lag behind the kill order
+
+   `llft_inv_main_at` used to say the bookkeeping was level with the
+   kill order whenever no kill was in flight.  That conjunct is gone,
+   and dropping it is what makes a level's piece a *closed*
+   proposition - which is the whole point, since `∗_{k<j} Wbor_k` is
+   held by a body that was passed nothing else.
+
+   The three rules that need a lifetime to be dead *at the level* -
+   `llftl_borrow_rev`, `llftl_borrow`'s reclaim and `llftl_bor_fake` -
+   catch it up themselves, by replaying the whole order with
+   `level.lv_catch_up_to_log`.  Replaying runs `future_vs`, which lives
+   at `↑NllftUsr ∪ ↑NllftUsr2`, so those three carry that mask, and it
+   walks out as a side condition on `E` through `llftl_bor_freeze`,
+   `llftl_bor_pers{,_from_wand,_from_wand2}`, `llftl_bor_unnest`,
+   `llftl_reborrow{,_meet}` and `ctx.v`'s `dFullBor_exact`.  `NalerusE`
+   already contains both namespaces, so every caller in `typing/`
+   discharges it from a hypothesis it already had.
+
+   #### Done: the shared half and the level's, named
+
+   `llft_wsatG`'s two halves now have names, and the split is a lemma
+   rather than a rewrite of the rules:
+
+   ```coq
+   llft_inv_shared_at sa sd log ol pend  (* tokens, kill order, mint, oset *)
+   llft_bor_inv := ∃ s, lv_inv … bn s
+   llft_bor_wsat := shr_wsat ∗ box_wsat bor_sem ∗ llft_bor_inv
+   llft_wsatG_split : llft_wsatG ⊣⊢ (WG ∗ llft_inv_shared) ∗ llft_bor_wsat
+   ```
+
+   and the same for the other half, `llft_inv_other_split`.  The main
+   invariant keeps its flat shape, because every rule destructures it;
+   `llft_inv_main_at_split` is the reassociation.
+
+   #### Done: the outlives relation lags too, and `Osub` bounds it
+
+   A level's copy of the outlives relation cannot be kept in step with
+   the shared one, for the same reason its dead set cannot:
+   `llftl_augment_outlives` may run while the level is not held, and a
+   body at execution level `j` never holds the levels at or above `j`.
+   So `llft_outlives` is now the *level's* relation, `olk`, and what it
+   carries about the shared one is a bound - `Osub osub_name olk`
+   against `OsetAuth osub_name ol`, the same persistent-witness shape
+   `Minted` already has, and for the same reason.
+
+   The bound is all a level needs, because **`kill_run` and
+   `outlives_consistent` are both antitone in the relation**
+   (`level.kill_run_anti`, a corollary of `kill_run_mono` with a vacuous
+   hypothesis): a level with *fewer* pairs may replay a run the shared
+   logic checked with more.  `llft_augment_outlives` grows `ol` and
+   `olk` separately and re-establishes `olk ⊆ ol`; the new pairs'
+   second components are alive, so the level's `outlives_consistent`
+   survives them for free.
+
+   #### Done: the stored guards are a family, and the world is a parameter
+
+   The last thing in the shared half that was a function of the
+   execution level was not the bookkeeping - it was
+   `llft_outlives_guards_at ol`, the family
+
+   >  `∀ o ∈ ol, @[o.1] &&{llft_wsatG}&&> Alive llft_name o.2`
+
+   whose *world satisfaction* was a level's `llft_wsatG`.  The guards
+   have to be keyed to the **shared** relation, not a level's:
+   `llftl_end`'s contradiction branch picks a pair out of the shared
+   `ol` - the one whose violation blocks the kill - and opens its
+   guard.  A lagging level need not have that pair, so the guards moved
+   into the shared half; but a guard taken over level `k`'s
+   `llft_wsatG` is not usable by a body holding only `∗_{h<j} Wbor_h`.
+
+   The fix is the move this port had already made once, in the other
+   dimension: `st_incl` became **a family of guards, one at every
+   interpretation**.  The lifetime logic now simply does not fix the
+   world its stored guards live at.  `LlftWG` gains `llft_Wix` and
+   `llft_Wmore`, and a stored guard is
+
+   ```coq
+   fguard P Q := ∀ i, P &&{llft_Wat_ext i}&&> Q
+   llft_Wat_ext None     := llft_wsatG
+   llft_Wat_ext (Some i) := llft_wsatG ∗ llft_Wmore i
+   ```
+
+   with `llft_incl`, `idx_bor_def'` and `llft_outlives_guards_at` all
+   `fguard`s.  Two choices make it cost almost nothing.
+
+   The family is **extended** by the ambient world rather than required
+   to contain it, so `fguard_here` is an instantiation and the client
+   owes no proof.  (The first attempt asked for the ambient world as a
+   class obligation and put it in the section's `Context`; with
+   `Set Default Proof Using "All"` that silently made every later lemma
+   - `big_sepS_set_map` among them - abstract over it, and the file's
+   second section, which has no instance, could no longer use them.
+   The error surfaces as a `rewrite` whose "LHS matches but type
+   classes inference fails", a long way from the cause.)
+
+   And every world of the family **contains** the ambient one, so
+   `guard_wsat_sep` turns any guard already proved at `llft_wsatG` into
+   a member of the family (`fguard_of_here`).  That is not a
+   convenience, it is the right shape: an inclusion can be backed by a
+   *shared borrow*, which lives in the ambient level's `shr_wsat`, so a
+   guard stored at level `k` is usable exactly where that level's
+   machinery survives - the thesis's `∗_{k<j} Winv_k` for `j` above it.
+   A family of arbitrary worlds would have been unsound for exactly the
+   guards that matter.
+
+   The structural inclusions keep world-parametric forms
+   (`llftl_incl_sub_at` and three others), which is what the typing
+   layer needs when it proves a guard at another interpretation's
+   world; the family versions are a line each on top.  `typing/` gains
+   `dincl_incl` beside `dincl_sem`, for rules whose inclusion is going
+   to be stored.
+
+   #### Done: the borrow names leave `llft_logicGS`
+
+   `bor_name` and `o_name` are exactly what a level varies.  They were
+   fields of `llft_logicGS`, which made "the same lifetime logic with
+   another level's borrows" unnameable; they are now `LlftBorNames`, a
+   class of its own, so `llft_wsatG` is a function of it.  `alerusGS`
+   carries the field and `alerusNames` carries it beside `an_llft`.
+
+   #### What is left: construction, not expressibility
+
+   Nothing in `llft_wsat` now stands in the way, and the two remaining
+   items are both *building* what is already sayable.
+
+   1. **Allocating one level's borrow machinery against the existing
+      shared state** - **done**, `llft_bor_wsat_alloc`.  A second level
+      gets its own `bor_name`, `o_name`, box and shared-borrow family
+      over the same lifetime algebra, kill order, minted set and
+      outlives authority.  It is born at the *empty* prefix of the kill
+      order, which is sound precisely because a level may lag - before
+      that change the lemma could not have been stated, since a fresh
+      level would have had to be born knowing every kill that had
+      already happened.  What it needs of the state already there is
+      four persistent facts, collected as `llft_shared_wits` and handed
+      out by `llft_wsat_alloc`.
+   2. **Naming the two halves of `alerus_wsat_core`** - **done**,
+      `alerus_wsat_core_split`: `alerus_wsat_shared` (the lifetime
+      tokens, the kill order, the minted atoms, the outlives relation)
+      beside `alerus_wsat_lvl` (everything that holds a formula or names
+      a borrow).  As with `llft_inv_main`, the flat definition stays and
+      the split is a lemma, because every rule in `typing/` destructures
+      the flat form.
+
+   #### What is left, and a correction to the shape of it
+
+   Hoisting `an_llft` out of `alerusNames` and rebuilding
+   `alerus_wsat_below` as one shared copy beside `∗_{k<j} Wbor_k` is now
+   a change confined to `typing/level_ctx.v` and `soundness.v` - except
+   for one thing, which scoping it turned up and which is sharper than
+   what is written above.
+
+   **The shared half is not quite level-independent, and the guard
+   family as built does not yet say why that is all right.**
+   `llft_other_shared` holds `llft_outlives_guards_at ol`, and an
+   `fguard` is `∀ i, P &&{llft_wsatG ∗ llft_Wmore i}&&> Q` - it names
+   *the ambient level's* `llft_wsatG`.  That is right for a guard this
+   level stored, and it is what makes `fguard_of_here` sound.  But the
+   shared half is held once and the guards in it were stored by
+   *different* levels, so what it should say is
+
+   >  `∀ o ∈ ol, ∃ k, ∀ i ≥ k, @[o.1] &&{W i}&&> Alive llft_name o.2`
+
+   - each guard usable at every world **above the level that stored
+   it**.  The existential over the storer is the part that is missing,
+   and it needs `llft_Wix` to carry an order rather than being a bare
+   type, with `llft_Wat` monotone in it.  (The current family is the
+   special case where every guard was stored by the ambient level, which
+   is exactly the one-level situation `typing/ctx.v` instantiates.)
+
+   So the remaining order is: give `llft_Wix` its order and
+   `llft_outlives_guards_at` the existential; then hoist `an_llft`;
+   then the rest of step 5 below.
+
+   
 
    ### Done: levelled borrows, mechanized
 
@@ -777,7 +979,14 @@ ones are large for reasons now understood rather than guessed at.
    ### The remaining order of work
 
    1. **The ghost state** - done, `typing/level_ctx.v`: `alerusGS_of`
-      (the port's `alerusGS_at`) and `alerus_wsat_below`.
+      (the port's `alerusGS_at`) and `alerus_wsat_below`.  One thing it
+      still gets wrong on purpose: `alerusNames` carries a whole
+      `llft_logicGS`, so each level has its own *lifetime tokens*.  The
+      design wants `llft_name`, `d_name`, `log_name`, `mint_name`,
+      `oset_name` and `osub_name` shared and only `bor_name`/`o_name`
+      varying.  Those two are now `LlftBorNames`, a class of their own,
+      and `alerusNames` carries it - so the split is *expressible*; what
+      is left is the two construction items under step 4.
    2. **`LtRa`'s two halves on two ghost names** - done, so that
       `bor_name` can vary with the level while `llft_name` does not.
    3. **A per-level view of the dead set**, with lazy catch-up - done,
@@ -785,18 +994,40 @@ ones are large for reasons now understood rather than guessed at.
       in it, `lv_borrow_ready`, `lv_catch_up`, `kill_run_mono`.  No
       lifetime-level invariant was needed; two of this plan's
       expectations were wrong and the sections above record how.
-   4. **Decouple `lifetime_full.v`'s invariant** - done; the piece this
-      plan did not foresee, and the one that settles whether the design
-      survives contact with the real rules.  It does: all fourteen sites
-      are re-proved in the bookkeeping's own coordinates, `typing/` is
-      untouched and the tree is green.  What remains of this step is the
-      family itself, `llft_lv_inv ls` in place of one `lv_inv`, which is
-      a change of one conjunct - but splitting `llft_wsatG` so a body can
-      hold `∗_{k<j} Wbor_k` alone is what forces the level index into the
-      API, and that is step 5.
+   4. **Decouple `lifetime_full.v`'s invariant** - **done**, and with
+      it the lag (dead set *and* outlives), the naming of the two
+      halves (`llft_wsatG_split` / `llft_inv_other_split`), the stored
+      guards as a family over client-supplied worlds (`fguard`), and
+      the borrow names as a class of their own (`LlftBorNames`).
+      Nothing in `llft_wsat` fixes the execution level any more.  All
+      of `typing/` is untouched except for the mask side conditions the
+      catch-up forces, a handful of `fguard_here`/`fguard_of_here`
+      insertions where a stored guard meets an ambient one, and the
+      trivial instantiation of the world family in `typing/ctx.v`.  The
+      two items under "What is left: construction, not expressibility"
+      above are *building* the family of levels, not making it
+      sayable.
    5. **A level on every type former and on `typed_body`**, with `ty-lev`
       and `≤-→` proved as in `strat.v` (`twpw_alerus_le` and nothing
       else).  This is the bulk, and it touches every file in `typing/`.
+
+      Its two halves are *not* independent, and the order is forced the
+      other way round from how it reads.  Adding `ty_lev : nat` to the
+      `type` record is the small half - twenty-two formers define
+      `ty_size`, and `ty_lev` would be threaded exactly as `ty_size` is,
+      through the OFE mixin, `ty_size_ne`, `type_ne`/`type_contractive`,
+      subtyping and `rec.v`'s chain - but on its own it is a field with
+      **no law**: the level only means something once `ty_gho` is
+      interpreted at *that level's* ghost state, and that is step 4's
+      two construction items, not this one.  So the useful order is:
+      finish building the family of levels, then give `typed_body` its
+      `alerus_wsat_below ... j`, and let the formers' levels fall out of
+      what that forces.  Adding the field first buys a hundred edits and
+      no theorem.
+
+      `twpw_alerus_le` and `alerus_wsat_below_le` (`typing/level_ctx.v`)
+      are already proved, so `ty-lev` itself costs nothing when the time
+      comes.
    6. **`fn_fml`'s judgment carrying its execution level** as a discrete
       `nat`, its semantics the body at the *level-`j` package* and hence
       constant in the candidate - at which point `fn_fml_sem_1` is

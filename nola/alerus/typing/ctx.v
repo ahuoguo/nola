@@ -164,6 +164,13 @@ Inductive gsrc : Type :=
 Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
   #[global] alerus_invGS :: invGS_gen HasNoLc Σ;
   #[global] alerus_llftGS :: llft_logicGS Σ;
+  (** The borrow bookkeeping's names, apart from the rest of the
+    lifetime logic's.  This is the field an execution level varies:
+    [llft_logicGS] - the lifetime tokens, the kill order, the minted
+    atoms, the outlives relation's shared half - is one per run, and
+    only the borrows are one per level.  See [LlftBorNames] in
+    [lifetime/lifetime_full.v] and [typing/level_ctx.v]. *)
+  #[global] alerus_borNames :: LlftBorNames Σ;
   #[global] alerus_sinvGS :: sinvGS FML Σ;
   #[global] alerus_heapGS :: heapGS FML Σ;
   #[global] alerus_naInvGS :: naInvGS FML Σ;
@@ -301,9 +308,29 @@ Section alerus.
     frac_key_wsat lfts_interp ∗
     alerus_store_wsat.
 
-  (** Fix the lifetime logic's two parameters *)
+  (** The extra worlds a *stored* guard has to survive.
+
+    [lifetime_full.v] no longer fixes the world its stored guards -
+    lifetime inclusions, indexed borrows', the outlives guards - live
+    at: it takes a family, each of whose worlds is the ambient
+    [llft_wsatG] together with [llft_Wmore i].  That shape is what the
+    execution levels need, because an inclusion can be backed by a
+    shared borrow living in the ambient level's [shr_wsat], so a guard
+    stored at level [k] is usable exactly where that level's machinery
+    is still present - the thesis's [∗_{k<j} Winv_k] for [j] above it.
+
+    With one level there is no such [j], so the family is empty and
+    [fguard] is [llft_wsatG]'s guard again ([fguard_here] and
+    [fguard_of_here] are mutually inverse here).  Filling this in with
+    the levels is PLAN.md item 2's step 4; it is a change *here*, not
+    in the lifetime logic, which is the point of the parameter. *)
+  Definition alerus_Wix : Type := Empty_set.
+  Definition alerus_Wmore (i : alerus_Wix) : iProp Σ := match i with end.
+
+  (** Fix the lifetime logic's parameters *)
   #[export] Instance alerus_LlftWG : LlftWG Σ :=
-    {| llft_shr_name := alerus_shr_name; llft_WG := alerus_WG |}.
+    {| llft_shr_name := alerus_shr_name; llft_WG := alerus_WG;
+       llft_Wix := alerus_Wix; llft_Wmore := alerus_Wmore |}.
 
   (** [↑NllftG] itself: the world satisfaction every guard is taken over *)
   Definition alerus_WGuard : iProp Σ := llft_wsatG.
@@ -380,6 +407,54 @@ Section alerus.
     llft_wsat ∗ cna_wsat alerus_WGuard bor_sem ∗
     na_inv_wsat atomic_threadpool bor_sem.
   Definition alerus_wsat : iProp Σ := alerus_wsat_core ∗ send_wsat.
+
+  (** *** The half held once, and the half held per execution level
+
+    [alerus_wsat_below P ns j] is meant to be the thesis's
+    [∗_{k<j} Winv_k].  Today it is [j] copies of [alerus_wsat_core], which
+    is consistent only because [alerusNames] still gives every level its
+    own *everything*, the lifetime tokens included - the thing
+    [typing/level_ctx.v] says it gets wrong on purpose.  Once the levels
+    share one lifetime algebra, [j] copies of the shared invariant is not
+    a proposition anyone can hold, and the family has to be one shared
+    copy beside [j] level halves.
+
+    So name the halves.  Everything that holds a formula or names a
+    borrow is per level - the user's guarding world satisfaction (whose
+    eternal, fractional, key and store families are all per-level ghost
+    names), the borrow bookkeeping, the shared-borrow family, the box,
+    the cancellable non-atomic invariants and the atomic ones - against
+    the lifetime tokens, the kill order, the minted atoms and the
+    outlives relation, which are one per run.
+
+    [alerus_wsat_core] keeps its flat definition and the split is a
+    *lemma*, for the reason [lifetime_full.v] records twice over:
+    every rule in [typing/] destructures the flat form, and redefining
+    it changes the [∗]-tree under every [iDestruct] pattern.
+
+    Note [alerus_wsat_lvl] *mentions* [alerus_WGuard], and so mentions
+    the shared half - but only inside the guards stored in it, never as
+    a resource it holds.  That is what makes it a closed proposition and
+    hence holdable [j] times over. *)
+  Definition alerus_wsat_shared : iProp Σ :=
+    llft_inv_shared ∗ llft_other_shared.
+
+  Definition alerus_wsat_lvl : iProp Σ :=
+    alerus_WG ∗ llft_bor_wsat ∗ llft_bor_other ∗
+    cna_wsat alerus_WGuard bor_sem ∗ na_inv_wsat atomic_threadpool bor_sem.
+
+  Lemma alerus_wsat_core_split :
+    alerus_wsat_core ⊣⊢ alerus_wsat_shared ∗ alerus_wsat_lvl.
+  Proof.
+    rewrite /alerus_wsat_core /alerus_wsat_shared /alerus_wsat_lvl
+      /llft_wsat llft_wsatG_split llft_inv_other_split. iSplit.
+    - iIntros "[[[[WG Sh] Bor] [OSh BOth]] [Cna Na]]". iFrame.
+    - iIntros "[[Sh OSh] [WG [Bor [BOth [Cna Na]]]]]". iFrame.
+  Qed.
+
+  #[export] Instance wsat_incl_alerus_core_lvl :
+    WsatIncl alerus_wsat_core alerus_wsat_lvl alerus_wsat_shared.
+  Proof. rewrite /WsatIncl alerus_wsat_core_split. by rewrite comm. Qed.
 
   (** ** Shared access to a local lifetime context
 
@@ -1480,15 +1555,17 @@ Section alt_sem.
     API usable: open the borrow atomically, carry its contents across the
     alteration, and close it at the formula we wanted. *)
   Lemma dFullBor_exact {E κ Px} :
+    ↑NllftUsr ∪ ↑NllftUsr2 ⊆ E →
     llft_ctx -∗ dFullBor κ Px -∗ |=[llft_wsat]{E}=> full_bor κ Px.
   Proof.
-    iIntros "#ctx (%Px' & #a & b)". rewrite /modw. iIntros "W".
+    intros HE. iIntros "#ctx (%Px' & #a & b)". rewrite /modw. iIntros "W".
     iMod (llftl_bor_acc_atomic E Px' κ with "ctx b W")
       as "[[P back]|[W #dead]]".
     - iDestruct (dalter_sem_1 with "a P") as "P".
       iMod ("back" $! Px with "[] P") as "[$ $]"; [|done].
       iIntros "[P _] !>". by iApply (dalter_sem_2 with "a P").
-    - iMod (llftl_bor_fake E κ Px with "ctx dead W") as "[$ $]". done.
+    - iApply (fupd_mask_mono (↑NllftUsr ∪ ↑NllftUsr2)); [done|].
+      iMod (llftl_bor_fake κ Px with "ctx dead W") as "[$ $]". done.
   Qed.
 
   (** [llftl_idx_bor_unnest], transported *)
@@ -1949,6 +2026,14 @@ Section alt_sem.
   Lemma dincl_sem {κ κ'} : dincl κ κ' ⊢ @[κ] &&{alerus_WGuard}&&> @[κ'].
   Proof. rewrite -alt_WGuard_here. exact (dincl_guard_at alt_here). Qed.
 
+  (** The same as a *stored* guard, i.e. at every world of the family.
+    With one level this is [dincl_sem] again ([fguard_of_here]), but it
+    is what a rule should use when the inclusion is going to be kept -
+    put inside an indexed borrow, or handed to
+    [llftl_augment_outlives]. *)
+  Lemma dincl_incl {κ κ'} : dincl κ κ' ⊢ llft_incl κ κ'.
+  Proof. rewrite dincl_sem /llft_incl. apply fguard_of_here. Qed.
+
   (** An inclusion can be *stored*: at any candidate it is a guard between
     the two lifetime tokens, which is what [guard_fml] asks for. *)
   Lemma dincl_at {sem} (H : alt_sem sem) {κ κ'} :
@@ -1972,7 +2057,9 @@ Section alt_sem.
     ambient interpretation.  [dbasically_dead] holds one of these. *)
   Lemma dguard_alive_incl {κ κ'} :
     dguard (alive_fml κ) (alive_fml κ') ⊢ llft_incl κ κ'.
-  Proof. rewrite dguard_sem !alive_fml_sem //. Qed.
+  Proof.
+    rewrite dguard_sem !alive_fml_sem /llft_incl. apply fguard_of_here.
+  Qed.
 
   Lemma dincl_of_sub {κ κ'} : κ' ⊆ κ → ⊢ dincl κ κ'.
   Proof. exact st_incl_of_sub. Qed.

@@ -43,29 +43,41 @@
   [fn_fml] needs - is a later step, and it is the one that needs a level
   on every type former.
 
-  **One thing this file gets wrong on purpose, because the right version
-  is not expressible yet.**  [alerusNames] carries a whole
-  [llft_logicGS], so each level here has its own *lifetime tokens* as
-  well as its own borrows: [@[κ]] at level [k] is a different proposition
-  from [@[κ]] at level [j], and nothing transfers between them.  That is
-  the tower of lifetime logics PLAN.md calls prohibitive, and it is not
-  the design.
+  **One thing this file still gets wrong on purpose.**  [alerusNames]
+  carries a whole [llft_logicGS], so each level here has its own
+  *lifetime tokens* as well as its own borrows: [@[κ]] at level [k] is a
+  different proposition from [@[κ]] at level [j], and nothing transfers
+  between them.  That is the tower of lifetime logics PLAN.md calls
+  prohibitive, and it is not the design.
 
-  (As of the [lifetime_full.v] decoupling this is the only thing left:
-  the borrow bookkeeping no longer shares the lifetime tokens' view of
-  the world, so what is still wrong here is only that each level gets a
-  whole [llft_logicGS] rather than its own borrow names.)
+  What the design wants is [llft_name], [d_name], [log_name],
+  [mint_name], [oset_name] and [osub_name] shared for the whole run, and
+  only [bor_name] and [o_name] - and with them the box and the
+  shared-borrow family - varying with the level.  Everything that stood
+  in the way of that is now gone, and the record of what each step cost
+  is in PLAN.md:
 
-  What the design wants is [llft_name], [o_name] and [d_name] shared for
-  the whole run and only [bor_name] - and with it the box and the
-  shared-borrow family - varying with the level.  [lifetime/ra.v]'s split
-  has made that *nameable*; it is not yet *buildable*, because
-  [llft_wsat] at level [k] still needs [llft_inv_main], which is
-  [outer_inv], which is [inner_inv], which is indexed by the dead set and
-  so cannot simply be duplicated across levels.  Giving each level its
-  own view of the dead set is the open piece of work; PLAN.md item 2 has
-  its shape, and [lifetime/inv.v]'s [boxmap_alive_free] and its two
-  siblings are the part of it that is already checked.
+  - [lifetime/ra.v]'s split made the two halves nameable apart.
+  - A level's view of the dead set may *lag* the shared kill order and
+    catch up lazily ([lifetime/level.v]); so may its outlives relation,
+    bounded by an [Osub] fragment.  That is what made a level's piece of
+    the invariant a *closed* proposition, which is what lets several of
+    them be held at once as [∗_{k<j} Wbor_k].
+  - The lifetime logic no longer fixes the world its *stored* guards -
+    inclusions, indexed borrows', the outlives guards - live at: it
+    takes a family ([LlftWG]'s [llft_Wix]/[llft_Wmore]), each of whose
+    worlds extends the ambient one.  That is what a guard stored at
+    level [k] and opened by a body holding [∗_{h<j} Wbor_h] needs.
+  - [bor_name] and [o_name] are now [LlftBorNames], a class of their
+    own, so [llft_wsatG] is a function of the level's borrow names.
+
+  What is left is therefore *construction*, not expressibility: a lemma
+  allocating one level's borrow machinery against the *existing* shared
+  state (a second [bor_alloc]/[outlives_alloc]/box/shared-borrow family,
+  with [lv_inv] at the empty prefix of the kill order), and the split of
+  [alerus_wsat_core] into the half held once and the half held per
+  level, so that [alerus_wsat_below P ns j] is [∗_{k<j} Wbor_k] beside
+  one shared copy rather than [j] copies of everything.
 
   So what is sound here is the *shape*: [L] packages out of one [Σ],
   [∗_{k<j} Winv_k], and [ty-lev].  Which ghost state each package may
@@ -103,9 +115,34 @@ Definition alerusΣ FML `{!oFunctorContractive FML} : gFunctors :=
     fracGuardΣ FML; GFunctor (constRF (authUR (gsetUR lft)));
     fracKeyΣ llctx; fracKeyΣ (gmultiset lft)].
 
+(** [solve_inG] does not scale here.  Its last step is
+  [split; (assumption || by apply _)], which hands each of the ten fields
+  to typeclass resolution; on [lrustGpreS FML Σ] that search does not
+  terminate in any practical time (measured: over eight hours, against
+  0.00s for the named instance).  So the fields are discharged by name,
+  and the [subΣ] hypothesis is taken apart one entry at a time rather
+  than by [repeat], so that each entry has a name to be discharged by. *)
 #[export] Instance subG_alerusGpreS {FML Σ} `{!oFunctorContractive FML} :
   subG (alerusΣ FML) Σ → alerusGpreS FML Σ.
-Proof. solve_inG. Qed.
+Proof.
+  intros H. unfold alerusΣ in H.
+  apply subG_inv in H as [Hlrust H]. apply subG_inv in H as [Hllft H].
+  apply subG_inv in H as [Hsinv H]. apply subG_inv in H as [Hproph H].
+  apply subG_inv in H as [Huniq H]. apply subG_inv in H as [Hcna H].
+  apply subG_inv in H as [Hfrac H]. apply subG_inv in H as [Hetern H].
+  apply subG_inv in H as [Hllctx H]. apply subG_inv in H as [Hlfts _].
+  split.
+  - by apply subG_lrustGpreS.
+  - by apply subG_lt_logicΣ.
+  - by apply subG_sinvΣ.
+  - by apply subG_prophPreG.
+  - by apply subG_uniqPreG.
+  - by apply subG_cnaGpreS.
+  - by apply subG_fracGuardGpreS.
+  - exact (subG_inG _ _ Hetern).
+  - by apply subG_fracKeyGpreS.
+  - by apply subG_fracKeyGpreS.
+Qed.
 
 (** ** The world satisfaction, as a function of the ghost state
 
@@ -141,6 +178,15 @@ Section level.
     [typing/levels.v]. *)
   Record alerusNames : Type := AlerusNames {
     an_llft : llft_logicGS Σ;
+    (** The borrow bookkeeping's two names.  Since [lifetime/ra.v]'s
+      split these are separable from [an_llft], and they are what the
+      design wants a level to vary while [an_llft] - the lifetime
+      tokens, the kill order, the minted atoms, the outlives
+      relation's shared half - stays one per run.  The record still
+      carries a whole [llft_logicGS] per level, which is the thing this
+      file says it gets wrong on purpose; what has changed is that the
+      part that *should* vary is now nameable on its own. *)
+    an_bor : LlftBorNames Σ;
     an_sinv : sinvGS (cifOF CON) Σ;
     an_naInv : gname;
     an_cna : cnaGS (cifOF CON) Σ;
@@ -157,7 +203,7 @@ Section level.
   Definition alerusGS_of (hGS : heapGS (cifOF CON) Σ)
       (hP : prophG Σ) (hU : uniqG Σ) (n : alerusNames)
     : alerusGS (cifOF CON) Σ :=
-    AlerusGS (cifOF CON) Σ _ (an_llft n) (an_sinv n) hGS
+    AlerusGS (cifOF CON) Σ _ (an_llft n) (an_bor n) (an_sinv n) hGS
       (NaInvGS (cifOF CON) Σ (@sinvGS_pre _ _ (an_sinv n)) _ (an_naInv n))
       _ hP hU (an_cna n) (an_frac n) _ (an_llctx n) (an_lfts n)
       (an_shr n) (an_eternal n) (an_store n).
@@ -176,15 +222,20 @@ Section level.
   Proof.
     iMod (frac_key_wsat_alloc (K:=llctx)) as (Hllctx) "Wllctx".
     iMod (frac_key_wsat_alloc (K:=gmultiset lft)) as (Hlfts) "Wlfts".
-    iMod eternal_wsat_alloc as (γe) "We".
+    (* [K] has to be given: the lifetime logic's minted-atom camera is
+      another [inG Σ (authUR (gsetUR _))], so resolution would otherwise
+      pick [lt_atom] here. *)
+    iMod (eternal_wsat_alloc (K:=lft)) as (γe) "We".
     iMod (frac_wsat_alloc (FML:=cifOF CON)) as (Hfrac) "Wfrac".
-    iMod (llft_wsat_alloc (FML:=cifOF CON)) as (Hllft Hsinv shr) "Wllft".
+    iMod (llft_wsat_alloc (FML:=cifOF CON)) as (Hllft Hbor Hsinv shr)
+      "[#Wits Wllft]".
     iMod (na_inv_wsat_alloc_name (FML:=cifOF CON)) as (γna) "Wna".
     iMod (cna_wsat_alloc (FML:=cifOF CON)) as (Hcna) "Wcna".
     iMod (sinv_wsat_alloc_name (FML:=cifOF CON) (sinvGS0 := Hsinv))
       as (γst) "Wstore".
     iModIntro.
-    iExists (AlerusNames Hllft Hsinv γna Hcna Hfrac Hllctx Hlfts shr γe γst).
+    iExists
+      (AlerusNames Hllft Hbor Hsinv γna Hcna Hfrac Hllctx Hlfts shr γe γst).
     iIntros (hGS hP hU Cs Js CS).
     rewrite /alerus_wsat_core_at /alerus_wsat_core.
     iSplitR "Wcna Wna"; last first.

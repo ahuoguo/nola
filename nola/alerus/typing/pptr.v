@@ -352,7 +352,8 @@ Section typing.
     { (* the permission's own cell list is empty, so this cannot happen *)
       iDestruct "UniqBody" as "(ξVo & ξTok & #ξBor)".
       iDestruct (idxbor_fml_to_full with "ξBor ξTok") as "Bor0".
-      iDestruct (dFullBor_exact (E:=⊤) with "LFT Bor0") as "Ex".
+      iDestruct (dFullBor_exact (E:=⊤) with "LFT Bor0") as "Ex";
+        [set_solver|].
       iDestruct (fupdw_incl (W:=alerus_wsat) with "Ex") as "Ex'".
       iMod ("Ex'" with "W") as "[W Bor]".
       iAssert (bor_sem (gsrc_fml (GFrac γ 1)) &&{Wguard}&&> @[κ])%I as "#Gκx".

@@ -129,3 +129,55 @@ unification, which does not terminate.  Apply `typed_body_impl` first, let
 the transformer be an evar solved forward, and discharge the implication at
 the end — the idiom upstream's examples use.  Pin the innermost transformer
 so the final goal is ground.
+
+## 6. `solve_inG` does not scale to a `Σ` this size
+
+`typing/level_ctx.v`'s `subG_alerusGpreS` was `Proof. solve_inG. Qed.` and
+did not finish: a build left on it ran **over eight hours** on that one
+command without completing, with an empty `-time-file`.  The explicit
+proof now in its place takes **0.00s**, and the whole file 3.3s.
+
+The cost is not where it looks.  `solve_inG`'s first three steps — unfold
+the `Σ`, `repeat apply subG_inv`, turn singletons into `inG` — total
+0.05s and leave a context of only twenty-one hypotheses, with
+`subG (lrustΣ FML) Σ` among them.  Nor is it `simpl in *`.  It is the
+last line,
+
+```coq
+split; (assumption || by apply _).
+```
+
+which hands each of the ten `alerusGpreS` fields to typeclass
+resolution.  Nine of them come back at once.  The first,
+`lrustGpreS FML Σ`, does not: `subG_lrustGpreS` is one `apply` away with
+its premise sitting in the context, but the search does not find it by
+that route, and what it does instead does not terminate in any practical
+time.  Timing the fields one at a time is what localises this — `Time`
+on `solve_inG` as a whole tells you nothing except that it is slow.
+
+So discharge the fields **by name**:
+
+```coq
+intros H. unfold alerusΣ in H.
+apply subG_inv in H as [Hlrust H]. (* ...one per entry... *)
+split.
+- by apply subG_lrustGpreS.
+- by apply subG_lt_logicΣ.
+  (* ... *)
+- exact (subG_inG _ _ Hetern).
+```
+
+Two details.  Take the `subG` apart one entry at a time rather than with
+`repeat`, so every entry has a name to be discharged by.  And a field
+that is a bare `inG` rather than a class — here
+`inG Σ (authUR (gsetUR lft))` — needs `subG_inG`'s functor argument
+supplied, which `exact (subG_inG _ _ H)` does by unifying against the
+hypothesis; `apply subG_inG` leaves it as an evar and fails.
+
+Expect this of any `xΣ` that grows past a handful of entries, and note
+that the failure arrives *late* and from a distance: the command that
+stopped terminating here was not edited at all.  What changed was
+`llft_logicΣ`, one entry down, which gained a `GFunctor` for the outlives
+witness; `subG_alerusGpreS` is two levels above that and went from
+compiling to not finishing.  A `solve_inG` that passes today is not
+evidence that it will pass after an unrelated `Σ` grows.

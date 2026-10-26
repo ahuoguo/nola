@@ -464,7 +464,7 @@ Section typing.
          rewrite list_to_set_disj_app. iFrame "cna_lifetimes".
          rewrite lft_intersect_list_app.
          iApply llftl_incl_glb; first by done.
-         iApply (guard_trans with "Incl1 Incl").
+         iApply (fguard_trans with "Incl1 Incl").
        - iDestruct 1 as (na_mask' at_mask') "[#masks' [[cna_lifetimes #Incl'] [cna_own ato]]]".
          iFrame. iFrame "#".
          unfold invctx_to_multiset. simpl. rewrite gmultiset_disj_union_left_id.
@@ -546,8 +546,8 @@ Section typing.
     rewrite Hrec. wp_rec.
     iDestruct (invctx_interp_call Il ϝ' _ tid mask ϝ iκs with "[] [] ii")
       as (iκs') "[ii iiback]".
-      { iApply (guard_trans with "fGuardsL Lguardsϝ'"). }
-      { iApply (guard_trans with "fGuardsL LguardsIl"). }
+      { iApply fguard_of_here. iApply (guard_trans with "fGuardsL Lguardsϝ'"). }
+      { iApply fguard_of_here. iApply (guard_trans with "fGuardsL LguardsIl"). }
     iApply ("e" with "LFT PROPH UNIQ Efp [ϝtok] ii [ToG k iiback] ityl Obs").
     { iSplitL; [|done]. iExists _. iSplit; [by rewrite/= left_id|].
       by iFrame "ϝtok". }

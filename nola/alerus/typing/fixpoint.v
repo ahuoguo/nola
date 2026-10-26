@@ -180,7 +180,7 @@ Section S.
     have Hc : ⊢ dincl (ty_lft (Tn 0)) (ty_lft (Tn n))
       by iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
     have Hc' : ⊢ llft_incl (ty_lft (Tn 0)) (ty_lft (Tn n)).
-    { iApply dincl_sem. iApply Hc. }
+    { iApply dincl_incl. iApply Hc. }
     iApply llftl_incl_trans; [done|]. iApply Hc'.
   Qed.
   Next Obligation. move=> n sem H. apply (ty_gho_pers_pers_at (Tn n) sem H). Qed.

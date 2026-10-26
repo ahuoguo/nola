@@ -121,7 +121,7 @@ Section sum.
     move=> Hξ. iIntros "#LFT #Incl #Pers #Rk #Rg".
     iMod (ty_guard_proph _ (tyl +!! i) κ x0 d g tid R
       with "LFT [] Pers Rk Rg") as "H".
-    { iApply (guard_trans with "Incl []").
+    { iApply (fguard_trans with "Incl []").
       iApply lft_intersect_tyl_lfts_lookup_incl. }
     iModIntro. iIntros (ξ Hin). iApply "H". iPureIntro.
     move: (Hξ ξ Hin)=>/=. rewrite psum_map1_pinj to_xsum_pinj. done.

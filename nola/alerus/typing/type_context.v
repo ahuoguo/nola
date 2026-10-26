@@ -571,7 +571,7 @@ Section lemmas.
       as "Hall0".
     { iApply (ty_guard_proph _ ty (foldr meet static (ty_lfts ty))%I x' d d
         tid (Ltok γ L (q/2) ∗ ty_gho ty x' d d tid) with "LFT [] ghoPers").
-      - iApply guard_refl.
+      - iApply fguard_refl.
       - iApply guard_lhs_sep_l. iApply (guard_trans with "[] Lkg").
         iApply (Ltok_guard with "ktok").
       - iApply guard_sep_r. }

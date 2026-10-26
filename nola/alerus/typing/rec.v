@@ -230,8 +230,9 @@ Section tyd.
     iApply (HT d0 Hd0 κ0 (snd x) gg tid R with "LFT [] Pers Rk [] W").
     { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_r. }
     iDestruct (dguard_alive_sem with "Gho") as "#Gho0".
-    iApply (guard_trans with "Rk"). iApply (guard_trans with "Incl").
-    iApply (guard_trans with "[] Gho0"). iApply llftl_intersect_incl_l.
+    iDestruct (fguard_here with "Incl") as "#Inclh".
+    iApply (guard_trans with "Rk"). iApply (guard_trans with "Inclh").
+    iApply (guard_trans with "[] Gho0"). iApply llftl_intersect_incl_l_at.
   Qed.
   (** ** A structural former, at the level of data
 
@@ -282,11 +283,11 @@ Section tyd.
     move=> HT HU κ x g tid R. rewrite /prod_tyd/=. fml_simpl.
     iIntros "#LFT #Incl [Gho1 Gho2] #Rk #Rgho".
     iMod (HT κ (fst x) g tid R with "LFT [] Gho1 Rk []") as "H1".
-    { rewrite lft_intersect_list_app. iApply (guard_trans with "Incl []").
+    { rewrite lft_intersect_list_app. iApply (fguard_trans with "Incl []").
       iApply llftl_intersect_incl_l. }
     { iApply guard_rhs_sep_l. iFrame "Rgho". }
     iMod (HU κ (snd x) g tid R with "LFT [] Gho2 Rk []") as "H2".
-    { rewrite lft_intersect_list_app. iApply (guard_trans with "Incl []").
+    { rewrite lft_intersect_list_app. iApply (fguard_trans with "Incl []").
       iApply llftl_intersect_incl_r. }
     { iApply guard_rhs_sep_r. iFrame "Rgho". }
     iModIntro. iIntros (ξ Hin). rewrite elem_of_app in Hin.

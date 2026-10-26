@@ -96,12 +96,12 @@ Section product.
     fml_simpl. iIntros "#LFT #Incl #[Gho1 Gho2] #Rk #Rgho".
     iMod (ty_guard_proph 𝔄 ty κ (fst x) d g tid R with "LFT [] Gho1 Rk []")
       as "H1".
-    { rewrite lft_intersect_list_app. iApply (guard_trans with "Incl []").
+    { rewrite lft_intersect_list_app. iApply (fguard_trans with "Incl []").
       iApply llftl_intersect_incl_l. }
     { iApply guard_rhs_sep_l. iFrame "Rgho". }
     iMod (ty_guard_proph 𝔅 ty' κ (snd x) d g tid R with "LFT [] Gho2 Rk []")
       as "H2".
-    { rewrite lft_intersect_list_app. iApply (guard_trans with "Incl []").
+    { rewrite lft_intersect_list_app. iApply (fguard_trans with "Incl []").
       iApply llftl_intersect_incl_r. }
     { iApply guard_rhs_sep_r. iFrame "Rgho". }
     iModIntro. iIntros (ξ Hin). rewrite elem_of_app in Hin.

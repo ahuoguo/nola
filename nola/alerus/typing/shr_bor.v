@@ -88,8 +88,9 @@ Section shr_bor.
       with "LFT [] Pers Rk [] W").
     { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_r. }
     iDestruct (dguard_alive_sem with "Gho") as "#Gho0".
-    iApply (guard_trans with "Rk"). iApply (guard_trans with "Incl").
-    iApply (guard_trans with "[] Gho0"). iApply llftl_intersect_incl_l.
+    iDestruct (fguard_here with "Incl") as "#Inclh".
+    iApply (guard_trans with "Rk"). iApply (guard_trans with "Inclh").
+    iApply (guard_trans with "[] Gho0"). iApply llftl_intersect_incl_l_at.
   Qed.
   Next Obligation. done. Qed.
 
