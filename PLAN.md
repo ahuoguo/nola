@@ -1735,95 +1735,145 @@ ones are large for reasons now understood rather than guessed at.
    parameterised by it (`ptrlist L A`) and everything else is the same
    clauses twice.
 
-   ### Still to do, and it is a genuine tension rather than a gap
+   ### Done: the two owning pointers are one
 
-   **Moving a pointee out.**  `sown_tyd`'s pointee can be *borrowed* - that
-   is what the reversible accessor gives - but not moved out, so the list
-   can be read and not destructured, and `typing/own.v`'s rules do not apply
-   to it as they stand.  The port therefore has two owning pointers:
+   `sown_tyd`'s pointee could be *borrowed* - that is what a reversible
+   accessor gives - but not moved out, so a recursive type was readable
+   and not destructurable and the port carried two owning pointers:
 
    | | content | extractable | productive |
    |---|---|---|---|
    | `own_ptr` (`own.v`) | in hand | yes | no |
-   | `sown_tyd` (`rec.v`) | in a simple invariant | no | yes |
+   | `sown_tyd` (`rec.v`) | in a simple invariant | **yes** | yes |
 
-   The obvious merge is `store_tok`'s shape - hold an exclusive `token γ`
-   and store `Px ∨ token γ`, so that the guard rules out the right disjunct
-   while extraction deposits the token.  This plan recorded that as
-   **structurally impossible**.  Half of that is wrong: the half it
-   argued for.  `nola/alerus/two_state.v` settles it.
+   The second row's middle column is now `yes`.  `sown_tyd_take` moves the
+   pointee out for good and hands back the pointer and its deallocation
+   permission untouched; `sown_tyd_alloc` is the other direction; `Ty` is
+   still unconditional, `TyProphAt` and `sown_tyd_incl` still go through,
+   and the former is still `Productive`.  All of it is closed under the
+   global context.
 
-   The argument had been: narrowing a guard on a disjunction needs
-   `guard_or_false`, whose side condition is itself a guard on `False` and
-   so sits under a `□` that an owned token cannot discharge; or
-   `guard_cancel_or`, whose side condition is `Q ∧ R ⊢ False`, "which two
-   copies of the same exclusive resource do not give - `P ∧ P ⊣⊢ P`".
+   Getting there took two things, and the first of them this plan had
+   wrong.
 
-   The second half is right about *two copies of one* token and wrong
-   about the method.  `guard_cancel_or`'s conjunction is the
-   **non-separating** one, and for two *different and incompatible* states
-   at one ghost name it does give a contradiction - which is what Iris's
-   `own_and` is for, and what `nola/alerus/own_and.v` had already bridged
-   into this development for exactly this kind of argument.  One name, two
-   states, in `csumR (exclR unitO) (exclR unitO)`:
+   **The interface is a judgment, not a token.**  The obvious merge is
+   `store_tok`'s shape - hold an exclusive token and store `Px ∨ marker`,
+   so the guard rules out the marker while extraction deposits it.  This
+   plan recorded that as *structurally impossible*; it is not, and
+   `nola/examples/rust_halt/box.v`'s `ty_box` is exactly that shape, with
 
    ```coq
-   ts_full  γ := own γ (Cinl (Excl ()))   (* the content is inside *)
-   ts_taken γ := own γ (Cinr (Excl ()))   (* it has been extracted *)
-
-   ts_and_false γ   : ts_full γ ∧ ts_taken γ ⊢ False
-   ts_take γ        : ts_full γ ==∗ ts_taken γ
-   guard_two_state γ : (P &&{W}&&> ts_full γ) -∗
-                       (P &&{W}&&> (ts_taken γ ∨ Px)) -∗ P &&{W}&&> Px
+   store_tok Px := ∃ γ, token γ ∗ dinv_tok (Px ∨ ▷ token γ)
    ```
 
-   `Cinl` and `Cinr` are not ordered by `≼` and their composition is
-   `CsumBot`, so no *valid* resource includes both.  The token is still
-   exclusive, so extraction is a frame-preserving update from one state to
-   the other, and what it deposits in the store is the very thing that
-   falsifies the guard.  Nothing is under a `□` that needs the token:
-   `guard_cancel_or`'s side condition is the pure `ts_and_false`, and the
-   token enters only through the guard's own left-hand side, which is
-   supplied at use.  All three are *closed under the global context* - not
-   even `Eq_rect_eq`.
+   under it - the `▷` only because `cif` has no constructor for `token γ`
+   and has to embed it, which a later-free port does not need.
 
-   **What that does and does not buy**, because the merge needs two
-   things and this is one of them.  It buys the reversible accessor
-   (`ebox_acc`, checked): hold the token, get the content, give it back,
-   get the token back.  It does **not** buy extraction, and no
-   arrangement of the disjunction will: `guard_acc` is
-   `Q ∗ (Q -∗ W ∗ P)`, so the only route back to `W` consumes the
-   content.  That is a guard being a guard - the thing that cannot write
-   to the store.  Running `ts_take` and depositing the marker *where the
-   content was* needs write access, i.e. the store token.
+   But that is only half.  An earlier version of this section answered the
+   subtyping objection - "a token names the formula it stores" - with
+   `st_iff`, the device a full borrow uses.  That is wrong: `st_iff` is an
+   `iProp`, not a formula, so an `estore_at` built from it can never be a
+   type's *ghost component*, which is `FML`-valued.  Both sources say what
+   the answer is and they agree.  The thesis hits the objection head on
+   (§ 5.2): its first model stores the reference's content in a bare
+   invariant token and cannot prove `≤-ref` "because the proposition of
+   the invariant token `inv N` cannot be directly changed"; the fix is
+   derivability, giving (5.5)
 
-   So the obstruction this plan argued for - that no side condition could
-   rule the marker disjunct out - is gone, and option 1 below is no
-   longer forced by *it*.  The remaining obstacle is the other one
-   recorded above, and it is a different one: a store token names the
-   formula it stores, so a former holding one admits no subtyping rule.
-   Having extraction *and* subtyping needs the stored formula fixed with
-   the variation behind a judgment, as an indexed borrow's content is
-   altered.  That is a design question rather than an impossibility, and
-   it is now the only thing in the way.
+   ```
+   ⟦ref°ₖ T⟧ⁱδ v ≜ ∃U, k' ≤ k. □ δ (T ≤ U) ∗ □ δ (U ≤ T) ∗ inv (ℓ ↦ U)
+   ```
 
-   The ways out, now four and one of them small:
+   with `≤-ref` following from (5.8) and the transitivity (5.7).  And
+   `ty_box` does the same: `cif_store` denotes `store_deriv.v`'s
+   `store δ Px`, a derivability assertion - `store_tok` is only how one is
+   **built**, and `store_wand` is what `subty_box` runs on.
 
-   0. **the two-state token above**, *plus* a judgment for the stored
-      formula so the store token survives subtyping.  The token half is
-      checked and confined to `rec.v`; the judgment half is the open
-      design question.  This is the route that was thought closed.
-   1. reshape `ty_guard_proph` so its premise is ownership under the world
-      satisfaction rather than a guard, which is `rust_halt`'s `TyOpAt`
-      shape - its prophecy law is a fupd and it has no Leaf guards at all.
-      This was recorded as the honest fix and it touches every type
-      former; with 0 available it is no longer forced.
-   2. leave the two formers side by side, which is where the tree is: the
-      recursion uses `sown_tyd` and the typing rules use `own_ptr`, and a
-      recursive type is readable but not destructurable.
-   3. give the list its own destructuring rules against `sown_tyd`
-      directly, which is `verify/list.v`-level work and does not need
-      `own_ptr` at all.
+   So the token is the realization and the judgment is the interface.
+   `typing/model.v`'s `eownCT`/`eownJT` and `typing/ctx.v`'s `eown_fml`:
+
+   ```coq
+   ⟦ eown_fml γ Px ⟧(δ) := □ δ (eown_j γ Px)
+   ⟦ eown_j γ Px ⟧(δ)   := (ts_full γ &&{W δ}&&> ⟦Px⟧(δ))        (* read, repeatably *)
+                         ∗ □ (ts_full γ -∗ |=[W δ]=> ⟦Px⟧(δ))    (* take, once *)
+   ```
+
+   realized by one persistent `dinv_tok (ts_taken γ ∨ Px)` beside the held
+   `ts_full γ`, which is the only owned part - one judgment, because two
+   conjuncts would ask for two realizations of one `Px`.
+   `nola/alerus/two_state.v`'s token is what makes the guard half go
+   through: `guard_cancel_or` wants the *non-separating*
+   `ts_full γ ∧ ts_taken γ ⊢ False`, which a plain `Excl ()` cannot give,
+   `P ∧ P ⊣⊢ P`.  `eown_fml_map_at` is (5.7) and `store_wand`.
+
+   **The token's name is in the refinement type.**  This is the part that
+   took the longest to see, and it is where `TyProphAt` comes in rather
+   than subtyping.  The law is *handed* a guard on the ghost component at
+   a universally quantified `R`, and `@[κ]` is reachable only from that
+   same `R`, so it can only ever compose - it can never open anything.
+   Composing down to the pointee needs `R &&{W}&&> ts_full γ`, and with
+   `γ` existentially quantified inside the ghost component nothing could
+   reach it: guards do not commute with `∃`.  With `γ` read off the
+   refinement value it is `sown_tyd_guard_tok`, two `guard_sep`
+   projections, the token sitting outside both bounded existentials.
+   (The bounds are forced too: widening one is the only weakening
+   available to an *unconditional* `Ty`, which the fixpoint needs.)
+
+   So `at_loctokₛ 𝔄 := at_locₛ (positiveₛ * 𝔄)` and `own_listₛ`'s tail is
+   a `loc * gname` the way `shr_listₛ`'s is a `cloc`.  The device is the
+   port's own: `invₛ` already interprets to `namespace * gname * ⟦𝔄₀⟧`,
+   and `typing/atomic_inv.v` already runs this two-state trick off a `γ`
+   taken from the data.  A pleasant consequence: subtyping needs only one
+   direction of the thesis's premise, since the map is the identity on the
+   name and the capability is persistent, so the backward direction of
+   `tyd_incl_at` hands back the one it kept rather than inverting
+   anything.
+
+   `bi/guard.v` gained `guard_apply` and `guard_exist_pers` along the way.
+   The second narrows a guard on an existential whose witness carries a
+   persistent guard of its own; naming the token made it unnecessary here,
+   and it is kept because it is the general form of the move.
+
+   The list now has its own destructuring rules, which is the second of
+   those and what `rust_halt`'s `verify/list.v` does with `ty_box`'s
+   `Read`/`Write` instances: `ty_rec_own_unfold` unfolds the fixpoint
+   once, and `own_list_tyd_cons_take` takes a cons cell apart into the
+   head's ghost assertion, the tail pointer, its deallocation permission
+   and the tail list - all in hand, at a strictly smaller depth.
+   `own_list_tyd_cons_alloc` puts one back together and
+   `own_list_tyd_nil` is the empty case; `ty_own_list_cons_take` and
+   `ty_own_list_nil` are the same two at the level of `type`, which is
+   what a typing rule sees.  The structural formers between the fixpoint
+   and the pointer are all depth-transparent, so the only step that moves
+   the depth is `sown_tyd`'s own `⌜d' < d⌝`.
+
+   And the rules themselves are in `typing/own_rec.v`: `sown_ptr n ty`
+   packages `sown_tyd n (ty_d ty)` as a `type` - its data *is* that, so
+   every law comes from `rec.v` - and `read_sown_copy`, `read_sown_move`
+   and `write_sown` are `own.v`'s three rules for it.  Each is `own.v`'s
+   proof with one step in front, `sown_ptr_take_wsat`, which spends the
+   token and brings the pointee into hand.
+
+   Two things differ from `own_ptr`'s, and both come from the token.  The
+   pointee's depth is only *bounded* by the pointer's rather than one
+   below it exactly, so it is lifted with `ty_gho_depth_mono` - the same
+   step `own.v` already takes to meet `typed_read`'s "same depth on both
+   sides", starting one further down.  And closing allocates a **fresh**
+   token, so the residual refinement's ghost name is not the one it
+   started with - which is why `typed_read`'s `st` and `typed_write`'s are
+   relations; they pin the location and the value and say nothing about
+   the name.  `read_sown_move` leaves an ordinary `own_ptr`: the token is
+   spent and nothing is left in the store that would need one.
+
+   `sown_ptr_d`, `ty_d_type_of_tyd` and `sown_ptr_of_tyd` tie the two
+   together: the slot a guarded recursion puts its hole in -
+   `sown_tyd n Self` in `own_list_gen` - is exactly
+   `sown_ptr n <what the fixpoint denotes>`, so the rules apply to a
+   recursive type and not only to a standalone pointer.
+
+   So the owning pointer is finished: one former, productive, extractable,
+   with subtyping, a prophecy law, destructuring and the standard read and
+   write rules.
 
    VerusBelt was no help: `fix_ty` has no client in
    `verus-belt/src/lambda_verus/typing/` at all, only `TypeContractive`
@@ -1892,4 +1942,13 @@ Written out in `nola/alerus/typing/README.md`:
   mentions the ghost state;
 * an allocation lemma should hand out the ghost *name*, not the record: a
   projection of an opaque record does not reduce, and the program logic has
-  to recognise the instance it was given.
+  to recognise the instance it was given;
+* **guards compose and never open**, so anything a guarded former's law
+  has to reach must be reachable by `guard_sep`/`guard_trans` alone.  In
+  particular guards do not commute with `∃`, so a per-value ghost name
+  that a law must narrow by belongs in the *refinement type* - which is
+  what `invₛ` does and what `at_loctokₛ` now does for the owning pointer;
+* a *token* names the formula it stores, so a former holding one admits no
+  subtyping rule.  Put the token behind a **judgment** and the relation to
+  the wanted formula composes: this is the thesis's (5.5)/(5.7) and
+  `rust_halt`'s `cif_store`/`store_wand`, and `eown_fml` here.

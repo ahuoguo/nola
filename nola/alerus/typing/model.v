@@ -61,7 +61,11 @@ Variant alerusCT_sel : Type :=
 | (** The atomic lock counter's handle *) as_handle (c : coPset)
 | (** A dead lifetime atom, for the shared-borrow formula *)
     as_dead_atom (k : ra.lt_atom)
-| (** The cancellation token of a shared borrow *) as_ccancel (γ : gname).
+| (** The cancellation token of a shared borrow *) as_ccancel (γ : gname)
+| (** The owning pointer's token, while the pointee is still inside *)
+    as_ts_full (γ : gname)
+| (** ...and the marker it leaves behind once the pointee is taken out *)
+    as_ts_taken (γ : gname).
 
 Definition alerusCT : cifcon :=
   Cifcon alerusCT_id alerusCT_sel (λ _, Empty_set) (λ _, Empty_set)
@@ -138,6 +142,10 @@ Section alerusC.
     cif_in alerusCT (as_dead_atom k) nullary nullary ().
   Definition cif_ccancel γ : cif CON Σ :=
     cif_in alerusCT (as_ccancel γ) nullary nullary ().
+  Definition cif_ts_full γ : cif CON Σ :=
+    cif_in alerusCT (as_ts_full γ) nullary nullary ().
+  Definition cif_ts_taken γ : cif CON Σ :=
+    cif_in alerusCT (as_ts_taken γ) nullary nullary ().
 
   (** The shared-borrow formula is not a constructor of its own: it is
     built out of the structural connectives and the two leaves above. *)
@@ -174,6 +182,8 @@ Section alerusC.
     | as_handle c => atomic_lock_handle atomic_lock_ctr_name c
     | as_dead_atom k => ra.Dead llft_name k
     | as_ccancel γ => ra.CCancel γ
+    | as_ts_full γ => ts_full γ
+    | as_ts_taken γ => ts_taken γ
     end%I.
   #[export] Program Instance alerusCT_ecsem {JUDG}
     : Ecsem alerusCT CON JUDG Σ :=
@@ -300,6 +310,12 @@ Section sem_at.
   Proof. by rewrite /cif_alive sem_cif_in. Qed.
   Lemma cif_dead_sem_at {δ κ} : ⟦ cif_dead κ : cif CON Σ ⟧ᶜ(δ) ⊣⊢ [†κ].
   Proof. by rewrite /cif_dead sem_cif_in. Qed.
+  Lemma cif_ts_full_sem_at {δ γ} :
+    ⟦ cif_ts_full γ : cif CON Σ ⟧ᶜ(δ) ⊣⊢ ts_full γ.
+  Proof. by rewrite /cif_ts_full sem_cif_in. Qed.
+  Lemma cif_ts_taken_sem_at {δ γ} :
+    ⟦ cif_ts_taken γ : cif CON Σ ⟧ᶜ(δ) ⊣⊢ ts_taken γ.
+  Proof. by rewrite /cif_ts_taken sem_cif_in. Qed.
   Lemma cif_cells_sem_at {δ l cs fv} :
     ⟦ cif_cells l cs fv : cif CON Σ ⟧ᶜ(δ) ⊣⊢ l ↦[^ cs ]!∗ fv.
   Proof. by rewrite /cif_cells sem_cif_in. Qed.
@@ -736,6 +752,45 @@ Variant pstoreJT_id := .
 Definition pstoreJT (FM : ofe) : ofe := tagged pstoreJT_id FM.
 Notation pstoreJ FM := (inJ (pstoreJT FM)).
 
+(** [eownJT]: the owning pointer's stored capability, as a judgment.
+
+  This is the one thing [pstoreJT] above cannot be.  [pstoreJT]'s content
+  is persistent, so reading it leaves the world satisfaction as it was;
+  an owning pointer's pointee is *owned*, and the holder has to be able
+  both to read it (repeatably, which is what [rec.v]'s prophecy law needs,
+  since it must hand back a *guard* - and to move it out for good, which
+  is what dereferencing a box is.
+
+  [nola/examples/rust_halt/box.v]'s [ty_box] does exactly this upstream,
+  and the way it does it is the reason this is a judgment rather than a
+  token.  Its pointee sits in [cif_store], whose semantics is
+  [nola/iris/store_deriv.v]'s [store δ Px] - a *derivability assertion*,
+  not [nola/iris/store.v]'s [store_tok].  [store_tok] is only how one is
+  built; the judgment is what makes [subty_box] provable, through
+  [store_wand].
+
+  The thesis says the same thing in its own terms, and says why.  Its
+  first model stores the reference's content in a bare invariant token
+  and it cannot prove [≤-ref], "because the proposition of the invariant
+  token [inv N] cannot be directly changed" (§ 5.2); the fix is to put the
+  relation behind derivability, giving (5.5)
+
+    [⟦ref°ₖ T⟧ⁱδ v ≜ ∃U, k' ≤ k. □ δ (T ≤ U) ∗ □ δ (U ≤ T) ∗ inv (ℓ ↦ U)]
+
+  and [≤-ref] then follows from (5.8) and the transitivity (5.7).  Note
+  that (5.5) carries *both* directions - the port's [type_incl] does too,
+  its ghost field being an accessor rather than an implication, because a
+  Leaf guard needs to be able to go both ways.
+
+  The two capabilities are kept in one judgment because they have to be
+  allocated together: both are read off the single persistent
+  [dinv_tok (ts_taken γ ∨ Px)], and the only *owned* part is [ts_full γ],
+  which the holder keeps outside.  Splitting them into two conjuncts
+  would ask for two independent realizations of one [Px]. *)
+Variant eownJT_id := .
+Definition eownJT (FM : ofe) : ofe := tagged eownJT_id (leibnizO gname * FM).
+Notation eownJ FM := (inJ (eownJT FM)).
+
 (** [inclJT]: a storable lifetime inclusion, as a judgment.
 
   [st_incl κ κ'] quantifies the guarding world satisfaction, so like a guard
@@ -778,6 +833,26 @@ Section judg.
   Proof. move=> ????. rewrite /pstoreJT_sem /modw. solve_proper. Qed.
   #[export] Instance pstoreJT_dsem
     : Dsem JUDG (pstoreJT (cifO CON Σ)) (iProp Σ) := DSEM pstoreJT_sem _.
+
+  (** Semantics of the owning pointer's judgment: the token guards the
+    content, and the token buys it outright.
+
+    The guard is what [rec.v]'s [TyProphAt] composes with - its premise is
+    a guard on the ghost component and its conclusion is a guard, so a
+    one-shot accessor would not do.  The second conjunct is the one-shot
+    accessor, and it is an *update* because spending the token
+    ([two_state.ts_take]) is one. *)
+  Definition eownJT_sem δ (J : eownJT (cifO CON Σ)) : iProp Σ :=
+    (ts_full J.(untag).1 &&{alerus_WGuard_at δ}&&> ⟦ J.(untag).2 ⟧ᶜ(δ)) ∗
+    □ (ts_full J.(untag).1 -∗ |=[alerus_WGuard_at δ]=> ⟦ J.(untag).2 ⟧ᶜ(δ)).
+  #[export] Instance eownJT_sem_ne {δ} : NonExpansive (eownJT_sem δ).
+  Proof.
+    move=> ?[[γ ?]][[γ' ?]][/=Hγ?]. rewrite /eownJT_sem /=.
+    have -> : γ = γ' by exact: leibniz_equiv.
+    solve_proper.
+  Qed.
+  #[export] Instance eownJT_dsem
+    : Dsem JUDG (eownJT (cifO CON Σ)) (iProp Σ) := DSEM eownJT_sem _.
 
   (** Semantics of the alteration judgment: the equivalence at the
     candidate's own interpretation *)
@@ -838,6 +913,8 @@ End judg2.
 (** Semantics of the two judgment types registered *)
 Notation pstoreJS CON JUDG Σ :=
   (inJS (pstoreJT (cifO CON Σ)) JUDG (iProp Σ)).
+Notation eownJS CON JUDG Σ :=
+  (inJS (eownJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation guardJS CON JUDG Σ := (inJS (guardJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation idxborJS CON JUDG Σ := (inJS (idxborJT (cifO CON Σ)) JUDG (iProp Σ)).
 Notation inclJS CON JUDG Σ := (inJS inclJT JUDG (iProp Σ)).
@@ -868,11 +945,18 @@ Notation pstoreC := (inC pstoreCT).
   its content is persistent.  This one holds *owned* content, and its
   accessor is [dinv_tok_acc]: reversible, the content returned to the world
   satisfaction.  That is exactly what a Leaf guard needs, [guard_acc] being
-  [Q ∗ (Q -∗ W ∗ T)], and it is what [nola/iris/store.v]'s [store_tok]
-  cannot do - there, access consumes a token and leaves it in the
-  invariant, so the content never comes back.  [ty_box] upstream is happy
-  with that because dereferencing a box moves the pointee out; a guard is
-  not.
+  [Q ∗ (Q -∗ W ∗ T)].
+
+  An earlier version of this note said that [nola/iris/store.v]'s
+  [store_tok] *cannot* do that - that access consumes the token, leaves
+  it in the invariant, and the content never comes back.  That is wrong:
+  [store_tok] holds [Px ∨ token] and one opening offers *both* endings,
+  since which disjunct you hand back is a choice.  Give the content back
+  and the store is unchanged; give the token back and the content has
+  moved out for good.  [ty_box] upstream takes the second because
+  dereferencing a box moves the pointee out; a guard takes the first; the
+  same invariant serves both.  [eownJT] below is that invariant with both
+  endings written down, behind the judgment the subtyping rule needs.
 
   Its child is a [cdom] child, which is the point: a former that holds its
   argument behind this is [Productive].  Its semantics is [dinv_tok], which
@@ -904,6 +988,17 @@ Section dinvC.
 End dinvC.
 Notation dinvCS := (inCS dinvCT).
 
+(** [eownCT]: the owning pointer's stored capability.
+
+  Its one sub-formula is a [cdom] child, which is what makes a former
+  holding one [Productive]; the selector is the ghost name of the
+  two-state token.  Like [guardCT] and [pstoreCT] - and unlike [dinvCT] -
+  its semantics is a judgment, so it has no [⊣⊢] at a candidate. *)
+Variant eownCT_id := .
+Definition eownCT : cifcon :=
+  Cifcon eownCT_id gname (λ _, Empty_set) (λ _, unit) (λ _, unitO) _.
+Notation eownC := (inC eownCT).
+
 Variant inclCT_id := .
 Definition inclCT : cifcon :=
   Cifcon inclCT_id (lft * lft)%type (λ _, Empty_set) (λ _, Empty_set)
@@ -917,9 +1012,12 @@ Definition idxborCT : cifcon :=
 Notation idxborC := (inC idxborCT).
 
 Section judgC.
-  Context `{!guardC CON, !idxborC CON, !inclC CON, !pstoreC CON} {Σ}.
+  Context `{!guardC CON, !idxborC CON, !inclC CON, !pstoreC CON,
+    !eownC CON} {Σ}.
   Definition cif_incl (κ κ' : lft) : cif CON Σ :=
     cif_in inclCT (κ, κ') nullary nullary ().
+  Definition cif_eown (γ : gname) (Px : cif CON Σ) : cif CON Σ :=
+    cif_in eownCT γ nullary (unary Px) ().
   Definition cif_pstore (Px : cif CON Σ) : cif CON Σ :=
     cif_in pstoreCT () nullary (unary Px) ().
   Definition cif_guard (Px Qx : cif CON Σ) : cif CON Σ :=
@@ -947,6 +1045,12 @@ Section judgC.
   Proof.
     move=> ????. apply cif_in_preserv_productive=>//. by apply fun_proeqv_later.
   Qed.
+  #[export] Instance cif_eown_ne {γ} : NonExpansive (cif_eown γ).
+  Proof. move=> ????. rewrite /cif_eown. solve_proper. Qed.
+  #[export] Instance cif_eown_productive {γ} : Productive (cif_eown γ).
+  Proof.
+    move=> ????. apply cif_in_preserv_productive=>//. by apply fun_proeqv_later.
+  Qed.
   #[export] Instance cif_idxbor_ne {κ idx} : NonExpansive (cif_idxbor κ idx).
   Proof. move=> ????. rewrite /cif_idxbor. solve_proper. Qed.
   #[export] Instance cif_idxbor_productive {κ idx} :
@@ -958,7 +1062,12 @@ Section judgC.
   Context {JUDG} `{guard_j0 : !guardJ (cifO CON Σ) JUDG,
     idxbor_j0 : !idxborJ (cifO CON Σ) JUDG, incl_j0 : !inclJ JUDG,
     iff_j0 : !iffJ (cifO CON Σ) JUDG,
-    pstore_j0 : !pstoreJ (cifO CON Σ) JUDG, !Jsem JUDG (iProp Σ)}.
+    pstore_j0 : !pstoreJ (cifO CON Σ) JUDG,
+    eown_j0 : !eownJ (cifO CON Σ) JUDG, !Jsem JUDG (iProp Σ)}.
+  Definition eown_j (γ : gname) (Px : cif CON Σ) : JUDG :=
+    eown_j0 (Tagged (γ, Px)).
+  #[export] Instance eown_j_ne {γ} : NonExpansive (eown_j γ).
+  Proof. unfold eown_j=> ????. f_equiv. by split. Qed.
   Definition pstore_j (Px : cif CON Σ) : JUDG := pstore_j0 (Tagged Px).
   #[export] Instance pstore_j_ne : NonExpansive pstore_j.
   Proof. unfold pstore_j=> ????. by f_equiv. Qed.
@@ -1008,9 +1117,16 @@ Section judgC.
   #[export] Program Instance pstoreCT_ecsem : Ecsem pstoreCT CON JUDG Σ :=
     ECSEM (λ _ δ _ _ Ψx _, □ δ (pstore_j (Ψx ())))%I _.
   Next Obligation. solve_proper. Qed.
+  (** The owning pointer's capability, keyed by the token's ghost name.
+    [□], like the other judgments: what is *owned* is the token, which
+    the holder keeps beside this. *)
+  #[export] Program Instance eownCT_ecsem : Ecsem eownCT CON JUDG Σ :=
+    ECSEM (λ _ δ s _ Ψx _, □ δ (eown_j s (Ψx ())))%I _.
+  Next Obligation. solve_proper. Qed.
 End judgC.
 
 Notation pstoreCS := (inCS pstoreCT).
+Notation eownCS := (inCS eownCT).
 Notation guardCS := (inCS guardCT).
 Notation idxborCS := (inCS idxborCT).
 Notation inclCS := (inCS inclCT).
@@ -1029,6 +1145,7 @@ Class typingC CON : Type := TYPING_C {
   typingC_exs :: exsC CON;
   typingC_pstore :: pstoreC CON;
   typingC_dinv :: dinvC CON;
+  typingC_eown :: eownC CON;
 }.
 Class typingJ CON JUDG Σ : Type := TYPING_J {
   typingJ_guard :: guardJ (cifO CON Σ) JUDG;
@@ -1036,6 +1153,7 @@ Class typingJ CON JUDG Σ : Type := TYPING_J {
   typingJ_incl :: inclJ JUDG;
   typingJ_iff :: iffJ (cifO CON Σ) JUDG;
   typingJ_pstore :: pstoreJ (cifO CON Σ) JUDG;
+  typingJ_eown :: eownJ (cifO CON Σ) JUDG;
 }.
 Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ)} : Prop :=
@@ -1048,6 +1166,7 @@ Class typingCS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   typingCS_exs :: exsCS CON JUDG Σ;
   typingCS_pstore :: pstoreCS CON JUDG Σ;
   typingCS_dinv :: dinvCS CON JUDG Σ;
+  typingCS_eown :: eownCS CON JUDG Σ;
 }.
 Class typingJS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   `{!typingJ CON JUDG Σ, !Csem CON JUDG Σ, !Jsem JUDG (iProp Σ),
@@ -1057,6 +1176,7 @@ Class typingJS CON JUDG Σ `{!typingC CON, !alerusGS (cifOF CON) Σ}
   typingJS_incl :: inclJS CON JUDG Σ;
   typingJS_iff :: iffJS CON JUDG Σ;
   typingJS_pstore :: pstoreJS CON JUDG Σ;
+  typingJS_eown :: eownJS CON JUDG Σ;
 }.
 
 (** ** The ambient interpretation and the [TypeFml] instance
@@ -1120,6 +1240,12 @@ Section model.
   Lemma cif_active_sem {γ} :
     bor_sem (cif_active γ : cifOF CON $oi Σ) ⊣⊢ own γ (Excl ()).
   Proof. by rewrite /bor_sem /= /cif_active sem_cif_in. Qed.
+  Lemma cif_ts_full_sem {γ} :
+    bor_sem (cif_ts_full γ : cifOF CON $oi Σ) ⊣⊢ ts_full γ.
+  Proof. by rewrite /bor_sem /= /cif_ts_full sem_cif_in. Qed.
+  Lemma cif_ts_taken_sem {γ} :
+    bor_sem (cif_ts_taken γ : cifOF CON $oi Σ) ⊣⊢ ts_taken γ.
+  Proof. by rewrite /bor_sem /= /cif_ts_taken sem_cif_in. Qed.
   Lemma cif_cna_active_sem {γ} :
     bor_sem (cif_cna_active γ : cifOF CON $oi Σ) ⊣⊢ cna_active γ.
   Proof. by rewrite /bor_sem /= /cif_cna_active sem_cif_in. Qed.
@@ -1152,6 +1278,9 @@ Section model.
     pers_fml := cif_pers;
     store_fml := cif_pstore;
     dinv_fml := cif_dinv;
+    eown_fml := cif_eown;
+    tsfull_fml := cif_ts_full;
+    tstaken_fml := cif_ts_taken;
     guard_fml := cif_guard;
     alive_fml := cif_alive;
     cells_fml := cif_cells;
@@ -1171,6 +1300,8 @@ Section model.
   Next Obligation. move=> ?????. by apply cif_ex_ne. Qed.
   Next Obligation. move=> *. exact cif_exs_sem. Qed.
   Next Obligation. move=> ?????. by apply cif_exs_ne. Qed.
+  Next Obligation. move=> ?. exact cif_ts_full_sem. Qed.
+  Next Obligation. move=> ?. exact cif_ts_taken_sem. Qed.
   Next Obligation. done. Qed.
   Next Obligation. move=> ?. exact cif_alive_sem. Qed.
   Next Obligation. move=> *. exact cif_cells_sem. Qed.
@@ -1264,7 +1395,11 @@ Section altSem.
     (∀ κ idx (Px : cif CON Σ),
       S (cif_idxbor κ idx Px) ⊢
         ∃ Px', □ (S' Px' ↔ S' Px) ∗ idx_bor κ idx Px') ∧
-    (∀ κ κ', S (cif_incl κ κ') ⊢ S' (cif_incl κ κ')).
+    (∀ κ κ', S (cif_incl κ κ') ⊢ S' (cif_incl κ κ')) ∧
+    (∀ γ (Px : cif CON Σ),
+      S (cif_eown γ Px) ⊢
+        (ts_full γ &&{alt_WGuard S'}&&> S' Px) ∗
+        □ (ts_full γ -∗ |=[alt_WGuard S']=> S' Px)).
 
   (** The ambient interpretation is a candidate *)
   Lemma alt_sem_cif_here : alt_sem_cif alt_amb.
@@ -1329,15 +1464,25 @@ Section altSem.
     - iIntros "#b !>". by iApply inclJ_of.
   Qed.
 
+  Lemma eownJ_der {γ} {Px : cif CON Σ} :
+    □ der (eown_j γ Px) ⊢
+      (ts_full γ &&{alerus_WGuard_at der}&&> ⟦ Px ⟧ᶜ(der)) ∗
+      □ (ts_full γ -∗ |=[alerus_WGuard_at der]=> ⟦ Px ⟧ᶜ(der)).
+  Proof.
+    iIntros "#e". iDestruct (der_sound with "e") as "e'". by rewrite in_js.
+  Qed.
+
   Lemma alt_into_cif_here : alt_into_cif alt_amb alt_amb.
   Proof.
-    split; [|split]; [| |done].
+    split; [|split; [|split]]; [| |done|].
     - move=> Px Qx. rewrite /cand_fun /= /cif_guard sem_cif_in /=.
       exact guardJ_der.
     - move=> κ idx Px. rewrite /cand_fun /= cif_idxbor_sem.
       iIntros "(%Px' & #i & #b)". iExists Px'. iSplitR.
       + iDestruct (der_sound with "i") as "i'". by rewrite in_js.
       + rewrite -idxborJ_der. iApply "b".
+    - move=> γ Px. rewrite /cand_fun /alt_WGuard /= /cif_eown sem_cif_in /=.
+      exact eownJ_der.
   Qed.
 
 
@@ -1478,7 +1623,7 @@ Section altSem.
     (HS : cand_asem S = AlerusSem_at δ) (HS' : cand_asem S' = AlerusSem_at δ')
     (Hinto : dinto δ δ') : alt_into_cif S S'.
   Proof.
-    have ? : Deriv (λ _, True) δ' := Hδ'. split; [|split].
+    have ? : Deriv (λ _, True) δ' := Hδ'. split; [|split; [|split]].
     - move=> Px' Qx'. rewrite /cand_fun /alt_WGuard /= HS HS' /=
         /cif_guard sem_cif_in /=.
       iIntros "#g". rewrite (Hinto (guard_j Px' Qx')) in_js //.
@@ -1489,6 +1634,9 @@ Section altSem.
     - move=> κ κ'. rewrite /cand_fun /= HS HS' /= !cif_incl_sem.
       iIntros "#g !>". rewrite (Hinto (incl_j κ κ')) in_js.
       by iApply inclJ_of.
+    - move=> γ Px'. rewrite /cand_fun /alt_WGuard /= HS HS' /=
+        /cif_eown sem_cif_in /=.
+      iIntros "#e". rewrite (Hinto (eown_j γ Px')) in_js //.
   Qed.
 
   Lemma guard_fml_sem_2_cif {S} (H : alt_sem_cif S) Px Qx :
@@ -1527,6 +1675,49 @@ Section altSem.
     move: H=> [δ Heq].
     rewrite /cand_fun /= Heq /= /cif_guard sem_cif_in /=. exact _.
   Qed.
+  (** *** The owning pointer's capability
+
+    Its two eliminations are the fourth clause of [alt_into_cif], and its
+    introduction is [Deriv_factor'] at [S], exactly as a stored guard's
+    is. *)
+  Lemma tsfull_sem_cif {S} (H : alt_any_cif S) γ :
+    S (cif_ts_full γ) ⊣⊢ ts_full γ.
+  Proof. alt_any_at H. exact cif_ts_full_sem_at. Qed.
+  Lemma tstaken_sem_cif {S} (H : alt_any_cif S) γ :
+    S (cif_ts_taken γ) ⊣⊢ ts_taken γ.
+  Proof. alt_any_at H. exact cif_ts_taken_sem_at. Qed.
+
+  Lemma eown_fml_pers_cif {S} (H : alt_any_cif S) γ Px :
+    Persistent (S (cif_eown γ Px)).
+  Proof.
+    move: H=> [δ Heq].
+    rewrite /cand_fun /= Heq /= /cif_eown sem_cif_in /=. exact _.
+  Qed.
+  Lemma eown_fml_guard_into_cif {S S'} (_ : alt_sem_cif S)
+    (_ : alt_sem_cif S') (Hi : alt_into_cif S S') γ Px :
+    S (cif_eown γ Px) ⊢ ts_full γ &&{alt_WGuard S'}&&> S' Px.
+  Proof. rewrite (proj2 (proj2 (proj2 Hi)) γ Px). by iIntros "[$ _]". Qed.
+  Lemma eown_fml_take_into_cif {S S'} (_ : alt_sem_cif S)
+    (_ : alt_sem_cif S') (Hi : alt_into_cif S S') γ Px :
+    S (cif_eown γ Px) -∗ ts_full γ -∗ |=[alt_WGuard S']=> S' Px.
+  Proof.
+    rewrite (proj2 (proj2 (proj2 Hi)) γ Px). iIntros "[_ #w]". iApply "w".
+  Qed.
+  Lemma eown_fml_sem_2_cif {S} (H : alt_sem_cif S) γ Px :
+    (∀ S', ⌜alt_sem_cif S'⌝ → ⌜alt_into_cif S S'⌝ →
+      (ts_full γ &&{alt_WGuard S'}&&> S' Px) ∗
+      □ (ts_full γ -∗ |=[alt_WGuard S']=> S' Px)) ⊢ S (cif_eown γ Px).
+  Proof.
+    move: (H)=> [δ[Hδ Heq]]. have ? : Deriv (λ _, True) δ := Hδ.
+    rewrite /cand_fun /= Heq /= /cif_eown sem_cif_in /=.
+    iIntros "#big !>". iApply Deriv_factor'. iIntros (δ' Hδ' _ Hinto).
+    rewrite in_js /=.
+    iApply ("big" $! (MkCand (AlerusSem_at δ')) with "[%] [%]").
+    { by exists δ'. }
+    { eapply alt_into_cif_of_dinto;
+        [exact Hδ|exact Hδ'|exact Heq|done|exact Hinto]. }
+  Qed.
+
   Lemma idxbor_fml_pers_cif {S} (H : alt_any_cif S) κ idx Px :
     Persistent (S (cif_idxbor κ idx Px)).
   Proof.
@@ -1803,6 +1994,12 @@ Section altSem.
     gsrc_sem_at_any := @gsrc_sem_cif;
     guard_fml_sem_into := (λ _ _ _ _ Hi, proj1 Hi);
     guard_fml_sem_2 := @guard_fml_sem_2_cif;
+    tsfull_sem_at_any := @tsfull_sem_cif;
+    tstaken_sem_at_any := @tstaken_sem_cif;
+    eown_fml_guard_into := @eown_fml_guard_into_cif;
+    eown_fml_take_into := @eown_fml_take_into_cif;
+    eown_fml_sem_2 := @eown_fml_sem_2_cif;
+    eown_fml_pers_at_any := @eown_fml_pers_cif;
     guard_fml_pers_at_any := @guard_fml_pers_cif;
     idxbor_fml_pers_at_any := @idxbor_fml_pers_cif;
     dalter := dalter_cif;

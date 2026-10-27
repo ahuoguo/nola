@@ -26,7 +26,7 @@
 
 From nola.bi Require Export guard modw.
 From nola.iris Require Export sinv dinv.
-From nola.alerus Require Export eternal frac_guard na_inv_fork boxes.
+From nola.alerus Require Export eternal frac_guard na_inv_fork boxes two_state.
 From nola.alerus.util Require Export non_atomic_cell_map atomic_lock_counter
   cancellable_na_invariants.
 From nola.alerus.lifetime Require Export inv lifetime_full.
@@ -182,6 +182,13 @@ Class alerusGS (FML : oFunctor) Σ : Type := AlerusGS {
   #[global] alerus_eternalG :: inG Σ (authUR (gsetUR lft));
   #[global] alerus_llctxFracGS :: fracKeyGS llctx Σ;
   #[global] alerus_lftsFracGS :: fracKeyGS (gmultiset lft) Σ;
+  (** The owning pointer's two-state token.
+
+    [typing/rec.v]'s owning pointer stores its pointee behind a simple
+    invariant holding [ts_taken γ ∨ Px] and holds [ts_full γ].  The two
+    states exclude each other *non-separatingly* ([ts_and_false]), which
+    is what [guard_two_state] needs; see [nola/alerus/two_state.v]. *)
+  #[global] alerus_twostateG :: twostateG Σ;
   (** The shared-borrow simple-invariant family, as a bare ghost name *)
   alerus_shr_name : gname;
   (** The eternalized-lifetime family *)
@@ -828,6 +835,28 @@ Class TypeFml (FML : oFunctor) Σ `{!alerusGS FML Σ, !AlerusSem FML Σ} := {
     interpretation. *)
   dinv_fml : FML $oi Σ → FML $oi Σ;
   dinv_fml_ne :: NonExpansive dinv_fml;
+  (** The owning pointer's stored capability.
+
+    [dinv_fml] holds owned content, but it *names* the formula it holds, so
+    a former holding one admits no subtyping rule - the obstacle the thesis
+    hits at (5.5) and answers with derivability.  This is that answer:
+    [eown_fml γ Px] says the two-state token [γ] both guards [Px] and buys
+    it outright, and because it is a judgment the relation to [Px] composes.
+
+    Like [guard_fml] it has *no* [⊣⊢] semantics.  Its eliminations are
+    [eown_fml_guard_into] and [eown_fml_take_into] and its introduction is
+    [eown_fml_sem_2], all in [AltSem]. *)
+  eown_fml : gname → FML $oi Σ → FML $oi Σ;
+  eown_fml_ne γ :: NonExpansive (eown_fml γ);
+  (** The two states of that token, as formulas.  [tsfull_fml] is what the
+    owning pointer holds beside the capability - the only *owned* part of
+    it - and [tstaken_fml] is the marker left in the invariant once the
+    pointee has been taken out.  Both are plain ghost ownership, so both
+    have a [⊣⊢] semantics at every candidate. *)
+  tsfull_fml : gname → FML $oi Σ;
+  tsfull_fml_sem γ : bor_sem (tsfull_fml γ) ⊣⊢ ts_full γ;
+  tstaken_fml : gname → FML $oi Σ;
+  tstaken_fml_sem γ : bor_sem (tstaken_fml γ) ⊣⊢ ts_taken γ;
   (** [□], so that a former can be *structurally* persistent.
 
     [&shr{κ}] needs its ghost assertion to be persistent without appealing to
@@ -1114,6 +1143,36 @@ Class AltSem (FML : oFunctor) Σ
     (∀ sem', ⌜alt_sem sem'⌝ → ⌜alt_into sem sem'⌝ →
       sem' Px &&{alt_WGuard sem'}&&> sem' Qx) ⊢ sem (guard_fml Px Qx);
 
+  (** [tsfull_fml] and [tstaken_fml] are plain ghost ownership, so they mean
+    the same at every candidate. *)
+  tsfull_sem_at_any {sem} : alt_any sem → ∀ γ,
+    sem (tsfull_fml γ) ⊣⊢ ts_full γ;
+  tstaken_sem_at_any {sem} : alt_any sem → ∀ γ,
+    sem (tstaken_fml γ) ⊣⊢ ts_taken γ;
+
+  (** *** The owning pointer's capability
+
+    Read at a candidate [sem] maps into, exactly as a stored guard is.  The
+    first is the *repeatable* access - [typing/rec.v]'s prophecy law needs a
+    guard, since that is what it must hand back - and the second is the
+    one-shot one, which is what moving out of an owning pointer is.  Both
+    take the token: the capability itself is persistent, and ownership of
+    the pointee *is* ownership of the token. *)
+  eown_fml_guard_into {sem sem'} :
+    alt_sem sem → alt_sem sem' → alt_into sem sem' → ∀ γ Px,
+    sem (eown_fml γ Px) ⊢ ts_full γ &&{alt_WGuard sem'}&&> sem' Px;
+  eown_fml_take_into {sem sem'} :
+    alt_sem sem → alt_sem sem' → alt_into sem sem' → ∀ γ Px,
+    sem (eown_fml γ Px) -∗ ts_full γ -∗ |=[alt_WGuard sem']=> sem' Px;
+  (** Storing one.  [Deriv_factor'] at [sem] in the model, as
+    [guard_fml_sem_2] is. *)
+  eown_fml_sem_2 {sem} : alt_sem sem → ∀ γ Px,
+    (∀ sem', ⌜alt_sem sem'⌝ → ⌜alt_into sem sem'⌝ →
+      (ts_full γ &&{alt_WGuard sem'}&&> sem' Px) ∗
+      □ (ts_full γ -∗ |=[alt_WGuard sem']=> sem' Px)) ⊢ sem (eown_fml γ Px);
+  eown_fml_pers_at_any {sem} : alt_any sem → ∀ γ Px,
+    Persistent (sem (eown_fml γ Px));
+
   (** A stored guard is persistent.  In the model [δ J] is under a [□]. *)
   guard_fml_pers_at_any {sem} : alt_any sem → ∀ Px Qx,
     Persistent (sem (guard_fml Px Qx));
@@ -1362,12 +1421,13 @@ Section alt_sem.
   Proof.
     exact (bi.equiv_entails_1_2 _ _ (dinv_fml_sem_at alt_here Px)).
   Qed.
-
   Lemma dinv_fml_pers_at {sem} (H : alt_any sem) {Px} :
     Persistent (sem (dinv_fml Px)).
   Proof. rewrite (dinv_fml_sem_at_any H). exact _. Qed.
   #[export] Instance dinv_fml_persistent {Px} :
     Persistent (bor_sem (dinv_fml Px)) := dinv_fml_pers_at (alt_sem_any alt_here).
+
+
 
   (** Allocating one: the content moves into the store world satisfaction,
     which sits inside [alerus_WGuard]. *)
@@ -1382,6 +1442,57 @@ Section alt_sem.
     iDestruct (wsat_join (W:=alerus_WGuard) with "Wst Wr") as "$".
     iModIntro. by iApply dinv_fml_sem_2.
   Qed.
+
+
+  (** *** Why an owning pointer cannot just hold a token
+
+    [dinv_fml] holds owned content and its accessor gives it back, which
+    is what a Leaf guard needs; and [nola/iris/store.v]'s [store_tok] - the
+    shape [nola/examples/rust_halt/box.v]'s [ty_box] is built from - adds
+    the other ending: store [Px ∨ marker] and hold the marker's exclusive
+    counterpart, so one opening serves both uses.  Hand the content back
+    and the store is unchanged; hand the marker back and the content has
+    moved out for good.
+
+    That is everything an owning pointer needs *except* a subtyping rule,
+    and the missing piece is not an accident of this port.  The thesis
+    hits it head on (§ 5.2): its first model of the reference type stores
+    the content in a bare invariant token, and it cannot prove [≤-ref]
+    "because the proposition of the invariant token [inv N] cannot be
+    directly changed".  Its answer is derivability - the model (5.5)
+    stores a *different* type [U] and ties it to [T] by two derivability
+    assertions - and [ty_box]'s answer upstream is the same one, since
+    [cif_store] denotes [nola/iris/store_deriv.v]'s [store δ Px] rather
+    than [store_tok]; [store_tok] is only how one is built, and
+    [store_wand] is what [subty_box] runs on.
+
+    So the token is the *realization* and the judgment is the interface.
+    [eown_fml] below is that judgment, and what follows is its
+    realization: a [dinv_fml] holding [ts_taken γ ∨ Px] beside the held
+    [ts_full γ].  The two states exclude each other non-separatingly
+    ([nola/alerus/two_state.v]'s [ts_and_false]), which is what
+    [guard_cancel_or] asks for and what a bare [Excl ()] cannot give -
+    [P ∧ P ⊣⊢ P]. *)
+
+  (** The capability at the ambient interpretation *)
+  Definition eown (γ : gname) (Px : FML $oi Σ) : iProp Σ :=
+    bor_sem (eown_fml γ Px).
+
+  #[export] Instance eown_persistent {γ Px} : Persistent (eown γ Px) :=
+    eown_fml_pers_at_any (alt_sem_any alt_here) _ _.
+
+  (** Reading it, repeatably.  This is the ending a guard takes, and the
+    one [typing/rec.v]'s prophecy law needs: its conclusion is a guard, so
+    a one-shot accessor would not serve. *)
+  Lemma eown_guard {γ Px} :
+    eown γ Px ⊢ ts_full γ &&{alerus_WGuard}&&> bor_sem Px.
+  Proof. exact: (eown_fml_guard_into alt_here alt_here alt_into_here). Qed.
+
+  (** Taking it out for good, by spending the token.  This is what
+    dereferencing a box is, and what a bare [dinv_fml] cannot do. *)
+  Lemma eown_take {γ Px} :
+    eown γ Px -∗ ts_full γ -∗ |=[alerus_WGuard]=> bor_sem Px.
+  Proof. exact: (eown_fml_take_into alt_here alt_here alt_into_here). Qed.
 
   (** Opening one, at any candidate: the content comes back out, and has to
     go back in.  That is the whole difference from [store_fml_acc]. *)
@@ -1475,6 +1586,70 @@ Section alt_sem.
     iApply (guard_trans (Q:=True%I)); [iApply guard_true|].
     iApply eguard_fml_empty.
   Qed.
+  (** *** Realizing the owning pointer's capability
+
+    Both halves come off the one [dinv_tok (ts_taken γ ∨ Px)], which is
+    persistent - that is why they can be one judgment allocated once, and
+    why holding the token is the only *owned* part.  The guard is
+    [guard_two_state]: the invariant guards the disjunction, and
+    [ts_full γ ∧ ts_taken γ ⊢ False] cancels the marker.  Taking the
+    content out spends the token for the marker, which is where the
+    update comes from; nothing else here needs one. *)
+  Lemma eown_fml_alloc {Px} :
+    bor_sem Px =[alerus_WGuard]=∗ ∃ γ, ts_full γ ∗ eown γ Px.
+  Proof.
+    iIntros "Px W". iMod ts_alloc as (γ) "tok".
+    iMod (dinv_fml_alloc (Px := or_fml (tstaken_fml γ) Px) with "[Px] W")
+      as "[$ #i]".
+    { rewrite or_fml_sem. by iRight. }
+    iModIntro. iExists γ. iFrame "tok". rewrite /eown.
+    iApply (eown_fml_sem_2 alt_here). iIntros (sem' Hs Hi).
+    have Ha := alt_sem_any Hs.
+    have ? := dinv_fml_pers_at Ha (Px := or_fml (tstaken_fml γ) Px).
+    iAssert (sem' (dinv_fml (or_fml (tstaken_fml γ) Px))) as "#i'".
+    { rewrite (dinv_fml_sem_at_any Ha). by iApply dinv_fml_sem_1. }
+    iSplit.
+    - iDestruct (dinv_fml_guard_at Hs with "i'") as "#g0".
+      iAssert (ts_full γ &&{alt_WGuard sem'}&&> (ts_taken γ ∨ sem' Px))%I
+        as "#g1".
+      { rewrite -(tstaken_sem_at_any Ha) -(or_sem_at_any Ha).
+        iApply (guard_trans (Q:=True%I)); [iApply guard_true|iApply "g0"]. }
+      iApply (guard_two_state γ with "[] g1"). iApply guard_refl.
+    - iIntros "!> tok W".
+      rewrite (wsat_incl (alt_WGuard sem') (alt_store_wsat sem') _).
+      iDestruct "W" as "[Ws Wr]". rewrite /alt_store_wsat /alerus_store_wsat.
+      iDestruct (dinv_fml_acc_at Ha with "i' Ws") as "[Or →Ws]".
+      iEval (rewrite (or_sem_at_any Ha) (tstaken_sem_at_any Ha)) in "Or".
+      iDestruct "Or" as "[taken|Px]".
+      { iDestruct (ts_sep_false with "[$tok $taken]") as "[]". }
+      iMod (ts_take with "tok") as "taken". iModIntro.
+      iDestruct ("→Ws" with "[taken]") as "Ws".
+      { iEval (rewrite (or_sem_at_any Ha) (tstaken_sem_at_any Ha)). by iLeft. }
+      iFrame "Px Ws Wr".
+  Qed.
+
+  (** Altering what it is a capability on.  This is [store_wand] upstream
+    and the transitivity (5.7) in the thesis, and it needs the *accessor*
+    rather than an implication, because the guard half has to go both
+    ways.  [typing/type.v]'s [type_incl] is an accessor for exactly that
+    reason, and the thesis's [≤-ref] carries both directions for exactly
+    that reason - its (5.5) stores [□ δ (T ≤ U)] *and* [□ δ (U ≤ T)]. *)
+  Lemma eown_fml_map_at {sem} (H : alt_sem sem) {γ Px Qx} :
+    □ (∀ sem' (_ : alt_sem sem') (_ : alt_into sem sem'),
+        sem' Px -∗ sem' Qx ∗ (sem' Qx -∗ sem' Px)) -∗
+    sem (eown_fml γ Px) -∗ sem (eown_fml γ Qx).
+  Proof.
+    have ? := eown_fml_pers_at_any (alt_sem_any H) γ Px.
+    iIntros "#acc #e". iApply (eown_fml_sem_2 H). iIntros (sem' Hs Hi).
+    iSplit.
+    - iDestruct (eown_fml_guard_into H Hs Hi with "e") as "#g".
+      iApply (guard_trans with "g"). iApply guard_intro.
+      iIntros "!> Px". by iApply ("acc" $! sem' Hs Hi with "Px").
+    - iIntros "!> tok W".
+      iMod (eown_fml_take_into H Hs Hi with "e tok W") as "[$ Px]".
+      iDestruct ("acc" $! sem' Hs Hi with "Px") as "[$ _]". by iModIntro.
+  Qed.
+
   #[export] Instance idxbor_fml_persistent {κ idx Px} :
     Persistent (bor_sem (idxbor_fml κ idx Px)) :=
     idxbor_fml_pers_at alt_here _ _ _.

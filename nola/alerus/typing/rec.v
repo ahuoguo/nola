@@ -343,81 +343,98 @@ Section tyd.
     iApply guard_sep_r.
   Qed.
 
-  (** ** The owning pointer, made *productive*
+  (** ** The owning pointer, made *productive* - and extractable
 
     [own_tyd] above holds the pointee's ghost assertion as a visible child,
     so it is [Preserv] and not [Productive] and cannot be the guarded
-    former of a recursion.  This one puts it behind a *stored guard*,
-    [guard_fml empty_fml Px], whose children are [cdom] children.
+    former of a recursion.  This one puts it behind [ctx.v]'s [eown_fml],
+    whose child is a [cdom] child.
 
-    Four things change, and each is forced.
+    Five things change, and each is forced.
 
-    A guard rather than [store_fml], because the pointee's ghost assertion
-    is *owned*: [store_fml_acc] hands its content out for good, which is
-    sound only for persistent content, while a guard returns it -
-    [guard_acc] is [Q ∗ (Q -∗ W ∗ T)].  [nola/iris/store.v]'s [store_tok],
-    the one [ty_box] uses upstream, cannot do that.
+    **A judgment rather than a bare invariant token.**  A token *names the
+    formula it stores*, so nothing turns [dinv_tok Px] into [dinv_tok Qx]
+    and a former holding one admits no subtyping rule.  This is the
+    thesis's own obstacle (§ 5.2) - it cannot prove [≤-ref] "because the
+    proposition of the invariant token [inv N] cannot be directly
+    changed" - and its answer is the model (5.5), which stores a different
+    type tied to the wanted one by two derivability assertions.
+    [rust_halt]'s [ty_box] answers it the same way: its [cif_store] is
+    [store_deriv.v]'s [store δ Px], not [store.v]'s [store_tok].
+    [eown_fml] is that judgment here, and [eown_fml_map_at] is (5.7).
 
-    A guard rather than [dinv_fml], which is where this started and where
-    it could not stay: a token *names the formula it stores*, so nothing
-    turns [dinv_tok Px] into [dinv_tok Qx] and a former holding one admits
-    no subtyping rule.  A guard composes, so this one does
-    ([sown_tyd_incl]).  Nothing is lost by the trade, because [ctx.v]'s
-    [eguard_fml_alloc] allocates the token and stores the guard it yields -
-    the token is still how one is built.  This is the thesis's (5.5) in the
-    port's terms.
+    **A two-state token rather than a plain exclusive one.**  The
+    invariant holds [ts_taken γ ∨ Px] and the holder keeps [ts_full γ];
+    narrowing the guard on that disjunction is [guard_cancel_or], whose
+    side condition is the *non-separating* [ts_full γ ∧ ts_taken γ ⊢
+    False].  A plain [Excl ()] cannot give it, [P ∧ P ⊣⊢ P] - see
+    [nola/alerus/two_state.v].
 
-    Both indices are *bounded* ([Ltx], [Lex]) rather than matched exactly,
-    as in [shr_tyd].  An invariant holds a formula at one fixed depth and
-    guard index, so weakening cannot push them up; widening a bound is the
-    only weakening left.  [rust_halt]'s [sty_shrref] carries [⌜d' < d⌝] for
-    the same reason.
+    **The token's name is in the refinement type.**  This is the one that
+    took the longest to see.  [TyProphAt] below is *handed* a guard on the
+    ghost component at a universally quantified [R], and [@[κ]] is
+    reachable only from that same [R], so the law can only ever compose -
+    it can never open anything.  Composing it down to the pointee needs
+    [R &&{W}&&> ts_full γ], and if [γ] were existentially quantified inside
+    the ghost component no composition could reach it: guards do not
+    commute with [∃].  With [γ] a function of the refinement value it is a
+    plain [guard_sep] projection.  [at_loctokₛ] is that refinement, and
+    [invₛ] - whose interpretation is [namespace * gname * ⟦𝔄₀⟧], with
+    [typing/atomic_inv.v] running the identical two-state trick off it -
+    is the precedent.
 
-    The argument's *size* and *physical contents* are gone, replaced by
+    **Both indices are *bounded* ([Ltx], [Lex]) rather than matched
+    exactly**, as in [shr_tyd].  An invariant holds a formula at one fixed
+    depth and guard index, so weakening cannot push them up; widening a
+    bound is the only weakening left, and it is what makes [sown_tyd_Ty]
+    unconditional, which the fixpoint needs.  [rust_halt]'s [sty_shrref]
+    carries [⌜d' < d⌝] for the same reason.  Note that the *token* sits
+    outside both bounds, which is what keeps it projectable.
+
+    **The argument's size and physical contents are gone**, replaced by
     [size_of] and [syn_phys].  [proeqv 0] relates nothing in a discrete
     component, so a [Productive] former may not mention [tyd_size T] or
-    [tyd_phys T] at all - the same constraint [shr_tyd] is under, and the
-    reason it writes [syn_phys].  A [Ty T] bridges the two.
+    [tyd_phys T] at all - the same constraint [shr_tyd] is under.  A
+    [Ty T] bridges the two. *)
 
-    And the whole stored part sits in the *persistent* component as well as
-    the ghost one, because [ty_guard_proph] is handed the persistent
-    component directly while the guard it is handed cannot be opened -
-    [guard_acc] wants the left-hand side, which the law does not supply. *)
-  Definition sown_persd {𝔄} (T : tydata 𝔄) : ghostdata (at_locₛ 𝔄) :=
+  (** The capability, which is persistent: the *owned* part of an owning
+    pointer is the token, not this. *)
+  Definition sown_capd {𝔄} (T : tydata 𝔄) : ghostdata (at_loctokₛ 𝔄) :=
     λ x d g tid,
       ([Ltx(d') := d] [Lex(gg) := g]
-        (guard_fml empty_fml (tyd_ghox T (snd x) d' gg tid) ∗
-         store_fml (tyd_persx T (snd x) d' gg tid)))%FML.
+        (eown_fml (fst (snd x)) (tyd_ghox T (snd (snd x)) d' gg tid) ∗
+         store_fml (tyd_persx T (snd (snd x)) d' gg tid)))%FML.
 
-  Definition sown_tyd {𝔄} (n : nat) (T : tydata 𝔄) : tydata (at_locₛ 𝔄) :=
+  Definition sown_tyd {𝔄} (n : nat) (T : tydata 𝔄) : tydata (at_loctokₛ 𝔄) :=
     (1,
      ((λ x d g tid,
-        ((fst x) ↦!∗ syn_phys (snd x) ∗
+        ((fst x) ↦!∗ syn_phys (snd (snd x)) ∗
          freeable_fml n (size_of 𝔄) (fst x) ∗
-         sown_persd T x d g tid)%FML),
-      (sown_persd T,
-       (λ (x : ~~(at_locₛ 𝔄)) (_ : thread_id), [FVal (LitV (fst x))])))).
+         tsfull_fml (fst (snd x)) ∗
+         sown_capd T x d g tid)%FML),
+      (sown_capd T,
+       (λ (x : ~~(at_loctokₛ 𝔄)) (_ : thread_id), [FVal (LitV (fst x))])))).
 
   (** Unconditional, like [shr_tyd_Ty] and for the same reason: a properly
     guarded former never appeals to its argument's laws. *)
   #[export] Instance sown_tyd_Ty {𝔄} n (T : tydata 𝔄) : Ty (sown_tyd n T).
   Proof.
     have Hmono : ∀ sem, alt_sem sem → ∀ d g d' g' x tid, (d ≤ d')%nat →
-      (g ≤ g')%nat → sem (sown_persd T x d g tid) -∗
-      sem (sown_persd T x d' g' tid).
+      (g ≤ g')%nat → sem (sown_capd T x d g tid) -∗
+      sem (sown_capd T x d' g' tid).
     { move=> sem H d g d' g' x tid ??.
-      rewrite /sown_persd !(by_ltx_sem_at (alt_sem_any H)).
+      rewrite /sown_capd !(by_ltx_sem_at (alt_sem_any H)).
       iIntros "(%dd & %Hdd & A)". iExists dd. iSplit; [iPureIntro; lia|].
       rewrite !(by_lex_sem_at (alt_sem_any H)).
       iDestruct "A" as (gg Hgg) "A". iExists gg.
       iSplit; [iPureIntro; lia|done]. }
     have Hpers : ∀ sem, alt_sem sem → ∀ x d g tid,
-      Persistent (sem (sown_persd T x d g tid)).
-    { move=> sem H ????. rewrite /sown_persd.
+      Persistent (sem (sown_capd T x d g tid)).
+    { move=> sem H ????. rewrite /sown_capd.
       apply (by_ltx_persistent_at H)=> d'. apply (by_lex_persistent_at H)=> gg.
       rewrite (sep_sem_at H).
-      have ? := guard_fml_pers_at_any (alt_sem_any H)
-        empty_fml (tyd_ghox T _ d' gg _).
+      have ? := eown_fml_pers_at_any (alt_sem_any H)
+        (fst (snd _)) (tyd_ghox T _ d' gg _).
       have ? := store_fml_pers_at_any (alt_sem_any H) (tyd_persx T _ d' gg _).
       exact _. }
     split; simpl.
@@ -425,29 +442,109 @@ Section tyd.
     - done.
     - done.
     - move=> sem H d g d' g' x tid ??. rewrite !(sep_sem_at H).
-      iIntros "($ & $ & A)". by iApply (Hmono sem H with "A").
+      iIntros "($ & $ & $ & A)". by iApply (Hmono sem H with "A").
     - move=> sem H d g d' g' x tid ??. by apply Hmono.
     - move=> sem H *. by apply Hpers.
-    - move=> x d g tid. rewrite !bor_sep_sem. by iIntros "(_ & _ & $)".
+    - move=> x d g tid. rewrite !bor_sep_sem. by iIntros "(_ & _ & _ & $)".
   Qed.
 
   (** Its prophecy law needs the pointee's at every *lower* depth, as
     [shr_tyd]'s does - which is what the fixpoint's depth induction
-    supplies.  It reaches the pointee through [eguard_fml_guard_any]: a
-    stored guard with [empty_fml] on the left is a guard against any
-    left-hand side. *)
+    supplies.
+
+    It is the one law that forced the token's name into the refinement
+    type.  The route is: project the guard it is handed down to
+    [R &&{W}&&> ts_full γ], which is a [guard_sep] projection *because*
+    the token sits outside both bounded existentials and its name is read
+    off [x]; take the depth and the capability **in hand** from the
+    persistent component, as [shr_tyd_TyProphAt] takes its stored guard;
+    turn the capability into [ts_full γ &&{W}&&> ⟦ghox T …⟧] with
+    [eown_guard]; and compose. *)
+  (** The token is a plain conjunct of the ghost component, sitting
+    *outside* both bounded existentials, so reaching it is [guard_sep] and
+    nothing more.  That is the whole reason its name is in the refinement
+    type: with an [∃ γ] in the way no composition could get here, and
+    composition is all [TyProphAt] is allowed. *)
+  Lemma sown_tyd_guard_tok {𝔄} n (T : tydata 𝔄) (Mx : FML $oi Σ)
+      x d g tid R :
+    (R &&{Wguard}&&> bor_sem
+       (Mx ∗ freeable_fml n (size_of 𝔄) (fst x) ∗
+        tsfull_fml (fst (snd x)) ∗ sown_capd T x d g tid)%FML) -∗
+      R &&{Wguard}&&> ts_full (fst (snd x)).
+  Proof.
+    (* the splitting is done outside the guard: [rewrite] under [guard]'s
+       [∀] abstracts the wrong thing *)
+    have eq : bor_sem (Mx ∗ freeable_fml n (size_of 𝔄) (fst x) ∗
+        tsfull_fml (fst (snd x)) ∗ sown_capd T x d g tid)%FML
+      ⊣⊢ (bor_sem Mx ∗
+          (bor_sem (freeable_fml n (size_of 𝔄) (fst x)) ∗
+           (ts_full (fst (snd x)) ∗ bor_sem (sown_capd T x d g tid)))).
+    { by rewrite !bor_sep_sem tsfull_fml_sem. }
+    iIntros "#Rg". iDestruct (guard_rhs_iff eq with "Rg") as "#Rg'".
+    iApply (guard_trans with "Rg'").
+    iApply (guard_trans (Q := (bor_sem (freeable_fml n (size_of 𝔄) (fst x)) ∗
+      (ts_full (fst (snd x)) ∗
+       bor_sem (sown_capd T x d g tid)))%I)); [iApply guard_sep_r|].
+    iApply (guard_trans (Q := (ts_full (fst (snd x)) ∗
+      bor_sem (sown_capd T x d g tid))%I)); [iApply guard_sep_r|].
+    iApply guard_sep_l.
+  Qed.
+
   Lemma sown_tyd_TyProphAt {𝔄} n lfts (T : tydata 𝔄) d :
     TyProphLt lfts T d → TyProphAt lfts (sown_tyd n T) d.
   Proof.
-    move=> HT κ x g tid R. rewrite /sown_tyd/sown_persd/= by_ltx_sem /by_lt.
-    iIntros "#LFT #Incl A". iDestruct "A" as (d0 Hd0) "A".
+    move=> HT κ x g tid R. iIntros "#LFT #Incl A #Rk #Rg".
+    iDestruct (sown_tyd_guard_tok n T _ x d g tid R with "Rg") as "#Rt".
+    iClear "Rg". iRevert "A".
+    rewrite /sown_tyd/sown_capd/= by_ltx_sem /by_lt.
+    iIntros "A". iDestruct "A" as (d0 Hd0) "A".
     rewrite by_lex_sem /by_le. iDestruct "A" as (gg Hgg) "A".
-    rewrite !bor_sep_sem. iDestruct "A" as "#[Inv St]".
-    iIntros "#Rk _ W".
+    rewrite !bor_sep_sem. iDestruct "A" as "#[E St]". iIntros "W".
     iDestruct (store_fml_acc with "St") as "#Acc".
     iDestruct ("Acc" with "W") as "[W Pers]".
-    iApply (HT d0 Hd0 κ (snd x) gg tid R with "LFT Incl Pers Rk [] W").
-    by iApply eguard_fml_guard_any.
+    iApply (HT d0 Hd0 κ (snd (snd x)) gg tid R with "LFT Incl Pers Rk [] W").
+    iApply (guard_trans with "Rt"). iApply eown_guard. iApply "E".
+  Qed.
+
+  (** *** What the capability buys that a stored guard did not
+
+    Moving the pointee out, which is what dereferencing a box is and what
+    [typing/own.v]'s rules need.  The token is spent for the marker, which
+    is where the update comes from; the pointer and its deallocation
+    permission come out untouched. *)
+  Lemma sown_tyd_take {𝔄} n (T : tydata 𝔄) x d g tid :
+    bor_sem (tyd_ghox (sown_tyd n T) x d g tid) =[alerus_WGuard]=∗
+      (fst x) ↦!∗ syn_phys (snd (snd x)) ∗
+      freeable_sz n (size_of 𝔄) (fst x) ∗
+      ∃ d' gg, ⌜(d' < d)%nat⌝ ∗ ⌜(gg ≤ g)%nat⌝ ∗
+        bor_sem (tyd_ghox T (snd (snd x)) d' gg tid).
+  Proof.
+    rewrite /sown_tyd/sown_capd/= !bor_sep_sem by_ltx_sem /by_lt
+      mapsto_fml_sem freeable_fml_sem tsfull_fml_sem.
+    iIntros "($ & $ & tok & (%d0 & %Hd0 & A)) W".
+    rewrite by_lex_sem /by_le. iDestruct "A" as (gg Hgg) "A".
+    rewrite bor_sep_sem. iDestruct "A" as "#[E _]".
+    iMod (eown_take with "E tok W") as "[$ Px]". iModIntro.
+    iExists d0, gg. by iFrame "Px".
+  Qed.
+
+  (** ...and putting one together, which is how a box is built. *)
+  Lemma sown_tyd_alloc {𝔄} n (T : tydata 𝔄) `{!Ty T} l d' g x tid :
+    l ↦!∗ syn_phys x -∗ freeable_sz n (size_of 𝔄) l -∗
+    bor_sem (tyd_ghox T x d' g tid) -∗
+    bor_sem (tyd_persx T x d' g tid) =[alerus_WGuard]=∗
+      ∃ γ, bor_sem (tyd_ghox (sown_tyd n T) (l, (γ, x)) (S d') g tid).
+  Proof.
+    iIntros "↦ free Gho Pers W".
+    iMod (eown_fml_alloc with "Gho W") as "[W (%γ & tok & #E)]".
+    iMod (store_fml_alloc (λ sem Hs, tyd_pers_pers_at sem Hs x d' g tid)
+      with "Pers W") as "[$ #St]".
+    iModIntro. iExists γ.
+    rewrite /sown_tyd/sown_capd/= !bor_sep_sem mapsto_fml_sem
+      freeable_fml_sem tsfull_fml_sem by_ltx_sem /by_lt.
+    iFrame "↦ free tok". iExists d'. iSplit; [iPureIntro; lia|].
+    rewrite by_lex_sem /by_le. iExists g. iSplit; [done|].
+    rewrite bor_sep_sem. by iFrame "E St".
   Qed.
 
   (** Relabelling along an isomorphism of refinement types - [mod_ty.v]'s
@@ -776,69 +873,73 @@ Section tyd.
     iIntros "#A". iSplitR; [by iApply ("H" $! sem Hsem)|by iIntros "_"].
   Qed.
 
-  (** The other guarded former, now that its pointee sits behind a *stored
-    guard* rather than a bare invariant token.  [ctx.v]'s
-    [eguard_fml_alloc] is what makes that an even trade: the token is still
-    how one is built, but a guard composes and a token does not, so this is
-    the former that has a subtyping rule.  It is the thesis's (5.5) - the
-    indirection is the whole reason [≤-ref] is provable. *)
-  Lemma sown_persd_pers_at {𝔄} (T : tydata 𝔄) {sem} (H : alt_sem sem)
-      x d g tid : Persistent (sem (sown_persd T x d g tid)).
+  (** The other guarded former, now that its pointee sits behind
+    [eown_fml].  The capability is persistent - what the holder owns is
+    the token - so this is the persistent component as well as part of the
+    ghost one, and it carries its own subtyping rule through
+    [eown_fml_map_at], which is the thesis's (5.7) and [store_wand]. *)
+  Lemma sown_capd_pers_at {𝔄} (T : tydata 𝔄) {sem} (H : alt_sem sem)
+      x d g tid : Persistent (sem (sown_capd T x d g tid)).
   Proof.
-    rewrite /sown_persd. apply (by_ltx_persistent_at H)=> d'.
+    rewrite /sown_capd. apply (by_ltx_persistent_at H)=> d'.
     apply (by_lex_persistent_at H)=> gg. rewrite (sep_sem_at H).
-    have ? := guard_fml_pers_at_any (alt_sem_any H) empty_fml
-      (tyd_ghox T _ d' gg _).
+    have ? := eown_fml_pers_at_any (alt_sem_any H)
+      (fst (snd x)) (tyd_ghox T _ d' gg _).
     have ? := store_fml_pers_at_any (alt_sem_any H) (tyd_persx T _ d' gg _).
     exact _.
   Qed.
 
-  Lemma sown_persd_incl {𝔄 𝔅} (T : tydata 𝔄) (U : tydata 𝔅) f d :
+  (** The map is the identity on the token's name - which is what makes
+    the *backward* direction of [tyd_incl_at] free below, the returned
+    ghost component's token being the one we handed over. *)
+  Lemma sown_capd_incl {𝔄 𝔅} (T : tydata 𝔄) (U : tydata 𝔅) f d :
     tyd_incl_lt T U f d -∗
     □ ∀ sem (_ : alt_sem sem) x g tid,
-        sem (sown_persd T x d g tid) -∗
-        sem (sown_persd U (at_loc_mapₛ f ~~$ₛ x) d g tid).
+        sem (sown_capd T x d g tid) -∗
+        sem (sown_capd U (at_loc_mapₛ (prod_mapₛ idₛ f) ~~$ₛ x) d g tid).
   Proof.
-    iIntros "#Sub !>" (sem Hsem x g tid). destruct x as [lx x]; simpl.
-    have ? := guard_fml_pers_at Hsem.
+    iIntros "#Sub !>" (sem Hsem x g tid). destruct x as [lx [γ x]]; simpl.
     have ? := store_fml_pers_at_any (alt_sem_any Hsem).
-    rewrite /sown_persd !(by_ltx_sem_at (alt_sem_any Hsem)).
+    rewrite /sown_capd !(by_ltx_sem_at (alt_sem_any Hsem)).
     iIntros "(%dd & %Hdd & A)". iExists dd. iSplit; [done|].
     rewrite !(by_lex_sem_at (alt_sem_any Hsem)).
     iDestruct "A" as (gg Hgg) "A". iExists gg. iSplit; [done|].
+    have ? := eown_fml_pers_at_any (alt_sem_any Hsem) γ
+      (tyd_ghox T x dd gg tid).
     rewrite !(sep_sem_at Hsem). iDestruct "A" as "#[Hgho Hpers]".
     iDestruct ("Sub" $! dd with "[%]") as "[Sg Sp]"; [done|]. iSplit.
-    - iApply (dguard_trans_at Hsem with "Hgho []").
-      iApply (dguard_intro_at Hsem). iIntros (sem' Hs) "!> gho".
-      iDestruct ("Sg" $! sem' Hs with "gho") as "[$ $]".
+    - iApply (eown_fml_map_at Hsem with "[] Hgho").
+      iIntros "!>" (sem' Hs _) "gho". by iApply ("Sg" $! sem' Hs).
     - iApply (store_fml_map_at Hsem with "[] Hpers").
       iIntros "!>" (sem' Hs _) "pers". by iApply ("Sp" $! sem' Hs).
   Qed.
 
   (** Unlike [shr_tyd_incl] this one has a *non*-persistent ghost component
-    - the pointer and its deallocation permission - so the backward
-    direction is not free; it is free of the argument's laws all the same,
-    because those two pieces are literally the same formula on both sides
-    once the two layout equations are used. *)
+    - the pointer, its deallocation permission and the token - so the
+    backward direction is not free; it is free of the argument's laws all
+    the same, because those three pieces are literally the same formula on
+    both sides once the two layout equations are used, and the capability
+    is persistent so the old one can simply be handed back. *)
   Lemma sown_tyd_incl {𝔄 𝔅} n (T : tydata 𝔄) (U : tydata 𝔅) f d :
     size_of 𝔄 = size_of 𝔅 →
     (∀ x, @syn_phys 𝔄 x = @syn_phys 𝔅 (f ~~$ₛ x)) →
     tyd_incl_lt T U f d -∗
-    tyd_incl_at (sown_tyd n T) (sown_tyd n U) (at_loc_mapₛ f) d.
+    tyd_incl_at (sown_tyd n T) (sown_tyd n U)
+      (at_loc_mapₛ (prod_mapₛ idₛ f)) d.
   Proof.
     move=> Hsz Hph. iIntros "#Sub".
-    iDestruct (sown_persd_incl T U f d with "Sub") as "#H".
+    iDestruct (sown_capd_incl T U f d with "Sub") as "#H".
     iSplit; last first.
     { iIntros "!>" (sem Hsem x g tid). iApply ("H" $! sem Hsem). }
-    iIntros "!>" (sem Hsem x g tid). destruct x as [lx x]; simpl.
-    have ? := sown_persd_pers_at T Hsem (lx, x) d g tid.
-    have ? := sown_persd_pers_at U Hsem (lx, (~~!ₛ) f x) d g tid.
+    iIntros "!>" (sem Hsem x g tid). destruct x as [lx [γ x]]; simpl.
+    have ? := sown_capd_pers_at T Hsem (lx, (γ, x)) d g tid.
+    have ? := sown_capd_pers_at U Hsem (lx, (γ, (~~!ₛ) f x)) d g tid.
     rewrite !(sep_sem_at Hsem) -Hsz -(Hph x).
-    iIntros "(Hm & Hf & #Hp)".
-    iAssert (sem (sown_persd U (lx, (~~!ₛ) f x) d g tid)) as "#Hp'".
-    { by iApply ("H" $! sem Hsem (lx, x)). }
-    iSplitL; [by iFrame "Hm Hf Hp'"|].
-    iIntros "(Hm & Hf & _)". by iFrame "Hm Hf Hp".
+    iIntros "(Hm & Hf & Ht & #Hp)".
+    iAssert (sem (sown_capd U (lx, (γ, (~~!ₛ) f x)) d g tid)) as "#Hp'".
+    { by iApply ("H" $! sem Hsem (lx, (γ, x))). }
+    iSplitL; [by iFrame "Hm Hf Ht Hp'"|].
+    iIntros "(Hm & Hf & Ht & _)". by iFrame "Hm Hf Ht Hp".
   Qed.
 
 End tyd.
@@ -906,15 +1007,17 @@ Section rec.
         | apply cif_pstore_productive; by apply tyd_later_persx ].
   Qed.
 
-  (** And so is the owning pointer, now that its pointee sits behind
-    [guard_fml] and its persistent part behind [store_fml] - both [cdom]
-    children.  This is the one thing PLAN.md listed as still missing. *)
+  (** And so is the owning pointer, its pointee sitting behind
+    [cif_eown] and its persistent part behind [cif_pstore] - both [cdom]
+    children.  The ghost component now has one more leading conjunct, the
+    token, which contributes nothing to the recursion. *)
   #[export] Instance sown_tyd_productive {𝔄} n :
-    Productive' (tyd 𝔄) (tyd (at_locₛ 𝔄))
+    Productive' (tyd 𝔄) (tyd (at_loctokₛ 𝔄))
       (sown_tyd (𝔄:=𝔄) (FML:=cifOF CON) (Σ:=Σ) n).
   Proof.
     move=> k T T' Hlt. split; [done|]. split; [|split]=>/=; [| |done].
-    - move=> x d g tid. rewrite /sown_persd /= /by_ltx /by_lex.
+    - move=> x d g tid. rewrite /sown_capd /= /by_ltx /by_lex.
+      citg_ind; (move=> b; destruct b=>/=; [reflexivity|]);
       citg_ind; (move=> b; destruct b=>/=; [reflexivity|]);
       citg_ind; (move=> b; destruct b=>/=; [reflexivity|]);
       citg_ind; move=> dd /=;
@@ -922,17 +1025,15 @@ Section rec.
       citg_ind; move=> gg /=;
       citg_ind; (move=> b; destruct b=>/=; [reflexivity|]);
       citg_ind; move=> b; destruct b=>/=.
-      + apply cif_guard_productive;
-          [apply proeqv_later_refl|by apply tyd_later_ghox].
+      + apply cif_eown_productive. by apply tyd_later_ghox.
       + apply cif_pstore_productive. by apply tyd_later_persx.
-    - move=> x d g tid. rewrite /sown_persd /= /by_ltx /by_lex.
+    - move=> x d g tid. rewrite /sown_capd /= /by_ltx /by_lex.
       citg_ind; move=> dd /=;
       citg_ind; (move=> b; destruct b=>/=; [reflexivity|]);
       citg_ind; move=> gg /=;
       citg_ind; (move=> b; destruct b=>/=; [reflexivity|]);
       citg_ind; move=> b; destruct b=>/=.
-      + apply cif_guard_productive;
-          [apply proeqv_later_refl|by apply tyd_later_ghox].
+      + apply cif_eown_productive. by apply tyd_later_ghox.
       + apply cif_pstore_productive. by apply tyd_later_persx.
   Qed.
 
@@ -1164,8 +1265,8 @@ Section rec.
   End shr_rec.
 
   (** ** The same, with the owning pointer as the guarded former *)
-  Lemma own_rec_productive {𝔄 𝔅} n (G : tyd (at_locₛ 𝔅) → tyd 𝔄) :
-    Preserv' (tyd (at_locₛ 𝔅)) (tyd 𝔄) G →
+  Lemma own_rec_productive {𝔄 𝔅} n (G : tyd (at_loctokₛ 𝔅) → tyd 𝔄) :
+    Preserv' (tyd (at_loctokₛ 𝔅)) (tyd 𝔄) G →
     Productive' (tyd 𝔅) (tyd 𝔄) (λ T, G (sown_tyd n T)).
   Proof.
     move=> HG k T T' Hlt. apply HG.
@@ -1173,8 +1274,8 @@ Section rec.
   Qed.
 
   Section own_rec.
-    Context {𝔄} (n : nat) (G : tyd (at_locₛ 𝔄) → tyd 𝔄)
-      (HG : Preserv' (tyd (at_locₛ 𝔄)) (tyd 𝔄) G).
+    Context {𝔄} (n : nat) (G : tyd (at_loctokₛ 𝔄) → tyd 𝔄)
+      (HG : Preserv' (tyd (at_loctokₛ 𝔄)) (tyd 𝔄) G).
 
     #[local] Instance own_rec_prod :
       Productive' (tyd 𝔄) (tyd 𝔄) (λ T : tyd 𝔄, G (sown_tyd n T)) :=
@@ -1195,6 +1296,13 @@ Section rec.
       move=> HG' d. apply ty_rec_TyProphAt=> T d' Hlt.
       by apply HG', sown_tyd_TyProphAt.
     Qed.
+
+    (** Unfolding it once.  [rust_halt]'s [ty_list_unfold] is this, and it
+      is what makes a recursive type *destructurable*: the body is a
+      structural former applied to [sown_tyd], and [sown_tyd_take] moves
+      the pointee out of that. *)
+    Lemma ty_rec_own_unfold : ty_rec_own ≡ G (sown_tyd n ty_rec_own).
+    Proof. exact (ty_rec_unfold (λ T : tyd 𝔄, G (sown_tyd n T))). Qed.
 
     Definition type_of_rec_own lfts E
       (HTy : ∀ U, Ty (tod U) → Ty (tod (G U)))
@@ -1313,26 +1421,31 @@ Print Assumptions ty_rec_TyProphAt.
     >  μ X. Σ! [(); 𝔄 * own n X]
 
     This is [rust_halt]'s [ty_list] with nothing substituted.  [sown_tyd]
-    differs from [typing/own.v]'s [own_ptr] in exactly one way - the
-    pointee's ghost assertion is reached through a stored guard rather than
-    held in hand - which is what buys the productivity, and which means the
-    pointee can be *borrowed* but not moved out.
+    differs from [typing/own.v]'s [own_ptr] in one way - the pointee's
+    ghost assertion is reached through [eown_fml] rather than held in hand
+    - which is what buys the productivity, and it costs nothing any more:
+    [sown_tyd_take] moves the pointee out, so the list below is
+    destructurable as well as readable ([own_list_tyd_cons_take]).
 
-    Moving it out cannot be added by storing [Px ∨ token γ] the way
-    [nola/iris/store.v] does: narrowing the guard back to [Px] needs
-    [guard_or_false] or [guard_cancel_or], and both ask for a *persistent*
-    side condition - [guard] is [□ ∀ T, …] - which an owned token is not.
-    PLAN.md has the argument and the ways out. *)
+    An earlier version of this note said moving it out "cannot be added by
+    storing [Px ∨ token γ]", because narrowing the guard back to [Px]
+    wants a side condition that an owned token cannot discharge.  The
+    narrowing is real - [guard_cancel_or]'s conjunction is the
+    *non-separating* one, so it needs two **different** incompatible
+    states at one name rather than two copies of one, which is
+    [nola/alerus/two_state.v] - and extraction does not go through the
+    narrowed guard at all: it opens the invariant directly and deposits
+    the spent token.  PLAN.md has the whole argument. *)
   Section own_list.
     Context {𝔄} (n : nat) (T : tyd 𝔄).
 
-    Definition own_list_gen (U : tyd (at_locₛ (own_listₛ 𝔄)))
+    Definition own_list_gen (U : tyd (at_loctokₛ (own_listₛ 𝔄)))
       : tyd (own_listₛ 𝔄) :=
       mod_tyd foldownₛ unfoldownₛ
         (xsum2_tyd unit_tyd (prod_tyd (tod T) (tod U))).
 
     #[local] Instance own_list_gen_preserv :
-      Preserv' (tyd (at_locₛ (own_listₛ 𝔄))) (tyd (own_listₛ 𝔄))
+      Preserv' (tyd (at_loctokₛ (own_listₛ 𝔄))) (tyd (own_listₛ 𝔄))
         own_list_gen.
     Proof.
       move=> k U U' E. rewrite /own_list_gen.
@@ -1388,6 +1501,103 @@ Print Assumptions ty_rec_TyProphAt.
       type_of_rec_own n own_list_gen own_list_gen_preserv lfts E
         (λ U HU, own_list_gen_Ty HT U HU)
         (λ U d HU, own_list_gen_TyProphAt lfts HP U d HU).
+
+    (** *** Taking the list apart
+
+      This is the point of [sown_tyd_take], and the thing PLAN.md recorded
+      as missing: the list used to be readable and not destructurable, so
+      [typing/own.v]'s rules did not apply to it and the port carried a
+      second owning pointer.  [rust_halt]'s [verify/list.v] gets the same
+      from [ty_box]'s [Read] and [Write] instances.
+
+      The structural formers between the fixpoint and the pointer -
+      [mod_tyd], [xsum2_tyd], [prod_tyd] - are all depth-transparent, so
+      the only step that moves the depth is [sown_tyd]'s own [⌜d' < d⌝],
+      and the unfolding is by conversion once [ty_rec_own_unfold] has
+      rewritten the head. *)
+    Lemma own_list_tyd_unfold :
+      own_list_tyd ≡ own_list_gen (sown_tyd n own_list_tyd).
+    Proof. exact (ty_rec_own_unfold n own_list_gen own_list_gen_preserv). Qed.
+
+    (** The body's ghost assertion, by conversion.  [mod_tyd],
+      [xsum2_tyd] and [prod_tyd] are all transparent and [unfoldownₛ]
+      computes, so these are [eq_refl]; they exist only to give [rewrite]
+      something syntactic to match. *)
+    Lemma own_list_gen_nil_ghox U p d g tid :
+      tyd_ghox (tod (own_list_gen U)) (shrnil p) d g tid = pure_fml True.
+    Proof. done. Qed.
+    Lemma own_list_gen_cons_ghox U a lγ r p d g tid :
+      tyd_ghox (tod (own_list_gen U)) (shrcons a lγ r p) d g tid
+        = (tyd_ghox (tod T) a d g tid ∗
+           tyd_ghox (tod U) (lγ.1, (lγ.2, r)) d g tid)%FML.
+    Proof. done. Qed.
+
+    (** The empty list asserts nothing *)
+    Lemma own_list_tyd_nil p d g tid :
+      ⊢ bor_sem (tyd_ghox (tod own_list_tyd) (shrnil p) d g tid).
+    Proof.
+      have [_ [Hg [_ _]]] := own_list_tyd_unfold.
+      rewrite (Hg (shrnil p) d g tid) own_list_gen_nil_ghox.
+      by iApply (pure_fml_sem_2 I).
+    Qed.
+
+    (** A cons cell comes apart: the head's ghost assertion, the tail
+      pointer, its deallocation permission, and the tail list - all in
+      hand, at a strictly smaller depth. *)
+    Lemma own_list_tyd_cons_take a lγ r p d g tid :
+      bor_sem (tyd_ghox (tod own_list_tyd) (shrcons a lγ r p) d g tid)
+        =[alerus_WGuard]=∗
+        bor_sem (tyd_ghox (tod T) a d g tid) ∗
+        (lγ.1) ↦!∗ @syn_phys (own_listₛ 𝔄) r ∗
+        freeable_sz n (size_of (own_listₛ 𝔄)) (lγ.1) ∗
+        ∃ d' gg, ⌜(d' < d)%nat⌝ ∗ ⌜(gg ≤ g)%nat⌝ ∗
+          bor_sem (tyd_ghox (tod own_list_tyd) r d' gg tid).
+    Proof.
+      have [_ [Hg [_ _]]] := own_list_tyd_unfold.
+      rewrite (Hg (shrcons a lγ r p) d g tid) own_list_gen_cons_ghox
+        bor_sep_sem.
+      iIntros "[$ Box] W".
+      iMod (sown_tyd_take n (tod own_list_tyd) (lγ.1, (lγ.2, r)) d g tid
+        with "Box W") as "[$ ($ & $ & $)]". by iModIntro.
+    Qed.
+
+    (** ...and goes back together, which is how one is built. *)
+    Lemma own_list_tyd_cons_alloc (HT : Ty (tod T)) a l r p d g tid :
+      bor_sem (tyd_ghox (tod T) a (S d) g tid) -∗
+      l ↦!∗ @syn_phys (own_listₛ 𝔄) r -∗
+      freeable_sz n (size_of (own_listₛ 𝔄)) l -∗
+      bor_sem (tyd_ghox (tod own_list_tyd) r d g tid) -∗
+      bor_sem (tyd_persx (tod own_list_tyd) r d g tid) =[alerus_WGuard]=∗
+        ∃ γ, bor_sem (tyd_ghox (tod own_list_tyd)
+                       (shrcons a (l, γ) r p) (S d) g tid).
+    Proof.
+      have [_ [Hg [_ _]]] := own_list_tyd_unfold.
+      have ? : Ty (tod own_list_tyd) := own_list_tyd_Ty HT.
+      iIntros "A ↦ free Gho Pers W".
+      iMod (sown_tyd_alloc n (tod own_list_tyd) l d g r tid
+        with "↦ free Gho Pers W") as "[$ (%γ & Box)]".
+      iModIntro. iExists γ.
+      rewrite (Hg (shrcons a (l, γ) r p) (S d) g tid)
+        own_list_gen_cons_ghox bor_sep_sem.
+      iFrame "A Box".
+    Qed.
+
+    (** The same two at the level of [type], which is what a typing rule
+      sees.  [type_of_tyd] copies the ghost component, so these are the
+      data-level lemmas with no work. *)
+    Lemma ty_own_list_cons_take lfts E HT HP a lγ r p d g tid :
+      ty_gho (ty_own_list lfts E HT HP) (shrcons a lγ r p) d g tid
+        =[alerus_WGuard]=∗
+        ty_gho (type_of_tyd lfts E (tod T) HT HP) a d g tid ∗
+        (lγ.1) ↦!∗ @syn_phys (own_listₛ 𝔄) r ∗
+        freeable_sz n (size_of (own_listₛ 𝔄)) (lγ.1) ∗
+        ∃ d' gg, ⌜(d' < d)%nat⌝ ∗ ⌜(gg ≤ g)%nat⌝ ∗
+          ty_gho (ty_own_list lfts E HT HP) r d' gg tid.
+    Proof. exact (own_list_tyd_cons_take a lγ r p d g tid). Qed.
+
+    Lemma ty_own_list_nil lfts E HT HP p d g tid :
+      ⊢ ty_gho (ty_own_list lfts E HT HP) (shrnil p) d g tid.
+    Proof. exact (own_list_tyd_nil p d g tid). Qed.
   End own_list.
 
   (** ** Subtyping of a recursive type
@@ -1494,11 +1704,15 @@ Print Assumptions ty_shr_list_subtype.
     - the invariant holds a *different* type tied to [T] by two stored
     implications, and § 5.1 says in so many words that the indirection is
     the only reason [≤-ref] is provable.  [&shr{κ}] had the indirection
-    already, in the Leaf guard its body is wrapped in; [sown_tyd] now has
-    it too, holding [guard_fml empty_fml Px] instead of [dinv_fml Px].
-    [ctx.v]'s [eguard_fml_alloc] is what makes the trade free: the token is
-    still how one is allocated, and [guard_fml_sem_2] stores the guard it
-    yields.  A guard composes ([guard_trans]); a token does not. *)
+    already, in the Leaf guard its body is wrapped in; [sown_tyd] has it
+    too, holding [eown_fml γ Px] - a judgment, which is what [cif_store]
+    is upstream and what (5.5) is here.  [eown_fml_map_at] is its (5.7),
+    and it is what [sown_capd_incl] runs on.
+
+    Only one direction of the thesis's premise is needed, because the map
+    is the identity on the token's name: the capability is persistent, so
+    the backward direction of [tyd_incl_at] hands back the one it kept
+    rather than inverting anything. *)
   Section own_list_incl.
     Context {𝔄 𝔅} (n : nat) (T : tyd 𝔄) (U : tyd 𝔅) (f : 𝔄 →ₛ 𝔅)
       (Hsz : size_of 𝔄 = size_of 𝔅)
@@ -1506,7 +1720,8 @@ Print Assumptions ty_shr_list_subtype.
 
     Lemma own_list_gen_incl V W d :
       tyd_incl_at (tod T) (tod U) f d -∗
-      tyd_incl_at (tod V) (tod W) (at_loc_mapₛ (own_list_mapₛ f)) d -∗
+      tyd_incl_at (tod V) (tod W)
+        (at_loc_mapₛ (prod_mapₛ idₛ (own_list_mapₛ f))) d -∗
       tyd_incl_at (tod (own_list_gen T V)) (tod (own_list_gen U W))
         (own_list_mapₛ f) d.
     Proof.

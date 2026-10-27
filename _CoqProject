@@ -204,5 +204,6 @@ nola/alerus/typing/levels.v
 nola/alerus/typing/strat.v
 nola/alerus/typing/strat_bor.v
 nola/alerus/typing/rec.v
+nola/alerus/typing/own_rec.v
 nola/alerus/typing/inst.v
 nola/alerus/typing/examples/basic.v

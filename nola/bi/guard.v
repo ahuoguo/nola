@@ -236,6 +236,35 @@ Section guard.
     This is the later-free counterpart of Leaf's [guards_open].  The frame is
     instantiated with [P] itself, so that closing the guard returns both the
     world satisfaction and [P]. *)
+  (** Using a guard against a frame the caller chooses.  This is the
+    definition itself, named so that a proof can apply a guard it holds
+    without unfolding it. *)
+  Lemma guard_apply {W P Q T} :
+    (P &&{W}&&> Q) -∗ P ∗ (P -∗ W ∗ T) -∗ Q ∗ (Q -∗ W ∗ T).
+  Proof. rewrite /guard. iIntros "#g". iApply "g". Qed.
+
+  (** A guard on an existential whose body carries its own guard
+
+    Guards do not commute with [∃] - opening one gives no witness to
+    narrow by - and this is the exception that matters: when the witness
+    comes with a *persistent* [Ψ a] that already guards [Q] from
+    [Φ a ∗ Ψ a], the witness can be read off the resource in hand and the
+    guard that justifies it survives being looked at.
+
+    [typing/rec.v]'s owning pointer is exactly this shape: its ghost
+    component is [∃ γ, ts_full γ ∗ eown_fml γ Px], and its prophecy law
+    is handed a guard on the whole of it. *)
+  Lemma guard_exist_pers `{!BiAffine PROP} {W A} (Φ Ψ : A → PROP) {Q} :
+    (∀ a, Persistent (Ψ a)) →
+    (∀ a, Ψ a ⊢ (Φ a ∗ Ψ a) &&{W}&&> Q) →
+    ⊢ (∃ a, Φ a ∗ Ψ a) &&{W}&&> Q.
+  Proof.
+    move=> ? H. rewrite /guard. iIntros "!>" (T) "[(%a & Φ & #Ψ) clo]".
+    iDestruct (H a with "Ψ") as "#g".
+    iApply (guard_apply with "g [Φ clo]"). iFrame "Φ Ψ".
+    iIntros "[Φ _]". iApply "clo". iExists a. iFrame "Φ Ψ".
+  Qed.
+
   Lemma guard_acc {W P Q} : (P &&{W}&&> Q) -∗ P -∗ W -∗ Q ∗ (Q -∗ W ∗ P).
   Proof.
     rewrite /guard. iIntros "#g P W".

@@ -108,12 +108,13 @@ Class alerusGpreS (FML : oFunctor) Σ : Type := AlerusGpreS {
     inG Σ (gmap_viewR gname (agreeR (leibnizO llctx)));
   #[global] alerus_preG_lfts ::
     inG Σ (gmap_viewR gname (agreeR (leibnizO (gmultiset lft))));
+  #[global] alerus_preG_twostate :: twostateG Σ;
 }.
 
 Definition alerusΣ FML `{!oFunctorContractive FML} : gFunctors :=
   #[lrustΣ FML; llft_logicΣ; sinvΣ FML; prophΣ; uniqΣ; cnaΣ FML;
     fracGuardΣ FML; GFunctor (constRF (authUR (gsetUR lft)));
-    fracKeyΣ llctx; fracKeyΣ (gmultiset lft)].
+    fracKeyΣ llctx; fracKeyΣ (gmultiset lft); twostateΣ].
 
 (** [solve_inG] does not scale here.  Its last step is
   [split; (assumption || by apply _)], which hands each of the ten fields
@@ -130,7 +131,8 @@ Proof.
   apply subG_inv in H as [Hsinv H]. apply subG_inv in H as [Hproph H].
   apply subG_inv in H as [Huniq H]. apply subG_inv in H as [Hcna H].
   apply subG_inv in H as [Hfrac H]. apply subG_inv in H as [Hetern H].
-  apply subG_inv in H as [Hllctx H]. apply subG_inv in H as [Hlfts _].
+  apply subG_inv in H as [Hllctx H]. apply subG_inv in H as [Hlfts H].
+  apply subG_inv in H as [Hts _].
   split.
   - by apply subG_lrustGpreS.
   - by apply subG_lt_logicΣ.
@@ -142,6 +144,7 @@ Proof.
   - exact (subG_inG _ _ Hetern).
   - by apply subG_fracKeyGpreS.
   - by apply subG_fracKeyGpreS.
+  - exact (subG_inG _ _ Hts).
 Qed.
 
 (** ** The world satisfaction, as a function of the ghost state
@@ -215,7 +218,7 @@ Section level.
     : alerusGS (cifOF CON) Σ :=
     AlerusGS (cifOF CON) Σ _ hLlft (an_bor n) (an_sinv n) hGS
       (NaInvGS (cifOF CON) Σ (@sinvGS_pre _ _ (an_sinv n)) _ (an_naInv n))
-      _ hP hU (an_cna n) (an_frac n) _ (an_llctx n) (an_lfts n)
+      _ hP hU (an_cna n) (an_frac n) _ (an_llctx n) (an_lfts n) _
       (an_shr n) (an_eternal n) (an_store n).
 
   (** *** Allocating one level

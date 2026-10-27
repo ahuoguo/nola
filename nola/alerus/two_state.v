@@ -3,7 +3,9 @@
   PLAN.md records a dead end: the port has *two* owning pointers,
   [own_ptr] whose content is in hand and extractable but which is not
   productive, and [rec.v]'s [sown_tyd] whose content is in a simple
-  invariant and productive but not extractable.  The obvious merge is to
+  invariant and productive but - at the time this file was written - not
+  extractable.  It is now ([sown_tyd_take]); this token is what the guard
+  half of that runs on.  The obvious merge is to
   store [Px ∨ token] and hold the token, so that the guard rules the
   right disjunct out while extraction deposits it.
 
@@ -30,10 +32,10 @@
   from one state to the other ([ts_take]), and what it deposits in the
   store is the very thing that falsifies the guard.
 
-  So the obstruction is not structural.  What remains to merge the two
-  pointers is the ordinary work of rewriting [sown_tyd] around this
-  token; [guard_two_state] below is the step that was thought
-  unavailable. *)
+  So the obstruction is not structural, and [sown_tyd] is now rewritten
+  around this token; [guard_two_state] below is the step that was thought
+  unavailable, and [typing/ctx.v]'s [eown_fml_alloc] is where it is
+  used. *)
 
 From nola Require Export prelude.
 From nola.bi Require Export guard.
@@ -46,7 +48,7 @@ Import GuardNotation.
 Definition twostateR : cmra := csumR (exclR unitO) (exclR unitO).
 
 Class twostateG Σ := twostate_in : inG Σ twostateR.
-Local Existing Instance twostate_in.
+#[export] Existing Instance twostate_in.
 Definition twostateΣ : gFunctors := #[GFunctor twostateR].
 #[export] Instance subG_twostateΣ `{!subG twostateΣ Σ} : twostateG Σ.
 Proof. solve_inG. Qed.
@@ -136,23 +138,29 @@ Section two_state.
     iApply (guard_acc with "g' tok W").
   Qed.
 
-  (** It does **not** buy extraction, and that is worth being exact about,
-    because PLAN.md's dead end was about a merge that needs both.
+  (** *** What this does and does not buy, exactly
 
-    [guard_acc] is [Q ∗ (Q -∗ W ∗ P)]: the only route back to [W] consumes
-    the content.  Keeping [Px] and still returning [W] is therefore not
-    derivable from the guard, whatever the disjunction looks like - and
-    that is by design, since a guard is precisely the thing that cannot
-    write to the store.  Running [ts_take] and depositing [ts_taken γ]
-    where the content was needs *write* access, i.e. the store token.
+    It does **not** buy extraction out of the *narrowed* guard, and that
+    is worth being exact about, because the merge needs both.
 
-    So what this file settles is the obstruction PLAN.md recorded as
-    **structural** - that no side condition could rule the marker
-    disjunct out.  One can.  The remaining obstacle to merging the two
-    owning pointers is the other one that file records, and it is not
-    this one: a store *token* names the formula it stores, so a former
-    holding one admits no subtyping rule.  Getting both extraction and
-    subtyping needs the stored formula to be fixed with the variation
-    behind a judgment, the way an indexed borrow's content is altered.
-    That is a design question, not a structural impossibility. *)
+    [guard_acc] is [Q ∗ (Q -∗ W ∗ P)]: the only route back to [W]
+    consumes the content.  Keeping [Px] and still returning [W] is
+    therefore not derivable from the narrowed guard, whatever the
+    disjunction looks like - and that is by design, since a guard is
+    precisely the thing that cannot write to the store.
+
+    Extraction comes from the *other* side of the same invariant, and it
+    is a separate capability: hold [ts_full γ], open
+    [dinv_tok (ts_taken γ ∨ Px)] directly, rule the marker out, spend the
+    token with [ts_take], and deposit [ts_taken γ] where the content was.
+    That is an update, which the guard route has no room for.
+
+    So the two endings are both available and neither follows from the
+    other.  [typing/ctx.v]'s [eown_fml] bundles them into one judgment for
+    exactly that reason - they have to be *allocated together*, off the
+    one persistent [dinv_tok], since two conjuncts would ask for two
+    independent realizations of one [Px] - and putting them behind a
+    judgment is also what buys the subtyping rule, which a bare token
+    cannot have.  See the thesis (5.5) and [rust_halt]'s [store_wand];
+    [PLAN.md] records why that indirection is forced. *)
 End two_state.
