@@ -183,7 +183,6 @@ nola/verus_halt/typing/own.v
 nola/verus_halt/typing/ghost.v
 nola/verus_halt/typing/sum.v
 nola/verus_halt/typing/function.v
-nola/verus_halt/typing/fixpoint.v
 nola/verus_halt/typing/programs_util_own.v
 nola/verus_halt/typing/ra.v
 nola/verus_halt/typing/uniq_util.v
@@ -206,4 +205,5 @@ nola/verus_halt/typing/strat_bor.v
 nola/verus_halt/typing/rec.v
 nola/verus_halt/typing/own_rec.v
 nola/verus_halt/typing/inst.v
+nola/verus_halt/typing/fn_inst.v
 nola/verus_halt/typing/examples/basic.v

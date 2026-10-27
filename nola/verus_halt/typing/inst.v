@@ -470,3 +470,80 @@ End productive.
 (** Productivity, like the two soundness theorems above, rests on nothing but
   [Eq_rect_eq] - which [sigTCT]/[sigTO] need for their dependent matches. *)
 Print Assumptions shr_bor_ghox_productive.
+
+(** ** The family of execution levels, inhabited
+
+  [typing/level_ctx.v]'s [verus_halt_wsats_alloc] allocates the ghost
+  names of as many levels as asked for and then takes the family of
+  *interpretations*, [P : ∀ k n, LvlAt n], as a parameter.  Nothing in
+  the tree had ever supplied one, so [verus_halt_wsats],
+  [verus_halt_wsat_below] and the accessor
+  [verus_halt_wsat_below_acc] stood over an empty type as far as the
+  concrete model was concerned.  Here is a family: every level carries
+  this file's [verus_haltCsem]/[verus_haltJsem] at its *own* names.
+
+  It is the **constant** family, and that is the point to be exact
+  about.  What it settles is that the scaffolding is not vacuous - as
+  many levels as asked for come out of one [Σ], each with its own
+  borrowing machinery, box, shared-borrow family, invariants and store,
+  over one shared lifetime logic, and a body at execution level [j] can
+  reach exactly the levels [k < j].
+
+  What it does *not* do is make the level mean anything: every level
+  reads a function type the same way, so [knot_not_typable]'s premise
+  ([typing/function.v]) is not enforced by anything here.
+  [typing/fn_inst.v] instantiates [FnFml] over this family all the
+  same, and soundly, but only because it takes [fn_lv_top := 1] and so
+  hands a callee *no* level machinery at all rather than the levels
+  below it: the knot is blocked bluntly rather than by the level.
+
+  The family that would do the work is the level-*indexed* one, in
+  which level [k]'s [Csem] interprets a function type of arrow level
+  [j < k] by reading its body at [P j]'s interpretation - already built
+  when level [k] is being defined, which is exactly the hypothesis
+  [nola/bi/deriv.v]'s [der_const] wants.  What stands between here and
+  there is not [FnFml] any more but the borrow formers, which record a
+  slot's level as its pointee's; see [typing/fn_inst.v]'s header. *)
+Definition verus_halt_lvl_const {Σ}
+  `{!verus_haltGpreS (cifOF verus_haltCON) Σ, !invGS_gen HasNoLc Σ}
+  (hLlft : llft_logicGS Σ) (hGS : heapGS (cifOF verus_haltCON) Σ)
+  (hP : prophG Σ) (hU : uniqG Σ) (k : nat) (n : verus_haltNames) :
+  LvlAt hLlft hGS hP hU n :=
+  {| lvl_Cs := verus_haltCsem; lvl_Js := verus_haltJsem;
+     lvl_CS := typingCS_CON; lvl_JS := typingJS_JUDG |}.
+
+(** As many levels of the concrete model as asked for, out of one [Σ].
+
+  The port's counterpart of [typing/strat.v]'s and
+  [typing/strat_bor.v]'s list of levels, and the thesis's Corollary 5.3
+  without its global maximum: no camera is indexed by the level, so
+  every level is a handful of fresh ghost names against the [inG]s one
+  [verus_haltGpreS] already carries. *)
+Lemma verus_halt_levels_alloc {Σ}
+  `{!verus_haltGpreS (cifOF verus_haltCON) Σ, !invGS_gen HasNoLc Σ}
+  (hGS : heapGS (cifOF verus_haltCON) Σ) (hP : prophG Σ) (hU : uniqG Σ) L :
+  ⊢ |==> ∃ (hLlft : llft_logicGS Σ) (ns : list verus_haltNames),
+    ⌜length ns = S L⌝ ∗
+    verus_halt_wsats hLlft hGS hP hU (verus_halt_lvl_const hLlft hGS hP hU) ns.
+Proof.
+  iMod (verus_halt_wsats_alloc hGS hP hU L) as (hLlft ns Hlen) "W".
+  iModIntro. iExists hLlft, ns. iSplitR; [done|]. iApply "W".
+Qed.
+
+(** And a body at execution level [j] reaches exactly the levels below
+  it, at the concrete model.  This is [verus_halt_wsat_below_acc] with
+  the family supplied; without [verus_halt_lvl_const] above there was
+  no family to supply. *)
+Lemma verus_halt_below_acc_const {Σ}
+  `{!verus_haltGpreS (cifOF verus_haltCON) Σ, !invGS_gen HasNoLc Σ}
+  {hLlft hGS hP hU} {ns : list verus_haltNames} {j k n} :
+  (k < j)%nat → ns !! k = Some n →
+  verus_halt_wsat_below hLlft hGS hP hU
+    (verus_halt_lvl_const hLlft hGS hP hU) ns j ⊢
+    lvl_wsat_lvl (verus_halt_lvl_const hLlft hGS hP hU k n) ∗
+      (lvl_wsat_lvl (verus_halt_lvl_const hLlft hGS hP hU k n) -∗
+       verus_halt_wsat_below hLlft hGS hP hU
+         (verus_halt_lvl_const hLlft hGS hP hU) ns j).
+Proof.
+  move=> Hkj Hn. exact (verus_halt_wsat_below_acc hLlft hGS hP hU Hkj Hn).
+Qed.

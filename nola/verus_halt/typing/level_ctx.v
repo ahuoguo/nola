@@ -439,6 +439,48 @@ Section family.
     verus_halt_wsat_below P ns (length ns) ⊣⊢ verus_halt_wsats P ns.
   Proof. by rewrite /verus_halt_wsat_below /verus_halt_wsats take_ge. Qed.
 
+  (** *** Reaching one level's machinery from an execution level above it
+
+    The primitive the borrow-slot level discipline runs on, and the
+    port's counterpart of [typing/strat_bor.v]'s [bors_below_acc].  A
+    body at execution level [j] may reach the machinery of any level
+    [k < j], and what comes back is **level [k]'s** world satisfaction,
+    never level [j]'s.
+
+    That asymmetry is the whole point of the level.  A borrow slot in
+    level [k]'s machinery holds formulas read at level [k]'s
+    interpretation, whose function types have arrow level [≤ k] and so
+    run under [Winv_h] for [h < k] only.  Strictly decreasing, hence the
+    recursion on the level is well-founded - [strat_bor.v]'s argument,
+    here at the port's own world satisfaction.
+
+    And a body *at* level [j] cannot reach level [j] or above, which is
+    the half that blocks Landin's knot: see [typing/function.v]'s
+    [knot_not_typable]. *)
+  Lemma verus_halt_wsat_below_acc {P ns j k n} :
+    (k < j)%nat → ns !! k = Some n →
+    verus_halt_wsat_below P ns j ⊢
+      lvl_wsat_lvl (P k n) ∗
+        (lvl_wsat_lvl (P k n) -∗ verus_halt_wsat_below P ns j).
+  Proof.
+    move=> Hkj Hn. rewrite /verus_halt_wsat_below. iIntros "[Sh W]".
+    iDestruct (big_sepL_lookup_acc _ _ k n with "W") as "[$ Back]".
+    { by rewrite lookup_take_lt. }
+    iIntros "Wk". iFrame "Sh". by iApply "Back".
+  Qed.
+
+  (** The shared half is reachable at *every* execution level, [0]
+    included: the lifetime tokens live there, and a function at level [0]
+    still has a lifetime context. *)
+  Lemma verus_halt_wsat_below_shared_acc {P ns j} :
+    verus_halt_wsat_below P ns j ⊢
+      verus_halt_shared P ns ∗
+        (verus_halt_shared P ns -∗ verus_halt_wsat_below P ns j).
+  Proof.
+    rewrite /verus_halt_wsat_below. iIntros "[Sh W]". iFrame "Sh".
+    iIntros "Sh". iFrame.
+  Qed.
+
   (** *** Allocating the family
 
     As many levels as asked for, out of one [Σ]: every per-level component

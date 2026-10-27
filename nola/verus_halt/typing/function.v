@@ -152,10 +152,57 @@ Class FnFml `{!typeG FML Σ} := {
     is [typing/level_ctx.v]'s business - it supplies
     [verus_halt_wsat_below … j ∗ send_wsat]. *)
   fn_wsat_lv : nat → iProp Σ;
-  (** A caller holding the ambient world can lend a callee the world of
-    any level.  With one level this is the identity. *)
-  fn_wsat_lv_acc {j} :
-    ⊢ □ (verus_halt_wsat ={∅}=∗ fn_wsat_lv j ∗ (fn_wsat_lv j ={∅}=∗ verus_halt_wsat));
+  (** The execution level the *ambient* world satisfaction is.  A
+    typing derivation runs at one level, and that level bounds the
+    arrow of every function type it may call. *)
+  fn_lv_top : nat;
+  (** **** The ambient world is the top of the family
+
+    This is where the whole construction meets the port, and factoring
+    it out as its own equation is what turned [FnFml] from "no model"
+    into "one equation".  [typing/programs.v] states [typed_body] over
+    [verus_halt_wsat]; the thesis states its judgment over
+    [∗_{k<i} Winv_k].  Those are the same proposition exactly when the
+    ambient ghost state is the family's top level, and nothing weaker
+    will do: [verus_halt_wsat] at one level's names is that level's own
+    borrows, box, invariants and store, while
+    [verus_halt_wsat_below P ns j] is every level below [j], and no
+    frame-preserving step takes one to the other.
+
+    An earlier form of this class asked instead for
+    [verus_halt_wsat ={∅}=∗ fn_wsat_lv j ∗ …] with no side condition,
+    which *looks* like the thesis's "a caller lends the callee the part
+    its level names" and is satisfied by no real family: it has to hold
+    at every [j] at once, so [fn_wsat_lv] has to be the constant
+    [verus_halt_wsat] and the execution level carries no information at
+    all.  Splitting it in two is what makes the difference visible.
+
+    To be exact about what that costs, since the earlier note here
+    overstated it: a bad choice of [fn_wsat_lv] cannot make a divergent
+    program typable.  [typing/soundness.v]'s [type_soundness] is a Rocq
+    theorem taking [⊢ typed_body … e tr] to [sn erased_step], and these
+    rules are machine-checked against it, so any [FnFml] whose
+    obligations are provable is sound by construction.  What a constant
+    [fn_wsat_lv] loses is not soundness but *content*: the level stops
+    constraining anything, and whatever blocks Landin's knot is then
+    something else - here, that a total [twp] has no Löb rule, so a
+    self-referential [⊢ fn_body] has nothing to prove it with. *)
+  fn_wsat_top : verus_halt_wsat ⊣⊢ fn_wsat_lv fn_lv_top;
+  (** A caller at the ambient level lends a callee the world of any
+    level **at or below** its own - the thesis's [j ≤ i].  Over the
+    family this is [typing/level_ctx.v]'s [verus_halt_wsat_below_acsr],
+    already proved; the side condition is what [fn_lv_top] is for, and
+    what the unconditional form was quietly doing without.
+
+    The strictness the discipline needs is one level down, inside
+    [fn_wsat_lv] itself: the thesis's [∗_{k<j} Winv_k] is
+    [verus_halt_wsat_below … j], the levels strictly *below* [j].  So
+    [j = fn_lv_top] hands a callee exactly what the caller holds, which
+    is what an ordinary top-level function needs and what the examples
+    use, while [j < fn_lv_top] is the genuinely stratified case. *)
+  fn_wsat_lv_acc {j} : (j ≤ fn_lv_top)%nat →
+    ⊢ □ (fn_wsat_lv fn_lv_top ={∅}=∗
+          fn_wsat_lv j ∗ (fn_wsat_lv j ={∅}=∗ fn_wsat_lv fn_lv_top));
 
   (** [j] is the arrow's **execution level** - the [j] of the thesis's
     [T →ⱼ U].  It is a parameter of [fn_fml] rather than a field of
@@ -166,8 +213,8 @@ Class FnFml `{!typeG FML Σ} := {
     (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
     (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) : FML $oi Σ;
 
-  (** *** The one obligation: the semantics is the body, at **every**
-    candidate interpretation.
+  (** *** The obligations: elimination at **every** candidate, and
+    introduction at the Coq level.
 
     This replaces what used to be four fields - persistence,
     specialisation, and the two directions of the semantics, of which the
@@ -190,11 +237,40 @@ Class FnFml `{!typeG FML Σ} := {
     already constructed when this one is being defined.  The chain that
     makes that possible is [verus_halt_wsat_below] in
     [typing/level_ctx.v]. *)
-  fn_fml_sem {sem} : alt_any sem →
+  fn_fml_elim {sem} : alt_any sem →
     ∀ {A : Type} {𝔄l 𝔅 ℭ} (j : nat)
       (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
       (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)),
-    sem (fn_fml j fp spec x) ⊣⊢ fn_body fn_wsat_lv j fp spec x;
+    sem (fn_fml j fp spec x) ⊢ fn_body fn_wsat_lv j fp spec x;
+
+  (** Introduction, at the **Coq** level, which is the shape every use
+    in this file has: [type_fn]'s premise is [∀x ϝ k wl, ⊢ typed_body …],
+    a tautology rather than an entailment from a context, because this
+    port's [fn] is capture-free.
+
+    This is the field that used to be the other half of an [⊣⊢], and
+    the half that had no model.  The missing entailment is
+    [fn_body ⊢ ⌜⊢ fn_body⌝], which is **false** - holding the body does
+    not make it a tautology - so no model was ever going to supply it.
+    Asking for the Coq-level implication instead is what makes the class
+    realisable, and it costs nothing, because nothing in the development
+    ever had the body as an Iris hypothesis to begin with. *)
+  fn_fml_intro {A : Type} {𝔄l 𝔅 ℭ} (j : nat)
+      (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
+      (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) :
+    (⊢ fn_body fn_wsat_lv j fp spec x) → ⊢ bor_sem (fn_fml j fp spec x);
+
+  (** Persistence and specialisation, which the [⊣⊢] used to derive *)
+  fn_fml_pers {sem} : alt_any sem →
+    ∀ {A : Type} {𝔄l 𝔅 ℭ} (j : nat)
+      (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
+      (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)),
+    Persistent (sem (fn_fml j fp spec x));
+  fn_fml_specialize {sem} : alt_any sem →
+    ∀ {A B : Type} {𝔄l 𝔅 ℭ} (σ : A → B) (j : nat)
+      (fp : B → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
+      (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)),
+    sem (fn_fml j fp spec x) ⊢ sem (fn_fml j (fp ∘ σ) spec x);
 }.
 
 (** The four fields that used to be assumed, now derived. *)
@@ -206,16 +282,14 @@ Section fn_fml_lemmas.
     (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
     (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) :
     Persistent (sem (fn_fml j fp spec x)).
-  Proof. rewrite (fn_fml_sem (alt_sem_any H)). exact _. Qed.
+  Proof. exact (fn_fml_pers (alt_sem_any H) j fp spec x). Qed.
 
   Lemma fn_fml_specialize_at {sem} (H : alt_sem sem)
       {A B : Type} {𝔄l 𝔅 ℭ} (σ : A → B) (j : nat)
       (fp : B → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
       (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) :
     sem (fn_fml j fp spec x) ⊢ sem (fn_fml j (fp ∘ σ) spec x).
-  Proof.
-    rewrite !(fn_fml_sem (alt_sem_any H)). apply fn_body_specialize.
-  Qed.
+  Proof. exact (fn_fml_specialize (alt_sem_any H) σ j fp spec x). Qed.
 
   Lemma fn_fml_sem_1 {A : Type} {𝔄l 𝔅 ℭ} (j : nat)
       (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
@@ -224,18 +298,14 @@ Section fn_fml_lemmas.
   Proof.
     (* [bor_sem] is [alt_amb] only up to conversion, so this is [exact]
       rather than [rewrite] - the same step [dinv_fml_sem] takes. *)
-    exact (bi.equiv_entails_1_1 _ _
-      (fn_fml_sem (alt_sem_any alt_here) j fp spec x)).
+    exact (fn_fml_elim (alt_sem_any alt_here) j fp spec x).
   Qed.
 
   Lemma fn_fml_sem_2 {A : Type} {𝔄l 𝔅 ℭ} (j : nat)
       (fp : A → fn_params (𝔄l:=𝔄l) (𝔅:=𝔅))
       (spec : fn_spec 𝔄l 𝔅 ℭ) (x : ~~ (exec_funₛ ℭ)) :
-    fn_body fn_wsat_lv j fp spec x ⊢ bor_sem (fn_fml j fp spec x).
-  Proof.
-    exact (bi.equiv_entails_1_2 _ _
-      (fn_fml_sem (alt_sem_any alt_here) j fp spec x)).
-  Qed.
+    (⊢ fn_body fn_wsat_lv j fp spec x) → ⊢ bor_sem (fn_fml j fp spec x).
+  Proof. exact (fn_fml_intro j fp spec x). Qed.
 End fn_fml_lemmas.
 
 Section fn.
@@ -291,6 +361,32 @@ Section fn.
     (spec: fn_spec 𝔄l 𝔅 ℭ) : (j < ty_lev (fn j fp spec))%nat.
   Proof. rewrite fn_ty_lev. lia. Qed.
 
+  (** ** Landin's knot, at the port's own types
+
+    [typing/strat_bor.v]'s [knot_not_typable] in the port's terms, and
+    the reason [FnFml] must not be instantiated before the borrow slots
+    carry the level of the machinery they use.
+
+    A slot whose machinery is at level [k] may hold a value of type [ty]
+    only when [ty_lev ty ≤ k] - the stored formula is read at level
+    [k]'s interpretation, so its function types must already be defined
+    there - while *reaching* that machinery asks for an execution level
+    strictly above [k] ([typing/level_ctx.v]'s
+    [verus_halt_wsat_below_acc]).
+
+    A closure of arrow level [j] therefore needs a slot with
+    [S j = ty_lev (fn j fp spec) ≤ k], and its own body, which runs at
+    execution level [j], would need [k < j] to open the slot holding it.
+    No [k] is both.  That is where all of [fn]'s soundness sits: with a
+    [Wlv] that ignores the level the knot's body is provable as a
+    tautology under the slot's declared type, and totality does not
+    rescue it, because that body needs no Löb step - the callee's
+    specification arrives from the context, not from an induction. *)
+  Lemma knot_not_typable {ℭ} (j k : nat) (fp: A → fn_params)
+    (spec: fn_spec 𝔄l 𝔅 ℭ) :
+    (ty_lev (fn j fp spec) ≤ k)%nat → ¬ (k < j)%nat.
+  Proof. rewrite fn_ty_lev. lia. Qed.
+
   (** Unfolding [fn]'s ghost assertion.  Only the two directions exist, not
     an [⊣⊢]: see [FnFml]. *)
   Lemma fn_gho_1 {ℭ} (j : nat) (fp: A → fn_params)
@@ -313,7 +409,8 @@ Section fn.
     level - and a caller holds the whole world and lends it the part its
     level names.  Doing that once here, rather than at the call, is what
     keeps [type_call_iris'] unchanged. *)
-  Lemma fn_gho_1' {ℭ} (j : nat) (fp: A → fn_params)
+  Lemma fn_gho_1' {ℭ} (j : nat) (Hj : (j ≤ fn_lv_top)%nat)
+      (fp: A → fn_params)
       (spec: fn_spec 𝔄l 𝔅 ℭ) x d g tid :
     ty_gho (fn j fp spec) x d g tid ⊢
       (∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
@@ -334,13 +431,17 @@ Section fn.
     iIntros (tid' xl mask post iκs) "A B C D E F G H2 I".
     iApply (twpw_incl_fupd (E:=∅) (W:=verus_halt_wsat)
       (W':=fn_wsat_lv j)); [set_solver| |].
-    { iApply fn_wsat_lv_acc. }
+    { rewrite fn_wsat_top. by iApply fn_wsat_lv_acc. }
     by iApply ("body" with "A B C D E F G H2 I").
   Qed.
 
+  (** Introduction.  The premise is a Coq-level entailment, which is
+    what [type_fn]'s own premise already is: see [FnFml]'s
+    [fn_fml_intro] for why the Iris-level form is not merely unproved
+    but false. *)
   Lemma fn_gho_2 {ℭ} (j : nat) (fp: A → fn_params)
       (spec: fn_spec 𝔄l 𝔅 ℭ) x d g tid :
-      (∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
+      (⊢ ∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
         □ ∀y ϝ k (wl: plistc _ _),
           typed_body_at (fn_wsat_lv j) (fp_E (fp y) ϝ) [ϝ ⊑ₗ []]
             (InvCtx [] ϝ (fp_atomic_state (fp y)))
@@ -349,7 +450,7 @@ Section fn.
             (hzip_with (λ _ boxty (w: val), w ◁ boxty)
               (box_typel (fp y).(fp_ityl)) wl)
             (subst' fb (RecV fb (kb :: bl) e) $ subst' kb k $ subst_plv bl wl e)
-            (spec (snd x)))
+            (spec (snd x))) →
     ⊢ ty_gho (fn j fp spec) x d g tid.
   Proof. apply fn_fml_sem_2. Qed.
 
@@ -610,6 +711,7 @@ Section typing.
       (spec: fn_spec 𝔄l 𝔅 ℭ) p ql ql' (k: expr) E xl efun tid
         (post: ~~ (at_locₛ 𝔅) → (Mask → (proph_asn → Prop)))
         (mask: Mask) Il ϝ' iκs γ q :
+    (j ≤ fn_lv_top)%nat →
     AsVal k → IntoPlistc ql ql' →
     lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
     (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) κl ++ E) L (fp_E (fp x) ϝ)) →
@@ -628,7 +730,7 @@ Section typing.
       WP[verus_halt_wsat] k [of_val ret] [{ _, cont_postcondition }]) -∗
     WP[verus_halt_wsat] (call: p ql → k) [{ _, cont_postcondition }].
   Proof.
-    move=> [k' <-]-> IctxAlv ToEfp.
+    move=> Hj [k' <-]-> IctxAlv ToEfp.
     iIntros "#LFT #PROPH #UNIQ #E #Gguardsκl [#key tok] ii p ql Obs k".
     iApply fupdw_twpw_cont. iIntros "W".
     iDestruct (llftl_begin' with "LFT") as "B".
@@ -664,7 +766,7 @@ Section typing.
       iApply dincl_intersect_r. }
     iModIntro. iFrame "W".
     wp_bind p. iApply (twp_hasty with "p"). iIntros (?? _) "[gho %phys]".
-    iDestruct (fn_gho_1' with "gho") as (fb kb bl e Hclosed) "[%Hrec #e]".
+    iDestruct (fn_gho_1' _ Hj with "gho") as (fb kb bl e Hclosed) "[%Hrec #e]".
     inversion phys as [Eqv].
     have ->: (λ: ["_r"], Skip;; k' ["_r"])%E = (λ: ["_r"], Skip;; k' ["_r"])%V
       by unlock.
@@ -698,6 +800,7 @@ Section typing.
   Lemma type_call_iris {A 𝔄l 𝔅 ℭ} x xl κl post (mask: Mask) j
       (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ)
       p ql ql' (k: expr) E efun tid γ q :
+    (j ≤ fn_lv_top)%nat →
     AsVal k → IntoPlistc ql ql' →
     (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) κl ++ E) [] (fp_E (fp x) ϝ)) →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
@@ -715,9 +818,10 @@ Section typing.
       WP[verus_halt_wsat] k [of_val ret] [{ _, cont_postcondition }]) -∗
     WP[verus_halt_wsat] (call: p ql → k) [{ _, cont_postcondition }].
   Proof.
-    iIntros (???) "LFT PROPH UNIQ E #Guardsκl tok Invctx p ql Obs k".
+    iIntros (Hj ???) "LFT PROPH UNIQ E #Guardsκl tok Invctx p ql Obs k".
     iApply (type_call_iris' [] with
       "LFT PROPH UNIQ E Guardsκl tok Invctx p ql Obs").
+      - exact Hj.
       - split.
         + unfold lctx_lft_alive. iIntros "_ _".
           setoid_rewrite static_alive_true. iApply guard_true.
@@ -729,6 +833,7 @@ Section typing.
 
   Lemma type_call {A 𝔄l 𝔅 ℭl 𝔇l 𝔈l 𝔉 ℭ} x j (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) p ql ql' k trx
       trk tri E L (C: cctx 𝔉) Il ϝ' (T: tctx ℭl) (T': tctx 𝔇l) (Tk: vec val 1 → tctx 𝔈l) :
+    (j ≤ fn_lv_top)%nat →
     IntoPlistc ql ql' → Forall (lctx_lft_alive_all E L) L.*1 →
     lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
     tctx_extract_ctx E L (p ◁ fn j fp spec +::
@@ -741,7 +846,7 @@ Section typing.
       let '(al, dl) := psep adl in
         (spec trp.2) (λ (b: ~~ (at_locₛ 𝔅)) mask π, tri (trk post) (b -:: dl) mask π) al mask π)).
   Proof.
-    move=> ? Alv ???? InTk. iApply typed_body_tctx_incl; [done|].
+    move=> Hj ? Alv ???? InTk. iApply typed_body_tctx_incl; [done|].
     iIntros (?[? adπl]mask post iκs). move: (papp_ex adπl)=> [aπl[dπl->]].
     iIntros "#LFT #PROPH #UNIQ #E L I C /=(p & ql & T') Obs".
     have Alv' := lctx_lft_alive_all_tok_list E L _ Alv.
@@ -750,7 +855,7 @@ Section typing.
     iMod (Ltok_alloc with "L W") as "[W (%γ & tok)]". iModIntro. iFrame "W".
     iDestruct "tok" as "[#key tok]".
     iApply (type_call_iris' with
-      "LFT PROPH UNIQ E [] [$key $tok] I p ql [Obs]"); [done|done|..].
+      "LFT PROPH UNIQ E [] [$key $tok] I p ql [Obs]"); [done|done|done|..].
     { iApply fguardx_of_all. iIntros "!>" (sem Hs).
       rewrite (gsrc_sem_at_any Hs) (alive_sem_at_any Hs).
       iApply (guard_trans with "[] []").
@@ -769,6 +874,7 @@ Section typing.
   Lemma type_letcall {A 𝔄l 𝔅 ℭ ℭl 𝔇l 𝔈} x j (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) p ql ql'
                      Il ϝ' (T: tctx ℭl) (T': tctx 𝔇l) b e trx tr E L (C: cctx 𝔈)
                      `{!IntoPlistc ql ql', !Closed (b :b: []) e, !Closed [] p} :
+    (j ≤ fn_lv_top)%nat →
     TCForall (Closed []) ql → Forall (lctx_lft_alive_all E L) L.*1 →
     lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
     tctx_extract_ctx E L (p ◁ fn j fp spec +::
@@ -779,7 +885,7 @@ Section typing.
     typed_body E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) C T (letcall: b := p ql in e) (trx ∘ (λ post '(trp -:: adl) mask π,
       let '(al, dl) := psep adl in (spec trp.2) (λ b mask π, tr post (b -:: dl) mask π) al mask π)).
   Proof.
-    move=> Clql ????. iIntros "e". iApply type_cont_norec.
+    move=> Hj Clql ????. iIntros "e". iApply type_cont_norec.
     - (* TODO : make [solve_closed] work here. *)
       eapply is_closed_weaken; [done|]. set_solver+.
     - (* TODO : make [solve_closed] work here. *)
@@ -803,6 +909,29 @@ Section typing.
       rewrite (is_closed_subst []); [| |set_solver+]; last first.
       { apply subst'_is_closed; [|done]. apply is_closed_of_val. }
       iApply "e".
+  Qed.
+
+  (** *** The ambient level
+
+    [fn_wsat_top] says the ambient world satisfaction *is* the family's
+    top, so a body at execution level [fn_lv_top] is an ordinary
+    [typed_body] and every rule in [typing/] applies to it unchanged.
+
+    This is what an ordinary function is: the thesis's [j ≤ i] at
+    [j = i].  A level strictly below the ambient one is the stratified
+    case, and the only one that needs the family. *)
+  Lemma typed_body_at_top {𝔄l 𝔅} E L (I : invctx) (C : cctx 𝔅)
+      (T : tctx 𝔄l) e tr :
+    typed_body_at (fn_wsat_lv fn_lv_top) E L I C T e tr ⊣⊢
+      typed_body E L I C T e tr.
+  Proof.
+    rewrite /typed_body. apply bi.equiv_entails. split.
+    - iIntros "H". iApply (typed_body_at_wsat with "[] H").
+      rewrite fn_wsat_top. iIntros "!> W !>". iFrame "W".
+      iIntros "W !>". iFrame.
+    - iIntros "H". iApply (typed_body_at_wsat with "[] H").
+      rewrite fn_wsat_top. iIntros "!> W !>". iFrame "W".
+      iIntros "W !>". iFrame.
   Qed.
 
   (** Typing a function literal.
@@ -837,8 +966,77 @@ Section typing.
     iExists -[((@RecV BAnon ("return" :: bl')%binder e Cl)%V, tr)].
     iFrame "Obs". iSplit; [|done]. iExists _, 0%nat.
     iSplit; [by rewrite/= decide_True_pi|]. iSplit; last by done.
-    iApply fn_gho_2. iExists BAnon, "return", bl', e, _. iSplit; [done|].
+    iApply fn_gho_2. iStartProof.
+    iExists BAnon, "return", bl', e, _. iSplit; [done|].
     iIntros "!>" (y ϝ k wl). iApply Body.
+  Qed.
+
+  (** [type_fn] and [type_call] at the ambient level, which is where an
+    ordinary function lives.
+
+    The premise of [type_fn_top] is a plain [typed_body], so the rules
+    of [typing/] compose with it directly, and [type_call_top] has no
+    side condition left to discharge.  Between them these are the shape
+    VerusBelt's own [type_fn] and [type_call] have - upstream has no
+    execution level at all - so a program verified against them is
+    verified against the port's rules exactly as it is upstream, with
+    the level visible only in the type, as [fn fn_lv_top fp spec]. *)
+  Lemma type_fn_top {A 𝔄l 𝔅 ℭ} tr (fp: A → fn_params 𝔄l 𝔅)
+      (spec: fn_spec 𝔄l 𝔅 ℭ)
+      e bl bl' `{Into: !IntoPlistc bl bl',
+      Cl: !Closed (("return" :: bl)%binder +b+ []) e} :
+    (∀x ϝ k (wl: plistc _ (boxl 𝔄l)),
+        ⊢ typed_body (fp_E (fp x) ϝ) [ϝ ⊑ₗ []]
+            (InvCtx [] ϝ (fp_atomic_state (fp x)))
+            [k ◁cont{[ϝ ⊑ₗ []], (InvCtx [] ϝ (fp_atomic_state (fp x))),
+              λ v: vec _ 1, +[vhd v ◁ own.box (fp x).(fp_oty)] } tr_ret]
+            (hzip_with (λ _ boxty (v: val), v ◁ boxty)
+              (box_typel (fp x).(fp_ityl)) wl)
+            (subst "return" k $ subst_plv bl' wl e) (spec tr)) →
+    typed_val (fn: bl := e)%V (fn fn_lv_top fp spec)
+      (@RecV BAnon ("return" :: bl)%binder e Cl, tr).
+  Proof.
+    move=> Body.
+    apply (type_fn tr fn_lv_top fp spec e bl bl' (Into:=Into) (Cl:=Cl)).
+    move=> x ϝ k wl. rewrite typed_body_at_top. apply Body.
+  Qed.
+
+  Lemma type_call_top {A 𝔄l 𝔅 ℭl 𝔇l 𝔈l 𝔉 ℭ} x (fp: A → fn_params 𝔄l 𝔅)
+      (spec: fn_spec 𝔄l 𝔅 ℭ) p ql ql' k trx
+      trk tri E L (C: cctx 𝔉) Il ϝ' (T: tctx ℭl) (T': tctx 𝔇l)
+      (Tk: vec val 1 → tctx 𝔈l) :
+    IntoPlistc ql ql' → Forall (lctx_lft_alive_all E L) L.*1 →
+    lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
+    tctx_extract_ctx E L (p ◁ fn fn_lv_top fp spec +::
+      hzip_with (λ _ boxty q, q ◁ boxty) (box_typel (fp x).(fp_ityl)) ql') T T' trx →
+    (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) L.*1 ++ E) L (fp_E (fp x) ϝ)) →
+    k ◁cont{L, (InvCtx Il ϝ' (fp_atomic_state (fp x))), Tk} trk ∈ C →
+    (∀ret: val, tctx_incl E L (ret ◁ own.box (fp x).(fp_oty) +:: T') (Tk [#ret]) tri) →
+    ⊢ typed_body E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) C T (call: p ql → k) (trx ∘
+      (λ post '(trp -:: adl), λ mask π,
+      let '(al, dl) := psep adl in
+        (spec trp.2) (λ (b: ~~ (at_locₛ 𝔅)) mask π, tri (trk post) (b -:: dl) mask π) al mask π)).
+  Proof.
+    move=> *. apply (type_call x fn_lv_top fp spec p ql ql' k trx trk tri
+      E L C Il ϝ' T T' Tk); [lia|assumption..].
+  Qed.
+
+  Lemma type_letcall_top {A 𝔄l 𝔅 ℭ ℭl 𝔇l 𝔈} x (fp: A → fn_params 𝔄l 𝔅)
+      (spec: fn_spec 𝔄l 𝔅 ℭ) p ql ql'
+      Il ϝ' (T: tctx ℭl) (T': tctx 𝔇l) b e trx tr E L (C: cctx 𝔈)
+      `{!IntoPlistc ql ql', !Closed (b :b: []) e, !Closed [] p} :
+    TCForall (Closed []) ql → Forall (lctx_lft_alive_all E L) L.*1 →
+    lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
+    tctx_extract_ctx E L (p ◁ fn fn_lv_top fp spec +::
+      hzip_with (λ _ boxty q, q ◁ boxty) (box_typel (fp x).(fp_ityl)) ql') T T' trx →
+    (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) L.*1 ++ E) L (fp_E (fp x) ϝ)) →
+    (∀ret: val, typed_body E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) C
+      (ret ◁ own.box (fp x).(fp_oty) +:: T') (subst' b ret e) tr) -∗
+    typed_body E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) C T (letcall: b := p ql in e) (trx ∘ (λ post '(trp -:: adl) mask π,
+      let '(al, dl) := psep adl in (spec trp.2) (λ b mask π, tr post (b -:: dl) mask π) al mask π)).
+  Proof.
+    move=> *. apply (type_letcall x fn_lv_top fp spec p ql ql' Il ϝ' T T'
+      b e trx tr E L C); [lia|assumption..].
   Qed.
 End typing.
 

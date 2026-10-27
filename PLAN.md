@@ -81,6 +81,51 @@ totality - and it is where all of `fn`'s soundness sits.  `ty_lev`
 records the level, `strat_bor.v` is the specification, and
 `verus_halt_wsat_below … j` is the world satisfaction it indexes.
 
+### Where that stands, after the TODO audit
+
+Three of its pieces are now in the tree and the fourth is named.
+
+* **`verus_halt_wsat_below_acc`** (`typing/level_ctx.v`) is the
+  primitive the discipline runs on, and the port's counterpart of
+  `strat_bor.v`'s `bors_below_acc`: a body at execution level `j`
+  reaches the machinery of any level `k < j`, and what comes back is
+  *level `k`'s* world satisfaction, never level `j`'s.  That asymmetry
+  is the whole content of the level.
+* **`knot_not_typable`** (`typing/function.v`) is `strat_bor.v`'s lemma
+  at the port's own types, and it is closed under the global context.
+  `ty_lev (fn j fp spec) = S j`, a slot at level `k` holds a type only
+  when `ty_lev ty ≤ k`, and reaching that slot asks for `> k`; no `k`
+  is both.
+* **A family of levels exists at all.**  `verus_halt_wsats_alloc`
+  allocates the ghost names and then takes the family of
+  *interpretations*, `P : ∀ k n, LvlAt n`, as a parameter - and nothing
+  in the tree had ever supplied one, so the apparatus stood over an
+  empty type as far as the concrete model was concerned.
+  `typing/inst.v`'s `verus_halt_lvl_const` is one and
+  `verus_halt_levels_alloc` allocates as many levels of the concrete
+  model as asked for, out of one `Σ`.
+
+What is left is **exactly one thing**, and it is now sayable in a
+sentence: build the **level-indexed** family, in which level `k`'s
+`Csem` interprets a function type of arrow level `j < k` by reading its
+body at `P j`'s interpretation.  `P j` is already constructed when
+level `k` is being defined - that is what the level buys, and it is
+exactly the hypothesis `nola/bi/deriv.v`'s `der_const` wants, so
+`fn_fml_sem` becomes a lemma and `FnFml` falls out.  `LvlAt` already
+gives every level its own `Csem`/`Jsem` for this reason
+(`typing/level_ctx.v` says so at the head of `Section family`); nothing
+yet builds the induction.
+
+**Until that family exists, `FnFml` must not be instantiated**, and the
+constant family above is not a licence to do it.  With a `Wlv` that
+ignores the level, the knot's body is provable as a tautology under the
+slot's declared type, so a diverging program would satisfy
+`verus_halt_type_soundness` - the theorem would not be false, but its
+hypothesis would be satisfiable by a program that does not terminate,
+which is worse than having no instance.  `typing/function.v`'s
+`fn_pure_candidate` realises everything *except* the one direction that
+carries this risk, and says so.
+
 File-by-file map to upstream: `nola/verus_halt/CORRESPONDENCE.md`.
 Performance traps, five of which present as a hang - one of them for
 over eight hours: `nola/verus_halt/PERF.md`.
@@ -92,12 +137,29 @@ over eight hours: `nola/verus_halt/PERF.md`.
 | `guarding/storage_protocol/` | 1382 | only needed by `typing/protocol.v` |
 | `guarding/lib/rwlock.v` | 518 | client of the above |
 | `typing/protocol.v` | 1189 | needs `storage_protocol/` |
-| `typing/spawn.v` | 394 | `join` is an `iLöb` spin loop - no later-free version |
+| `typing/spawn.v` | 394 | `join` is a busy-wait spin loop - **not** a missing technique, see below |
 
 The rest of `guarding/` is here; the line counts shrink because Leaf's
 later/`iLöb`/`pers` machinery disappears.  Nothing in the tree waits on a
 missing guarding lemma, so pull in `storage_protocol/` when starting
 `protocol.v`, not before.
+
+**The fourth is not a matter of technique, and the audit settled it.**
+`join` is
+
+```
+rec: "join" ["c"] := if: !ˢᶜ"c" then (* read the result *) else "join" ["c"]
+```
+
+a spin loop with no decreasing measure, and upstream's `join_spec`
+(`lang/lib/spawn.v`, not `typing/spawn.v`, which contains no `iLöb` of
+its own) is proved by `iLöb`.  Under a *total* weakest precondition the
+specification is not merely unproved but **false**: `twp` quantifies
+over every schedule with no fairness assumption, and a scheduler that
+never runs the spawned thread makes `join` diverge.  So this entry does
+not move without a fair-scheduling total weakest precondition, which
+neither λRust's operational semantics nor Iris's `twp` provides.  It is
+the one line in this table that is closed rather than deferred.
 
 The first three of these are **feasible later-free, and the obstacle is
 size rather than principle** - worth saying, because the fourth is not.
