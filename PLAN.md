@@ -1,4 +1,4 @@
-# Porting AlerusBelt / VerusBelt into Nola, later-free
+# Porting VerusBelt into Nola, later-free
 
 Branch `later-free-guard`.  Upstream: `verus-belt/src/`.  Keep Leaf's
 guarding logic (`P &&{W}&&> Q`); drop `▷` and `iLöb`; use Nola's magic
@@ -9,7 +9,7 @@ Everything ported builds green (`make -f Makefile.coq -j4`).
 
 ## Where it stands
 
-The model is **done**: `nola/alerus/typing/model.v` builds the `cif` model
+The model is **done**: `nola/verus_halt/typing/model.v` builds the `cif` model
 of `typing/ctx.v`'s interface (`FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`,
 four judgments - the guard, the indexed borrow, the stored inclusion and
 the borrow's alteration), `model_inst.v` bundles it into a `typeG` with the remaining
@@ -28,8 +28,8 @@ partial, because a guard there hands out a `▷` that only a later credit
 pays for.  `Print Assumptions` reports only `Eq_rect_eq` for both.
 
 `typing/inst.v` then builds a concrete `CON` and `JUDG` **with their
-semantics**, so neither theorem is vacuous; `alerus_type_soundness` and
-`alerus_type_safety` are the concrete forms, and `Print Assumptions` gives
+semantics**, so neither theorem is vacuous; `verus_halt_type_soundness` and
+`verus_halt_type_safety` are the concrete forms, and `Print Assumptions` gives
 only `Eq_rect_eq` for those too.  Neither this development nor
 `nola/examples/rust_halt/` had ever instantiated `sigTCT`/`sigTO` before.
 
@@ -58,7 +58,7 @@ a refactor with a known shape rather than a question.
 Of that refactor (item 2 below), **steps 1-5 are done** and step 6 is
 half done.  The execution levels share one lifetime logic - `@[κ]` is one
 proposition for the whole run, not one per level - and
-`alerus_wsat_below P ns j` is the thesis's `∗_{k<j} Winv_k` beside one
+`verus_halt_wsat_below P ns j` is the thesis's `∗_{k<j} Winv_k` beside one
 shared copy.  `typed_body` is stated over a world satisfaction that is a
 parameter, `≤-→` is one `twpw_incl_fupd`, every type former carries a
 level, and `fn` carries its arrow's.
@@ -79,11 +79,11 @@ level `k` forces `j ≤ k` while opening it forces `> k`.  That is what
 blocks Landin's knot - `typing/strat_bor.v`'s `knot_not_typable`, not
 totality - and it is where all of `fn`'s soundness sits.  `ty_lev`
 records the level, `strat_bor.v` is the specification, and
-`alerus_wsat_below … j` is the world satisfaction it indexes.
+`verus_halt_wsat_below … j` is the world satisfaction it indexes.
 
-File-by-file map to upstream: `nola/alerus/CORRESPONDENCE.md`.
+File-by-file map to upstream: `nola/verus_halt/CORRESPONDENCE.md`.
 Performance traps, five of which present as a hang - one of them for
-over eight hours: `nola/alerus/PERF.md`.
+over eight hours: `nola/verus_halt/PERF.md`.
 
 ## Not ported
 
@@ -146,7 +146,7 @@ for the call's own lifetime is *semantic*, and no token expresses it.)
 ## Next
 
 The model is closed and both of the blockers that were open after it are
-gone; what is written up in `nola/alerus/typing/inst.v` is the record of
+gone; what is written up in `nola/verus_halt/typing/inst.v` is the record of
 how.  What remains is one small item and two large ones, and the two large
 ones are large for reasons now understood rather than guessed at.
 
@@ -158,7 +158,7 @@ ones are large for reasons now understood rather than guessed at.
    facts exercise the relaxed borrow, including a unique borrow of a unique
    borrow, which is the case `uniq_subtype` could not state before.
 
-   The traps are recorded in `nola/alerus/PERF.md` and each one bit here:
+   The traps are recorded in `nola/verus_halt/PERF.md` and each one bit here:
    `type_val` cannot be applied to a concrete program, `type_new`'s size
    must be passed rather than unified, transformers must be built forward
    into an evar, and `Closed` premises are discharged by resolution *before*
@@ -222,7 +222,7 @@ ones are large for reasons now understood rather than guessed at.
    existing instance already carries, so **a level is a `gname`, not a
    component of the global camera** - allocate as many as a proof needs, no
    global maximum, no new `inG`.  This port already leans on the same trick
-   once, for the store world satisfaction inside `alerus_WGuard` beside
+   once, for the store world satisfaction inside `verus_halt_WGuard` beside
    `boxes.v`'s.
 
    On top of that sit the two rules that make a level worth having, and
@@ -271,17 +271,17 @@ ones are large for reasons now understood rather than guessed at.
      This plan previously guessed otherwise, on the grounds that `⟦⟧ᶜ_i` is
      *monotone* - `fn_fml` is the only constructor whose semantics mentions
      the level, and `⟦fn →ⱼ⟧ᶜ_i` is the same for every `i ≥ j` - so that a
-     run of top level `L` could keep one `alerus_wsat ⟦⟧ᶜ_L` with the
+     run of top level `L` could keep one `verus_halt_wsat ⟦⟧ᶜ_L` with the
      levelled part beside it.  **That does not work**, and the reason is
      one line of `strat.v`'s `twp_read_lv`: a caller at level `i` must hand
      a callee at level `j ≤ i` a world satisfaction *it can give away*,
      and the callee's is interpreted by `⟦⟧ᶜ_j`.  One family cannot be
-     read at two interpretations at once - `alerus_wsat ⟦⟧ᶜ_j` and
-     `alerus_wsat ⟦⟧ᶜ_i` are the same ghost state under different `BorSem`s
+     read at two interpretations at once - `verus_halt_wsat ⟦⟧ᶜ_j` and
+     `verus_halt_wsat ⟦⟧ᶜ_i` are the same ghost state under different `BorSem`s
      and neither entails the other - so the split has to be in the *ghost
      state*, which is exactly `∗_{k<j} Winv_k` and exactly `lvs_below`.
 
-     So `alerusGS` becomes a chain: `L` instances sharing the `inG`s and
+     So `verus_haltGS` becomes a chain: `L` instances sharing the `inG`s and
      differing in their ghost names, for everything that holds a formula -
      `llft_logicGS`, the box's and the shared borrow's `sinvGS`, `cnaGS`,
      `naInvGS`, `fracGuardGS`, the two `fracKeyGS`, the eternal and store
@@ -319,7 +319,7 @@ ones are large for reasons now understood rather than guessed at.
    restriction, not the family.**  Drop the `⌜Deriv ⊤ δ⌝`:
 
    ```coq
-   st_incl κ κ' := □ ∀ δ, @[κ] &&{alerus_WGuard_at δ}&&> @[κ']
+   st_incl κ κ' := □ ∀ δ, @[κ] &&{verus_halt_WGuard_at δ}&&> @[κ']
    ```
 
    mentions no `Deriv`, so `Jsem` may be defined from it, and nothing is
@@ -359,10 +359,10 @@ ones are large for reasons now understood rather than guessed at.
    derivability assertions, because an invariant token names the formula
    it holds - and `subty_ref` is then three lines of transitivity.
 
-   It is built over `nola.lrust`, not `nola.alerus.lang`, for a reason the
+   It is built over `nola.lrust`, not `nola.verus_halt.lang`, for a reason the
    stratification is about: the thesis keeps the heap in the **state
    interpretation** and only the invariants in `Winv`, and the port's own
-   language keeps guards over `alerus_WGuard` in the heap's read and write
+   language keeps guards over `verus_halt_WGuard` in the heap's read and write
    banks.  Separating them is the point, so the demonstration uses the
    language in which they are already separate.
 
@@ -426,24 +426,24 @@ ones are large for reasons now understood rather than guessed at.
    `llft_logicGpreS` plus three gnames, `naInvGS` is `sinvGpreS` plus one,
    `cnaGS`, `fracGuardGS`, `fracKeyGS` and `sinvGS` likewise.  `L`
    instances can be allocated from one `Σ` today; `soundness.v`'s
-   `alerus_wsat_alloc` is already the one-level case of it.
+   `verus_halt_wsat_alloc` is already the one-level case of it.
 
-   And of what `alerus_wsat` and `alerus_WGuard` contain, these carry the
+   And of what `verus_halt_wsat` and `verus_halt_WGuard` contain, these carry the
    interpretation and so have to be levelled:
 
    | carries the interpretation | does not |
    |---|---|
-   | `shr_wsat`, `box_wsat bor_sem`, `llft_inv_main`, `cna_wsat … bor_sem`, `na_inv_wsat … bor_sem`, `frac_wsat bor_sem`, `alerus_store_wsat` | `eternal_wsat`, the two `frac_key_wsat`s, `send_wsat` |
+   | `shr_wsat`, `box_wsat bor_sem`, `llft_inv_main`, `cna_wsat … bor_sem`, `na_inv_wsat … bor_sem`, `frac_wsat bor_sem`, `verus_halt_store_wsat` | `eternal_wsat`, the two `frac_key_wsat`s, `send_wsat` |
 
-   #### Done: step 1, `alerusGS_at` and `∗_{k<j} Winv_k`
+   #### Done: step 1, `verus_haltGS_at` and `∗_{k<j} Winv_k`
 
    `typing/level_ctx.v` builds the levelled package at the port's own
-   world satisfaction: `alerusNames` (one level's ghost names, each a bare
-   `gname` or a `_pre` class plus `gname`s), `alerusGS_of`,
-   `alerus_names_alloc`, the family `alerus_wsats`, `alerus_wsat_below`
-   (the thesis's `∗_{k<j} Winv_k`) and `ty-lev` as `twpw_alerus_le`.  As
+   world satisfaction: `verus_haltNames` (one level's ghost names, each a bare
+   `gname` or a `_pre` class plus `gname`s), `verus_haltGS_of`,
+   `verus_halt_names_alloc`, the family `verus_halt_wsats`, `verus_halt_wsat_below`
+   (the thesis's `∗_{k<j} Winv_k`) and `ty-lev` as `twpw_verus_halt_le`.  As
    many levels as asked for come out of one `Σ`; `typing/soundness.v` now
-   takes its `alerusGpreS` and its allocation from that file, since
+   takes its `verus_haltGpreS` and its allocation from that file, since
    allocating one level and allocating `L` of them are the same lemma.
 
    Two things the construction forces, both recorded in the file:
@@ -452,11 +452,11 @@ ones are large for reasons now understood rather than guessed at.
      It is `cna_lifetimes atomic_pool_name ∅`, whose `own` is at an `inG`
      of `cnaGpreS` and at a pool name from `uniqG`, so it mentions no
      `cna_name` and is literally the same proposition at every level.  It
-     therefore sits beside the family, as `alerus_wsat` has it sit beside
-     `alerus_wsat_core`.
+     therefore sits beside the family, as `verus_halt_wsat` has it sit beside
+     `verus_halt_wsat_core`.
    * **The weakest precondition's `invGS_gen` has to be the program
      logic's own.**  A `fupd` at a second `invGS_gen` is a different
-     proposition; the first `twpw_alerus_le` failed with a goal and a
+     proposition; the first `twpw_verus_halt_le` failed with a goal and a
      lemma that printed identically.
 
    #### Correction, twice over: `LtRa` *does* need splitting - and now it is split
@@ -753,7 +753,7 @@ ones are large for reasons now understood rather than guessed at.
    at `↑NllftUsr ∪ ↑NllftUsr2`, so those three carry that mask, and it
    walks out as a side condition on `E` through `llftl_bor_freeze`,
    `llftl_bor_pers{,_from_wand,_from_wand2}`, `llftl_bor_unnest`,
-   `llftl_reborrow{,_meet}` and `ctx.v`'s `dFullBor_exact`.  `NalerusE`
+   `llftl_reborrow{,_meet}` and `ctx.v`'s `dFullBor_exact`.  `Nverus_haltE`
    already contains both namespaces, so every caller in `typing/`
    discharges it from a hypothesis it already had.
 
@@ -856,8 +856,8 @@ ones are large for reasons now understood rather than guessed at.
    `bor_name` and `o_name` are exactly what a level varies.  They were
    fields of `llft_logicGS`, which made "the same lifetime logic with
    another level's borrows" unnameable; they are now `LlftBorNames`, a
-   class of its own, so `llft_wsatG` is a function of it.  `alerusGS`
-   carries the field and `alerusNames` carries it beside `an_llft`.
+   class of its own, so `llft_wsatG` is a function of it.  `verus_haltGS`
+   carries the field and `verus_haltNames` carries it beside `an_llft`.
 
    #### What is left: construction, not expressibility
 
@@ -875,18 +875,18 @@ ones are large for reasons now understood rather than guessed at.
       already happened.  What it needs of the state already there is
       four persistent facts, collected as `llft_shared_wits` and handed
       out by `llft_wsat_alloc`.
-   2. **Naming the two halves of `alerus_wsat_core`** - **done**,
-      `alerus_wsat_core_split`: `alerus_wsat_shared` (the lifetime
+   2. **Naming the two halves of `verus_halt_wsat_core`** - **done**,
+      `verus_halt_wsat_core_split`: `verus_halt_wsat_shared` (the lifetime
       tokens, the kill order, the minted atoms, the outlives relation)
-      beside `alerus_wsat_lvl` (everything that holds a formula or names
+      beside `verus_halt_wsat_lvl` (everything that holds a formula or names
       a borrow).  As with `llft_inv_main`, the flat definition stays and
       the split is a lemma, because every rule in `typing/` destructures
       the flat form.
 
    #### What is left, and a correction to the shape of it
 
-   Hoisting `an_llft` out of `alerusNames` and rebuilding
-   `alerus_wsat_below` as one shared copy beside `∗_{k<j} Wbor_k` is now
+   Hoisting `an_llft` out of `verus_haltNames` and rebuilding
+   `verus_halt_wsat_below` as one shared copy beside `∗_{k<j} Wbor_k` is now
    a change confined to `typing/level_ctx.v` and `soundness.v` - except
    for one thing, which scoping it turned up and which is sharper than
    what is written above.
@@ -968,15 +968,15 @@ ones are large for reasons now understood rather than guessed at.
    because the cheap alternative is tempting and `strat.v` is what rules
    it out.
 
-   The cheap design: keep **one** `alerus_wsat` at `⟦⟧ᶜ_L`, and put the
+   The cheap design: keep **one** `verus_halt_wsat` at `⟦⟧ᶜ_L`, and put the
    levelled part beside it as `lvs_below γs (λ k, ⟦⟧ᶜ_k) j`, which
    `typing/levels.v` already builds.  A body at level `j` would then run
-   under `alerus_wsat ∗ lvs_below γs _ j`.
+   under `verus_halt_wsat ∗ lvs_below γs _ j`.
 
    It is unsound, and Landin's knot is the counterexample.  Take
    `f : fn →ⱼ` and store it in an ordinary borrow.  The borrow's content
    is interpreted at `⟦⟧ᶜ_L`, which interprets `fn →ⱼ` for every `j < L`;
-   so `f`'s own body, running at level `j` and holding `alerus_wsat`, can
+   so `f`'s own body, running at level `j` and holding `verus_halt_wsat`, can
    open that borrow, read `f` back, and call it - because calling
    `fn →ⱼ` asks for `lvs_below … j`, which the body has.  The knot
    closes.
@@ -995,14 +995,14 @@ ones are large for reasons now understood rather than guessed at.
 
    ### The remaining order of work
 
-   1. **The ghost state** - done, `typing/level_ctx.v`: `alerusGS_of`
-      (the port's `alerusGS_at`) and `alerus_wsat_below`.  One thing it
-      still gets wrong on purpose: `alerusNames` carries a whole
+   1. **The ghost state** - done, `typing/level_ctx.v`: `verus_haltGS_of`
+      (the port's `verus_haltGS_at`) and `verus_halt_wsat_below`.  One thing it
+      still gets wrong on purpose: `verus_haltNames` carries a whole
       `llft_logicGS`, so each level has its own *lifetime tokens*.  The
       design wants `llft_name`, `d_name`, `log_name`, `mint_name`,
       `oset_name` and `osub_name` shared and only `bor_name`/`o_name`
       varying.  Those two are now `LlftBorNames`, a class of their own,
-      and `alerusNames` carries it - so the split is *expressible*; what
+      and `verus_haltNames` carries it - so the split is *expressible*; what
       is left is the two construction items under step 4.
    2. **`LtRa`'s two halves on two ghost names** - done, so that
       `bor_name` can vary with the level while `llft_name` does not.
@@ -1030,7 +1030,7 @@ ones are large for reasons now understood rather than guessed at.
       and `typed_body` is the instance at the ambient world, so all 162
       of its use sites across `typing/` are unchanged.  `≤-→` is
       `typed_body_at_wsat` - one `twpw_incl_fupd` - and
-      `typed_body_lv_le` is that over `alerus_wsat_below_le`.  Nothing
+      `typed_body_lv_le` is that over `verus_halt_wsat_below_le`.  Nothing
       else is needed for it: no induction on the level, no condition on
       the context's types, nothing about the interpretation, because the
       family is built so that `below j` is literally a conjunct of
@@ -1056,11 +1056,11 @@ ones are large for reasons now understood rather than guessed at.
       interpreted at *that level's* ghost state, and that is step 4's
       two construction items, not this one.  So the useful order is:
       finish building the family of levels, then give `typed_body` its
-      `alerus_wsat_below ... j`, and let the formers' levels fall out of
+      `verus_halt_wsat_below ... j`, and let the formers' levels fall out of
       what that forces.  Adding the field first buys a hundred edits and
       no theorem.
 
-      `twpw_alerus_le` and `alerus_wsat_below_le` (`typing/level_ctx.v`)
+      `twpw_verus_halt_le` and `verus_halt_wsat_below_le` (`typing/level_ctx.v`)
       are already proved, so `ty-lev` itself costs nothing when the time
       comes.
    6. **`fn_fml`'s judgment carrying its execution level** - the shape of
@@ -1098,11 +1098,11 @@ ones are large for reasons now understood rather than guessed at.
       the missing direction `fn_body ⊢ ⌜⊢ fn_body⌝` is false.
 
       **Where the soundness actually sits**, which is the part worth
-      carrying forward.  With `Wlv := λ _, alerus_wsat` the level does no
+      carrying forward.  With `Wlv := λ _, verus_halt_wsat` the level does no
       work and that introduction rule is far too permissive: the knot's
       body - read a function out of the slot holding you and call it - is
       provable as a tautology under the slot's declared type, so a
-      diverging program would satisfy `alerus_type_soundness`.  Totality
+      diverging program would satisfy `verus_halt_type_soundness`.  Totality
       does not rescue it: the knot's body needs no Löb step, because the
       callee's specification arrives as a hypothesis from the context
       rather than from an induction.  What rescues it is the level, and
@@ -1119,7 +1119,7 @@ ones are large for reasons now understood rather than guessed at.
       the level of the machinery they use, so that storing a function of
       execution level `j` in a slot of level `k` forces `j ≤ k` while
       opening it forces `> k`.  `ty_lev` is the field that records it,
-      `strat_bor.v` is the specification, and `alerus_wsat_below … j` -
+      `strat_bor.v` is the specification, and `verus_halt_wsat_below … j` -
       built on this branch - is the world satisfaction it indexes.
 
 3. **Recursive types** - done, in `typing/rec.v`; what follows is the
@@ -1307,7 +1307,7 @@ ones are large for reasons now understood rather than guessed at.
       ⟦Px⟧ᶜ`, which needs only an update and the world satisfaction, *not* a
       lifetime token - so the clients above can open it where they are.  The
       cost is that `dinvGS (cifOF CON) Σ` and `dinv_wsat ⟦⟧ᶜ` join
-      `alerusGS` and `alerus_wsat` (as they do `rust_haltGS`), a `storeCT`
+      `verus_haltGS` and `verus_halt_wsat` (as they do `rust_haltGS`), a `storeCT`
       joins the CON, and every `&shr` construction site becomes an
       allocation (`store_alloc_pers`, a fupd) rather than just supplying a
       formula.  That is a change to the soundness statement's world
@@ -1325,19 +1325,19 @@ ones are large for reasons now understood rather than guessed at.
    Route 2 is cheaper than it sounds in one respect: `storeCT`, `cif_store`,
    `cif_store_productive`, `storeCT_ecsem`, `storeJT` and `storeJT_dsem` are
    all already written in `nola/iris/store_deriv.v`, so what is new there is
-   one constructor in `alerusCONF` and one judgment in `alerusJUDGF` - both
+   one constructor in `verus_haltCONF` and one judgment in `verus_haltJUDGF` - both
    of which `inst.v` already extends six and four times over.
 
    It is *dearer* than it sounds in another.  `dinvGS FML Σ` is
-   definitionally `sinvGS FML Σ`, which `alerusGS` already carries - but
-   that family is taken: `nola/alerus/boxes.v` defines
+   definitionally `sinvGS FML Σ`, which `verus_haltGS` already carries - but
+   that family is taken: `nola/verus_halt/boxes.v` defines
    `box_wsat sm := sinv_wsat (λ γ Px, slice_body sm γ Px)` on it, and
-   `box_wsat bor_sem` is a conjunct of `alerus_WGuard`.  A `sinvGS` carries
+   `box_wsat bor_sem` is a conjunct of `verus_halt_WGuard`.  A `sinvGS` carries
    exactly one `sinv_name`, so the store needs a second family: a new
-   `alerus_store_name : gname` field beside `alerus_shr_name` and
-   `alerus_eternal_name`, a non-global `sinvGS` built from it, and care that
+   `verus_halt_store_name : gname` field beside `verus_halt_shr_name` and
+   `verus_halt_eternal_name`, a non-global `sinvGS` built from it, and care that
    `storeCT_ecsem` and `store_as_cif` resolve `dinvGS` to *that* one rather
-   than the box's.  Then `dinv_wsat bor_sem` joins `alerus_wsat`, whose
+   than the box's.  Then `dinv_wsat bor_sem` joins `verus_halt_wsat`, whose
    eight `WsatIncl` instances in `ctx.v` spell their remainders out and so
    all change, and the soundness proof allocates one more family.
 
@@ -1364,7 +1364,7 @@ ones are large for reasons now understood rather than guessed at.
 
    ### Done: [&shr{κ}] is productive
 
-   `typing/inst.v` now proves it, at the concrete `alerusCON` where the
+   `typing/inst.v` now proves it, at the concrete `verus_haltCON` where the
    `prost` lives:
 
    ```coq
@@ -1387,7 +1387,7 @@ ones are large for reasons now understood rather than guessed at.
    1. both of `&shr`'s indices bounded, so weakening is widening a bound;
    2. `pers_fml` (`cif`'s `□`), so persistence is structural;
    3. a store world satisfaction, as a second `sinvGS` family beside the
-      boxes', placed *inside* `alerus_WGuard`;
+      boxes', placed *inside* `verus_halt_WGuard`;
    4. `pstoreJT`/`pstoreCT` - `store_deriv.v`'s `cif_store` with the
       modality dropped, since the content is persistent;
    5. `ty_guard_proph` handing its conclusion out under `Wguard`, which is
@@ -1557,7 +1557,7 @@ ones are large for reasons now understood rather than guessed at.
    ```coq
    dinv_fml_guard_at (H : alt_sem sem) : sem (dinv_fml Px) ⊢
      (True &&{alt_WGuard sem}&&> sem Px)
-   eguard_fml_alloc : bor_sem Px =[alerus_WGuard]=∗
+   eguard_fml_alloc : bor_sem Px =[verus_halt_WGuard]=∗
      bor_sem (guard_fml empty_fml Px)
    ```
 
@@ -1692,17 +1692,17 @@ ones are large for reasons now understood rather than guessed at.
    dinv_tok_acc : dinv_tok Px -∗ dinv_wsat sm -∗ sm Px ∗ (sm Px -∗ dinv_wsat sm)
    ```
 
-   so, with `dinv_wsat` sitting inside `alerus_WGuard` (it already did, for
+   so, with `dinv_wsat` sitting inside `verus_halt_WGuard` (it already did, for
    `pstore`), **an invariant is a guard** - three lines, no axioms:
 
    ```coq
    Lemma dinv_fml_guard {Px} :
-     bor_sem (dinv_fml Px) ⊢ (True &&{alerus_WGuard}&&> bor_sem Px).
+     bor_sem (dinv_fml Px) ⊢ (True &&{verus_halt_WGuard}&&> bor_sem Px).
    Proof.
-     iIntros "#i". iApply (guard_trans (Q:=alerus_store_wsat)).
-     { iApply (guard_wsat_out (W':=alerus_store_wsat)). }
+     iIntros "#i". iApply (guard_trans (Q:=verus_halt_store_wsat)).
+     { iApply (guard_wsat_out (W':=verus_halt_store_wsat)). }
      iApply guard_intro. iIntros "!> W".
-     rewrite /alerus_store_wsat.
+     rewrite /verus_halt_store_wsat.
      by iApply (dinv_fml_acc_at (alt_sem_any alt_here) with "i W").
    Qed.
    ```
@@ -1801,7 +1801,7 @@ ones are large for reasons now understood rather than guessed at.
    realized by one persistent `dinv_tok (ts_taken γ ∨ Px)` beside the held
    `ts_full γ`, which is the only owned part - one judgment, because two
    conjuncts would ask for two realizations of one `Px`.
-   `nola/alerus/two_state.v`'s token is what makes the guard half go
+   `nola/verus_halt/two_state.v`'s token is what makes the guard half go
    through: `guard_cancel_or` wants the *non-separating*
    `ts_full γ ∧ ts_taken γ ⊢ False`, which a plain `Excl ()` cannot give,
    `P ∧ P ⊣⊢ P`.  `eown_fml_map_at` is (5.7) and `store_wand`.
@@ -1922,7 +1922,7 @@ ones are large for reasons now understood rather than guessed at.
 
 ## Rules this port had to learn
 
-Written out in `nola/alerus/typing/README.md`:
+Written out in `nola/verus_halt/typing/README.md`:
 
 * a judgment can be eliminated at a candidate the ambient interpretation
   maps into, and introduced at every candidate from interpretation-free
@@ -1931,7 +1931,7 @@ Written out in `nola/alerus/typing/README.md`:
   themselves, not of stored judgments (`fguardx`, `st_incl`, `st_iff`);
 * a thing whose semantics ignores the candidate can be a formula with a
   `⊣⊢` at every candidate (`cif_idxbor`, `cif_incl`);
-* a candidate is a *wrapped* `AlerusSem`: unwrapped it would shadow the
+* a candidate is a *wrapped* `VerusHaltSem`: unwrapped it would shadow the
   ambient instance under every binder;
 * `cif`'s own existential is capped at `cif_sel`'s universe, which is below
   the one `~~𝔄` lives in - hence `exs_fml` and its own constructor;

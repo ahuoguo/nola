@@ -160,7 +160,7 @@ Section deriv.
     *lower* execution level - one that is already constructed when this
     one is being defined - then it mentions no candidate either, and
     [der_const] gives both directions at once.  See
-    [nola/alerus/typing/function.v]'s [FnFml] and PLAN.md item 2. *)
+    [nola/verus_halt/typing/function.v]'s [FnFml] and PLAN.md item 2. *)
   Lemma Deriv_const `{!Deriv ih δ} {J} {Body : PROP} :
     (∀ δ', ⟦ J ⟧(δ') ⊣⊢ Body) → Body ⊢ δ J.
   Proof.

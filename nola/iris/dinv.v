@@ -54,7 +54,7 @@ Section dinv.
 
     Exposed so that a development which already owns a simple-invariant
     family can allocate this one with [sinv_wsat_alloc_name] - see
-    [nola/alerus/typing/ctx.v]'s [alerus_store_wsat]. *)
+    [nola/verus_halt/typing/ctx.v]'s [verus_halt_store_wsat]. *)
   Lemma dinv_wsat_sinv {sm} : dinv_wsat sm ⊣⊢ sinv_wsat (λ _, sm).
   Proof. by rewrite dinv_wsat_unseal. Qed.
 
