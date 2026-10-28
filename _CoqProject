@@ -188,6 +188,7 @@ nola/verus_halt/typing/tracked.v
 nola/verus_halt/typing/own.v
 nola/verus_halt/typing/ghost.v
 nola/verus_halt/typing/sum.v
+nola/verus_halt/typing/recursion.v
 nola/verus_halt/typing/function.v
 nola/verus_halt/typing/programs_util_own.v
 nola/verus_halt/typing/ra.v
@@ -214,6 +215,7 @@ nola/verus_halt/typing/own_rec.v
 nola/verus_halt/typing/inst.v
 nola/verus_halt/typing/fn_inst.v
 nola/verus_halt/typing/examples/basic.v
+nola/verus_halt/typing/examples/loop.v
 nola/verus_halt/typing/examples/assert.v
 nola/verus_halt/typing/examples/pcell_example.v
 nola/verus_halt/typing/examples/pcell_adequacy.v

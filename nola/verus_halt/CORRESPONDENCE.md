@@ -211,6 +211,31 @@ precondition, which neither λRust's operational semantics nor Iris's
 `twp` provides.  (`typing/spawn.v` itself contains no `iLöb`; it is the
 client of the one in `lang/lib/spawn.v`.)
 
+`cont.v`'s `type_cont`, the *recursive* continuation rule, is an `iLöb`
+upstream and is not ported as it stands; `type_cont_norec` is.  What a
+loop needs instead is `typing/recursion.v` (new, no upstream file):
+`type_pure`, `type_call_rec` - which is `nola/examples/rust_halt/core.v`'s
+`type_call`, the unfolding of a direct call to a `rec:` value - and
+`type_cont_wf`, `type_cont` with the Löb step replaced by
+`well_founded_induction` over a measure on the continuation's own
+argument refinements.  The design is `rust_halt`'s: that development has
+no function type and no continuation rule, and types Ackermann
+(`verify/ack.v`) by a nested `elim`.  It needs `type_real` to move a
+refinement to the Coq level; this port does not, because `~~𝔄` is already
+the prophecy-independent interpretation.
+
+`function.v`'s `type_fnrec`, the same `iLöb` for the function *type*, is
+`type_fnrec_wf` in the same file.  There the recursive occurrence is not
+a `rec:` value the body applies but an `f ◁ fn …` in its type context, so
+the measure sits in the *arrow*: the body is handed
+`fn j (fp_lt R fp x) spec`, the arrow with its parameter range cut down
+to `{y | R y x}`, and making the recursive call asks the caller for a
+proof that the argument descends.  `type_fnrec_top_wf` is it at the
+ambient level, and `type_fn_top_of_fnrec_wf` derives `type_fn_top` from
+it with `R` empty - upstream's own derivation of `type_fn` from
+`type_fnrec`.  No *recursive function* example is in the tree; the loop
+example exercises `type_cont_wf` only.
+
 `examples/`: `assert.v` (75 upstream, 94 here) and `pcell_example.v`
 (262 upstream, 275 here) are ported, unchanged apart from the arrow's
 execution level - the type reads `fn(∅; bool_ty) →{fn_lv_top} ()` and
@@ -243,7 +268,10 @@ over `sown_tyd`, the **stored** owning pointer with its pointee behind
 needs, and it is why `own.v`'s `own_resolve` is not the step case.  The
 file uses no function type at all.
 
-Two example files are new here.  `typing/examples/basic.v` (163) is the
+Three example files are new here.  `typing/examples/loop.v` is the first
+loop in the tree - `type_cont_wf` at work - and ends on
+`countdown_terminates : sn erased_step ([countdown], (∅, false))`.
+`typing/examples/basic.v` (163) is the
 first worked example in the tree.  `typing/examples/pcell_adequacy.v`
 (69) is upstream's own last line,
 `pcell_example_executes_without_getting_stuck`, which upstream gets from

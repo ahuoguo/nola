@@ -155,8 +155,9 @@ level stops constraining anything, and whatever blocks Landin's knot is
 then something else.  Here that something else is cruder and quite
 separate from the levels: a total `twp` has no Löb rule, so
 `⊢ fn_body …` has nothing to prove itself with - which is exactly why
-VerusBelt's `type_fnrec`, the rule proved by `iLöb`, is the one rule
-this port does not have.
+VerusBelt's `type_fnrec`, the rule proved by `iLöb`, is not ported as it
+stands, and neither was `type_cont`.  `typing/recursion.v` supplies
+well-founded forms of both; see the "Recursion" section below.
 
 #### The family's length, and a second correction
 
@@ -201,6 +202,63 @@ the thing to build, but `FnFml` no longer waits on it.
 File-by-file map to upstream: `nola/verus_halt/CORRESPONDENCE.md`.
 Performance traps, five of which present as a hang - one of them for
 over eight hours: `nola/verus_halt/PERF.md`.
+
+## Recursion, and why Löb is not missed
+
+`type_cont` and `type_fnrec` are the two rules VerusBelt proves by
+`iLöb`, and a *total* weakest precondition has no Löb rule.  That is not
+an accident of the port: Löb proves a loop safe without proving it
+terminates, which is exactly what totality may not do.
+
+Neither source has a rule to copy.  The thesis's Chapter 5 stratifies a
+*functional* language and never reaches loops or continuations.
+`nola/examples/rust_halt/` has lifetimes, borrows and total correctness
+and *no function type and no continuation rule at all* - it types the
+Ackermann function (`verify/ack.v`) by a nested `elim` on the arguments,
+with each recursive call unfolded by its own `type_call` and the
+induction hypothesis applied through `type_in`.  Recursion there is
+ordinary Coq well-founded recursion, and `type_real` is what moves a
+refinement to the Coq level so the induction can start.
+
+`typing/recursion.v` is that method at this port's judgment, and it needs
+no `type_real`: `~~𝔄` is already the *prophecy independent*
+interpretation, so a continuation's argument refinements are ordinary
+Coq values and a measure on them is an ordinary Coq function.
+
+* `type_pure` - a pure step of `typed_body_at`, which nothing in the port
+  had, since every other rule names a concrete expression former.
+* `type_call_rec` - the unfolding of a direct call to a `rec:` value;
+  `rust_halt`'s `type_call`.
+* `type_cont_wf` - `type_cont` with `iLöb` replaced by
+  `well_founded_induction`.  `cont_at μ trk a` is what the loop body may
+  assume about its arguments, `cont_lt R μ trk a` what a jump must
+  establish, and the gap between them is one application of `R`.  The
+  body is handed the continuation at `cont_lt … a`, so every jump
+  descends.
+
+`typing/examples/loop.v` runs a countdown through it and ends on
+`countdown_terminates : sn erased_step ([countdown], (∅, false))` -
+a termination statement about a loop, which is the thing the Löb rule
+could not have given.  Change the decrement to `- #0` and the `lia` on
+the last line fails, so the measure is load bearing.
+
+* `type_fnrec_wf` - the same for the function *type*.  A function that
+  calls itself does so through its own arrow rather than by applying a
+  `rec:` value, so the measure cannot sit in the premise; it sits in the
+  arrow.  The body is handed `fn j (fp_lt R fp x) spec`, the arrow with
+  its parameter range cut down to `{y | R y x}`, so making the recursive
+  call asks the caller for a proof that the argument descends.
+  `type_fnrec_top_wf` is it at the ambient level, and
+  `type_fn_top_of_fnrec_wf` derives `type_fn_top` from it with `R` empty
+  - upstream's own derivation of `type_fn` from `type_fnrec`, and the
+  check that the premise is dischargeable.
+
+Of these only `type_cont_wf` rests on `Eq_rect_eq`; the rest are closed
+under the global context.
+
+What the tree does not have is a worked *recursive function* example:
+`typing/examples/loop.v` exercises `type_cont_wf`, not `type_fnrec_wf`.
+`rust_halt`'s Ackermann is what one would look like.
 
 ## Not ported
 
@@ -1246,7 +1304,10 @@ ones are large for reasons now understood rather than guessed at.
       premise is `⊢ fn_body …`, a closed Coq-level entailment, and a
       self-referential one has nothing to prove it with once `twp` has
       dropped Löb.  VerusBelt's `type_fnrec` is precisely the rule
-      proved by `iLöb`, and precisely the rule this port does not have.
+      proved by `iLöb`, and precisely the rule this port does not have -
+      until `typing/recursion.v`, which replaces it and `type_cont` with
+      their well-founded forms: the self-reference is at a *smaller*
+      argument, which a knot cannot use.
 
       So a degenerate `Wlv` costs **content**, not soundness: the level
       stops constraining anything and something cruder does the work.

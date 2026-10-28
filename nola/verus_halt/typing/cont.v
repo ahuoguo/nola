@@ -10,15 +10,23 @@
   resolution.  Later-free [resolve_tctx] is a plain update, so the [Skip] is
   just a step.
 
-  [type_cont], the *recursive* continuation rule, is **not** ported.  Its
-  proof is an [iLöb] over the continuation's own specification, and Löb
-  induction is unavailable for a total weakest precondition - that is exactly
-  the step-indexing a total WP gives up.  A recursive continuation is a loop,
-  and a terminating loop needs a decreasing measure, which VerusBelt's
-  judgment does not carry (it does not model Verus's [decreases] clauses
-  either; see the VerusBelt paper, §6).  [type_cont_norec], the
-  non-recursive rule, is ported and is what the let-continuation form in
-  straight-line code needs. *)
+  [type_cont], the *recursive* continuation rule, is **not** ported as it
+  stands.  Its proof is an [iLöb] over the continuation's own
+  specification, and Löb induction is unavailable for a total weakest
+  precondition - that is exactly the step-indexing a total WP gives up.  A
+  recursive continuation is a loop, and a terminating loop needs a
+  decreasing measure, which VerusBelt's judgment does not carry (it does
+  not model Verus's [decreases] clauses either; see the VerusBelt paper,
+  §6).  [type_cont_norec], the non-recursive rule, is ported and is what
+  the let-continuation form in straight-line code needs.
+
+  What a loop needs is in [typing/recursion.v]: [type_cont_wf] is
+  [type_cont] with the Löb step replaced by well-founded recursion over a
+  measure on the continuation's own arguments - the shape
+  [nola/examples/rust_halt/verify/ack.v] uses, since that development has
+  no continuation rule either and recurses at the Coq level.
+  [typing/examples/loop.v] runs a loop through it and proves the loop
+  terminates. *)
 
 From iris.proofmode Require Import proofmode.
 From nola.verus_halt.typing Require Import programs.
