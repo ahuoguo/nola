@@ -853,3 +853,27 @@ Proof.
   iModIntro. iExists (BorrowGS _ _ _ _ γ). rewrite borrow_wsat_unseal.
   iIntros (??) "$". iExists []. by iFrame.
 Qed.
+
+(** The [borrowGS] that reuses a [borrowGpreS]'s ghost functors and takes
+  its ghost name from [γ] *)
+Definition borrowGS_of `{!borrowGpreS FML Σ} (γ : gname) : borrowGS FML Σ :=
+  BorrowGS FML Σ _ _ γ.
+
+(** Allocate the ghost *name* of a [borrow_wsat], handing back the world
+  satisfaction as a function of the interpretation
+
+  [borrow_wsat_alloc] seals the name inside the [borrowGS] it returns, which
+  is enough when a development needs one borrowing machinery.  A development
+  that needs *several* independent ones - one per execution level, say - has
+  to mention the names in the very interpretation it then hands in, so the
+  names have to come out first.  This is [sinv_wsat_alloc_name]'s role for
+  simple invariants. *)
+Lemma borrow_wsat_alloc_name `{!borrowGpreS FML Σ} :
+  ⊢ |==> ∃ γ : gname, ∀ M sm, internal_ne sm -∗
+    borrow_wsat (borrowGS0 := borrowGS_of γ) M sm.
+Proof.
+  iMod (own_alloc (● ∅ : borrowRF_def _ $ri _)) as (γ) "●";
+    [by apply auth_auth_valid|].
+  iModIntro. iExists γ. rewrite borrow_wsat_unseal.
+  iIntros (??) "$". iExists []. by iFrame.
+Qed.
