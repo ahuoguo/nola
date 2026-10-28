@@ -35,19 +35,26 @@
 
   ** What this model is, exactly
 
-  The one-level family: [ns = [n]] for the ambient names [n], hence
-  [fn_lv_top = 1] and two callable arrow levels, [j = 1] and [j = 0].
+  Two models.  [fnFml_one_level] is the one-level family - [ns = [n]]
+  for the ambient names [n], hence [fn_lv_top = 1] and two callable
+  arrow levels, [j = 1] and [j = 0].  [fnFml_levels] at the end of this
+  file is the family at its full length.
 
-  [fn_lv_top] cannot be larger, and the reason is worth stating because
-  it is the whole of what is still missing.  [fn_wsat_top] forces the
+  [fn_lv_top] used to be stuck at 1, and the reason is worth recording
+  because what fixed it is one conjunct.  [fn_wsat_top] forces the
   family's top to be the *ambient* [verus_halt_wsat], and
-  [verus_halt_wsat] is one level's own machinery - [llft_wsat], the
-  box, the invariants, the store, at one [verus_haltNames].  A family
-  of length [L+1] has [verus_halt_wsat_below … (L+1)] equal to the
-  shared half beside [L+1] distinct level halves, which is not
-  [verus_halt_wsat] at any single level's names.  So the levels a
-  typing derivation can see are bounded by what the *ambient* ghost
-  state is, and that is one.
+  [verus_halt_wsat] was one level's own machinery - [llft_wsat], the
+  box, the invariants, the store, at one [verus_haltNames].  A family of
+  length [L] has top [verus_halt_shared ∗ ∗_{k<L} Wbor_k], which is not
+  one level's at any names, and no frame-preserving step makes up the
+  difference: the lower levels have to exist before the body runs and
+  nothing creates them.
+
+  So the ambient world gained somewhere to put them -
+  [verus_haltGS]'s [verus_halt_Wx], which [verus_haltGS_of] sets to
+  [emp] and [verus_haltGS_of_lv] fills.  Nothing inside
+  [verus_halt_wsat_core] mentions it, so a level's own package is still
+  a function of its names alone and the levels stay non-circular.
 
   The two levels differ exactly as the thesis says they should.
 
@@ -67,7 +74,8 @@
   ** What it does not settle
 
   The level is a real distinction here but it is not yet load-bearing,
-  and the reason is not in this file.  A level-[j] arrow has
+  and the reason is not in this file - nor, any more, is it the length
+  of the family.  A level-[j] arrow has
   [ty_lev = S j] ([typing/function.v]'s [fn_ty_lev]), and the
   discipline wants a slot holding it to be at machinery level [≥ S j],
   so that opening the slot needs execution level [> j] and a level-[j]
@@ -116,8 +124,10 @@ Section fn_inst.
 
   Lemma fn_Wlv_top : verus_halt_wsat ⊣⊢ fn_Wlv 1.
   Proof.
-    rewrite /fn_Wlv /verus_halt_wsat_below /verus_halt_shared /=
-      bi.sep_emp /verus_halt_wsat verus_halt_wsat_core_split. done.
+    rewrite /fn_Wlv /verus_halt_wsat_below /verus_halt_shared
+      /verus_halt_wsat verus_halt_wsat_core_split /=. iSplit.
+    - iIntros "[[A B] [C _]]". iFrame.
+    - iIntros "[[A [B _]] C]". iFrame.
   Qed.
   Lemma fn_Wlv_acc {j} : (j ≤ 1)%nat →
     ⊢ □ (fn_Wlv 1 ={∅}=∗ fn_Wlv j ∗ (fn_Wlv j ={∅}=∗ fn_Wlv 1)).
@@ -163,5 +173,188 @@ Section fn_inst.
 
 End fn_inst.
 
-(** The model rests on nothing but what [typing/inst.v]'s own theorems do. *)
+(** * The model at the family's full length
+
+  The one above has [fn_lv_top = 1], and its header says why: [FnFml]'s
+  [fn_wsat_top] makes the family's top the *ambient* [verus_halt_wsat],
+  and [verus_halt_wsat] used to be one level's machinery.  A family of
+  length [L] has top [verus_halt_shared ∗ ∗_{k<L} Wbor_k], which is not
+  one level's at any names, and no frame-preserving step makes up the
+  difference: the lower levels have to exist before the body runs and
+  nothing creates them.
+
+  So the ambient world got a conjunct for them - [verus_haltGS]'s
+  [verus_halt_Wx], which [verus_haltGS_of] sets to [emp] and
+  [verus_haltGS_of_lv] fills.  Here it is filled, and [fn_lv_top] is the
+  family's length.
+
+  The ambient names are the **bottom** level's, which is what makes the
+  shared half line up on both sides of [fnlv_Wlv_top]:
+  [verus_halt_shared] is pinned to the bottom ([typing/level_ctx.v]),
+  because [llft_other_shared] holds the outlives guards and an [fguard]
+  is taken over *a* level's [llft_wsatG] - and level 0's machinery is in
+  [∗_{k<j} Wbor_k] for every [j ≥ 1], so a guard stored there is
+  openable at every execution level a body can be at.
+
+  What this still does **not** buy is the level being load-bearing, and
+  that is a third thing, named in [fn_inst]'s header above: this port's
+  borrow formers record a slot's level as its *pointee's*, so
+  [knot_not_typable] has no premise to be discharged from.
+  [typing/strat_bor.v] is the same argument mechanized end to end over a
+  model that does index its slots by level. *)
+Section fn_inst_lv.
+  Context {Σ} `{!verus_haltGpreS (cifOF verus_haltCON) Σ,
+    !invGS_gen HasNoLc Σ}.
+  Context (hLlft : llft_logicGS Σ) (hGS : heapGS (cifOF verus_haltCON) Σ)
+    (hP : prophG Σ) (hU : uniqG Σ)
+    (n0 : verus_haltNames (CON:=verus_haltCON) (Σ:=Σ))
+    (ns' : list (verus_haltNames (CON:=verus_haltCON) (Σ:=Σ))).
+
+  Notation Pc := (verus_halt_lvl_const hLlft hGS hP hU).
+
+  (** The levels *above* the ambient one, which is level 0 *)
+  Definition fnlv_Wx : iProp Σ :=
+    [∗ list] k ↦ n ∈ ns', lvl_wsat_lvl (Pc (S k) n).
+
+  #[local] Instance fn_inst_lv_GS : verus_haltGS (cifOF verus_haltCON) Σ :=
+    verus_haltGS_of_lv hLlft hGS hP hU n0 fnlv_Wx.
+
+  (** The family.  It is [verus_halt_wsat_below]'s shape - one shared
+    half beside the level halves below [j] - written with **level 0 as
+    the ambient package** rather than as [Pc 0 n0]'s.  The two are the
+    same proposition, since the only difference between the two
+    [verus_haltGS]es is [verus_halt_Wx] and neither half projects it, but
+    they are not the same *term*, and leaving that to conversion costs
+    minutes where this costs nothing. *)
+  Definition fnlv_tail (j : nat) : iProp Σ :=
+    [∗ list] k ↦ n ∈ take j ns', lvl_wsat_lvl (Pc (S k) n).
+
+  Definition fnlv_lvls (j : nat) : iProp Σ :=
+    match j with
+    | 0 => emp
+    | S j' => verus_halt_wsat_lvl ∗ fnlv_tail j'
+    end.
+
+  Definition fnlv_Wlv (j : nat) : iProp Σ :=
+    (verus_halt_wsat_shared ∗ fnlv_lvls j) ∗ send_wsat.
+
+  Lemma fnlv_Wx_eq : verus_halt_Wx = fnlv_Wx.
+  Proof. reflexivity. Qed.
+
+  Lemma fnlv_tail_all : fnlv_tail (length ns') = fnlv_Wx.
+  Proof. by rewrite /fnlv_tail firstn_all. Qed.
+
+  Lemma fnlv_tail_le {j j'} : (j ≤ j')%nat →
+    fnlv_tail j' ⊣⊢ fnlv_tail j ∗
+      ([∗ list] k ↦ n ∈ drop j (take j' ns'),
+        lvl_wsat_lvl (Pc (S (length (take j ns') + k)) n)).
+  Proof.
+    move=> Hle. rewrite /fnlv_tail -{1}(take_drop j (take j' ns'))
+      big_sepL_app take_take Nat.min_l //.
+  Qed.
+
+  (** The family's top, as the three things that are allocated: level
+    0's core at the ambient package, [send_wsat], and the levels above.
+    [fnlv_names_alloc] below produces the first and the third. *)
+  Lemma fnlv_wsat_parts :
+    verus_halt_wsat ⊣⊢ verus_halt_wsat_core ∗ send_wsat ∗ fnlv_Wx.
+  Proof. by rewrite /verus_halt_wsat fnlv_Wx_eq. Qed.
+
+  Lemma fnlv_Wlv_top : verus_halt_wsat ⊣⊢ fnlv_Wlv (S (length ns')).
+  Proof.
+    rewrite /fnlv_Wlv /verus_halt_wsat verus_halt_wsat_core_split
+      fnlv_Wx_eq. cbn [fnlv_lvls]. rewrite fnlv_tail_all. iSplit.
+    - iIntros "[[A B] [C D]]". iFrame.
+    - iIntros "[[A [B D]] C]". iFrame.
+  Qed.
+
+  Lemma fnlv_Wlv_acc {j} : (j ≤ S (length ns'))%nat →
+    ⊢ □ (fnlv_Wlv (S (length ns')) ={∅}=∗
+         fnlv_Wlv j ∗ (fnlv_Wlv j ={∅}=∗ fnlv_Wlv (S (length ns')))).
+  Proof.
+    move=> Hle. rewrite /fnlv_Wlv. destruct j as [|j'].
+    { cbn [fnlv_lvls]. iIntros "!> [[S L] send] !>".
+      iSplitR "L"; [by iFrame "S send"|].
+      iIntros "[[S _] send] !>". iFrame "S L send". }
+    have Hle' : (j' ≤ length ns')%nat by lia.
+    cbn [fnlv_lvls]. rewrite (fnlv_tail_le Hle').
+    iIntros "!> [[S [L [T R]]] send] !>".
+    iSplitR "R"; [by iFrame "S L T send"|].
+    iIntros "[[S [L T]] send] !>". iFrame "S L T R send".
+  Qed.
+
+  Definition fnFml_levels : @FnFml (cifOF verus_haltCON) Σ _ := {|
+    fn_wsat_lv := fnlv_Wlv;
+    fn_lv_top := S (length ns');
+    fn_wsat_top := fnlv_Wlv_top;
+    fn_wsat_lv_acc j := @fnlv_Wlv_acc j;
+    fn_fml A 𝔄l 𝔅 ℭ j fp spec x := tfn_fml fnlv_Wlv j fp spec x;
+    fn_fml_elim sem H A 𝔄l 𝔅 ℭ j fp spec x := tfn_elim H fnlv_Wlv j fp spec x;
+    fn_fml_intro A 𝔄l 𝔅 ℭ j fp spec x := tfn_intro fnlv_Wlv j fp spec x;
+    fn_fml_pers sem H A 𝔄l 𝔅 ℭ j fp spec x := tfn_pers H fnlv_Wlv j fp spec x;
+    fn_fml_specialize sem H A B 𝔄l 𝔅 ℭ σ j fp spec x :=
+      tfn_specialize H σ fnlv_Wlv j fp spec x;
+  |}.
+
+  (** The family is a genuine one, and the two ends are the ones the
+    thesis names.  The bottom is the lifetime algebra's shared half
+    beside [send_wsat] and **nothing else** - no borrows, no box, no
+    shared-borrow family, no invariants, no store.  Each step up adds
+    exactly one level's borrow machinery. *)
+  Lemma fnlv_Wlv_0 :
+    fnlv_Wlv 0 ⊣⊢ verus_halt_wsat_shared ∗ send_wsat.
+  Proof.
+    rewrite /fnlv_Wlv. cbn [fnlv_lvls]. by rewrite bi.sep_emp.
+  Qed.
+
+  Lemma fnlv_Wlv_S_0 : fnlv_Wlv 1 ⊣⊢ fnlv_Wlv 0 ∗ verus_halt_wsat_lvl.
+  Proof.
+    rewrite fnlv_Wlv_0 /fnlv_Wlv. cbn [fnlv_lvls].
+    rewrite /fnlv_tail /= bi.sep_emp. iSplit.
+    - iIntros "[[A B] C]". iFrame.
+    - iIntros "[[A C] B]". iFrame.
+  Qed.
+
+  Lemma fnlv_Wlv_S j : (j < length ns')%nat →
+    fnlv_Wlv (S (S j)) ⊣⊢ fnlv_Wlv (S j) ∗
+      ([∗ list] k ↦ n ∈ drop j (take (S j) ns'),
+        lvl_wsat_lvl (Pc (S (length (take j ns') + k)) n)).
+  Proof.
+    move=> Hlt. rewrite /fnlv_Wlv. cbn [fnlv_lvls].
+    rewrite (fnlv_tail_le (Nat.le_succ_diag_r j)).
+    iSplit; [by iIntros "[[A [B [C D]]] E]"; iFrame
+            |by iIntros "[[[A [B C]] E] D]"; iFrame].
+  Qed.
+End fn_inst_lv.
+
+(** ** The levelled world, allocated
+
+  [verus_halt_names_alloc_lv] is what makes the bottom level's half land
+  at the **ambient** package rather than at [verus_haltGS_of … n0]: its
+  [Wx] is instantiated with [fnlv_Wx], which the further levels supply.
+  The two packages are the same proposition either way - neither half of
+  the world projects [verus_halt_Wx] - but they are not the same term,
+  and the conversion between them is not cheap. *)
+Lemma fnlv_names_alloc {Σ}
+  `{!verus_haltGpreS (cifOF verus_haltCON) Σ, !invGS_gen HasNoLc Σ}
+  (hGS : heapGS (cifOF verus_haltCON) Σ) (hP : prophG Σ) (hU : uniqG Σ) L :
+  ⊢ |==> ∃ (hLlft : llft_logicGS Σ) (n0 : verus_haltNames)
+    (ns' : list verus_haltNames), ⌜length ns' = L⌝ ∗
+    @verus_halt_wsat_core (cifOF verus_haltCON) Σ
+      (fn_inst_lv_GS hLlft hGS hP hU n0 ns') _ ∗
+    fnlv_Wx hLlft hGS hP hU ns'.
+Proof.
+  iMod verus_halt_names_alloc_lv as (hLlft n0) "[#Wits W0]".
+  iMod (verus_halt_names_more_list_alloc hGS hP hU hLlft L with "Wits")
+    as (ns' Hlen) "Wns".
+  iAssert (fnlv_Wx hLlft hGS hP hU ns') with "[Wns]" as "Wx".
+  { rewrite /fnlv_Wx. iApply (big_sepL_mono with "Wns")=> k n _ /=.
+    iIntros "W". iApply (names_wsat_lvl_of with "W"). }
+  iModIntro. iExists hLlft, n0, ns'. iSplitR; [done|]. iFrame "Wx".
+  iApply ("W0" $! hGS hP hU (fnlv_Wx hLlft hGS hP hU ns')).
+Qed.
+
+(** Both models rest on nothing but what [typing/inst.v]'s own theorems
+  do. *)
 Print Assumptions fnFml_one_level.
+Print Assumptions fnFml_levels.

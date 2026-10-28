@@ -203,6 +203,27 @@ Class verus_haltGS (FML : oFunctor) Σ : Type := VerusHaltGS {
     that [verus_halt_sinvGS] names, so the store gets a second one: [dinvGS] is
     definitionally [sinvGS], so this is just another [sinv_name]. *)
   verus_halt_store_name : gname;
+  (** The world satisfaction of the execution levels **above** this one.
+
+    [verus_halt_wsat] is what [typing/programs.v]'s [typed_body] runs
+    over, and it used to be exactly one level's machinery.  That is what
+    bounded [typing/fn_inst.v]'s [fn_lv_top] at 1: [FnFml]'s
+    [fn_wsat_top] says the family's top *is* the ambient world, a family
+    of length [L] has top [∗_{k<L} Winv_k], and no frame-preserving step
+    makes up the difference - the lower levels' machinery has to exist
+    before the body runs, and nothing creates it.
+
+    So the ambient world gets a conjunct for them.  It is a *field*
+    rather than a separate class so that every rule in [typing/] stays
+    parametric in it: a lemma proved with it resolved to [emp] would not
+    generalize.  [verus_haltGS_of] sets it to [emp], which is what every
+    level package and the single-level development use;
+    [verus_haltGS_of_lv] is the one that fills it.
+
+    Nothing inside [verus_halt_wsat_core] mentions it, which is what
+    keeps the levels from being circular: a level's own package
+    ([verus_halt_wsat_lvl]) is a function of its names alone. *)
+  verus_halt_Wx : iProp Σ;
 }.
 
 (** The store's [dinvGS], kept out of the instance database so that it never
@@ -419,7 +440,8 @@ Section verus_halt.
   Definition verus_halt_wsat_core : iProp Σ :=
     llft_wsat ∗ cna_wsat verus_halt_WGuard bor_sem ∗
     na_inv_wsat atomic_threadpool bor_sem.
-  Definition verus_halt_wsat : iProp Σ := verus_halt_wsat_core ∗ send_wsat.
+  Definition verus_halt_wsat : iProp Σ :=
+    verus_halt_wsat_core ∗ send_wsat ∗ verus_halt_Wx.
 
   (** *** The half held once, and the half held per execution level
 
@@ -552,14 +574,23 @@ Section verus_halt.
     explicitly rather than left to the structural instances, which would have
     to unfold [llft_wsat], [llft_wsatG] and the [LlftWG] projections. *)
   #[export] Instance wsat_incl_verus_halt_core :
-    WsatIncl verus_halt_wsat verus_halt_wsat_core send_wsat.
+    WsatIncl verus_halt_wsat verus_halt_wsat_core (send_wsat ∗ verus_halt_Wx).
   Proof. done. Qed.
   #[export] Instance wsat_incl_verus_halt_send :
-    WsatIncl verus_halt_wsat send_wsat verus_halt_wsat_core.
+    WsatIncl verus_halt_wsat send_wsat (verus_halt_wsat_core ∗ verus_halt_Wx).
   Proof.
     rewrite /WsatIncl /verus_halt_wsat. iSplit.
-    - iIntros "[A B]". iFrame.
-    - iIntros "[A B]". iFrame.
+    - iIntros "(A & B & C)". iFrame.
+    - iIntros "(A & B & C)". iFrame.
+  Qed.
+  (** The levels above this one.  This is the only instance the levelled
+    [FnFml] of [typing/fn_inst.v] needs beyond what was already here. *)
+  #[export] Instance wsat_incl_verus_halt_Wx :
+    WsatIncl verus_halt_wsat verus_halt_Wx (verus_halt_wsat_core ∗ send_wsat).
+  Proof.
+    rewrite /WsatIncl /verus_halt_wsat. iSplit.
+    - iIntros "(A & B & C)". iFrame.
+    - iIntros "(A & B & C)". iFrame.
   Qed.
   #[export] Instance wsat_incl_verus_halt_core_llft :
     WsatIncl verus_halt_wsat_core llft_wsat
@@ -568,11 +599,11 @@ Section verus_halt.
   #[export] Instance wsat_incl_verus_halt_llft :
     WsatIncl verus_halt_wsat llft_wsat
       ((cna_wsat verus_halt_WGuard bor_sem ∗
-        na_inv_wsat atomic_threadpool bor_sem) ∗ send_wsat).
+        na_inv_wsat atomic_threadpool bor_sem) ∗ (send_wsat ∗ verus_halt_Wx)).
   Proof.
     rewrite /WsatIncl /verus_halt_wsat /verus_halt_wsat_core. iSplit.
-    - iIntros "((A & B & C) & D)". iFrame.
-    - iIntros "(A & (B & C) & D)". iFrame.
+    - iIntros "((A & B & C) & D & E)". iFrame.
+    - iIntros "(A & (B & C) & D & E)". iFrame.
   Qed.
   #[export] Instance wsat_incl_verus_halt_core_guard :
     WsatIncl verus_halt_wsat_core verus_halt_WGuard
@@ -586,12 +617,12 @@ Section verus_halt.
   #[export] Instance wsat_incl_verus_halt_guard :
     WsatIncl verus_halt_wsat verus_halt_WGuard
       ((llft_inv_other ∗ cna_wsat verus_halt_WGuard bor_sem ∗
-        na_inv_wsat atomic_threadpool bor_sem) ∗ send_wsat).
+        na_inv_wsat atomic_threadpool bor_sem) ∗ (send_wsat ∗ verus_halt_Wx)).
   Proof.
     rewrite /WsatIncl /verus_halt_wsat /verus_halt_wsat_core /verus_halt_WGuard
       /llft_wsat. iSplit.
-    - iIntros "(([A B] & C & D) & E)". iFrame.
-    - iIntros "(A & (B & C & D) & E)". iFrame.
+    - iIntros "(([A B] & C & D) & E & F)". iFrame.
+    - iIntros "(A & (B & C & D) & E & F)". iFrame.
   Qed.
   #[export] Instance wsat_incl_verus_halt_core_cna :
     WsatIncl verus_halt_wsat_core (cna_wsat verus_halt_WGuard bor_sem ∗ verus_halt_WGuard)
@@ -603,12 +634,13 @@ Section verus_halt.
   Qed.
   #[export] Instance wsat_incl_verus_halt_cna :
     WsatIncl verus_halt_wsat (cna_wsat verus_halt_WGuard bor_sem ∗ verus_halt_WGuard)
-      ((llft_inv_other ∗ na_inv_wsat atomic_threadpool bor_sem) ∗ send_wsat).
+      ((llft_inv_other ∗ na_inv_wsat atomic_threadpool bor_sem) ∗
+        (send_wsat ∗ verus_halt_Wx)).
   Proof.
     rewrite /WsatIncl /verus_halt_wsat /verus_halt_wsat_core /verus_halt_WGuard
       /llft_wsat. iSplit.
-    - iIntros "(([A B] & C & D) & E)". iFrame.
-    - iIntros "((A & B) & (C & D) & E)". iFrame.
+    - iIntros "(([A B] & C & D) & E & F)". iFrame.
+    - iIntros "((A & B) & (C & D) & E & F)". iFrame.
   Qed.
   #[export] Instance wsat_incl_verus_halt_core_nainv :
     WsatIncl verus_halt_wsat_core (na_inv_wsat atomic_threadpool bor_sem)
@@ -620,11 +652,12 @@ Section verus_halt.
   Qed.
   #[export] Instance wsat_incl_verus_halt_nainv :
     WsatIncl verus_halt_wsat (na_inv_wsat atomic_threadpool bor_sem)
-      ((llft_wsat ∗ cna_wsat verus_halt_WGuard bor_sem) ∗ send_wsat).
+      ((llft_wsat ∗ cna_wsat verus_halt_WGuard bor_sem) ∗
+        (send_wsat ∗ verus_halt_Wx)).
   Proof.
     rewrite /WsatIncl /verus_halt_wsat /verus_halt_wsat_core. iSplit.
-    - iIntros "((A & B & C) & D)". iFrame.
-    - iIntros "(A & (B & C) & D)". iFrame.
+    - iIntros "((A & B & C) & D & E)". iFrame.
+    - iIntros "(A & (B & C) & D & E)". iFrame.
   Qed.
 
   (** [verus_halt_WG] and its parts sit inside [verus_halt_WGuard] *)

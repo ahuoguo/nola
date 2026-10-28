@@ -234,28 +234,47 @@ Section level.
 
   (** The port's [verus_haltGS_at]: one level's ghost state, with the shared
     parts - the heap, the prophecies, the unique borrows - handed in. *)
-  Definition verus_haltGS_of (hLlft : llft_logicGS Σ)
+  (** The general form, with the levels *above* this one supplied.
+    [verus_haltGS_of] is this at [emp], which is what every level
+    package and the single-level development use; the levelled [FnFml]
+    of [typing/fn_inst.v] is the one that fills it. *)
+  Definition verus_haltGS_of_lv (hLlft : llft_logicGS Σ)
       (hGS : heapGS (cifOF CON) Σ)
-      (hP : prophG Σ) (hU : uniqG Σ) (n : verus_haltNames)
+      (hP : prophG Σ) (hU : uniqG Σ) (n : verus_haltNames) (Wx : iProp Σ)
     : verus_haltGS (cifOF CON) Σ :=
     VerusHaltGS (cifOF CON) Σ _ hLlft (an_bor n) (an_sinv n) hGS
       (NaInvGS (cifOF CON) Σ (@sinvGS_pre _ _ (an_sinv n)) _ (an_naInv n))
       _ hP hU (an_cna n) (an_frac n) _ (an_llctx n) (an_lfts n) _
-      (an_shr n) (an_eternal n) (an_store n).
+      (an_shr n) (an_eternal n) (an_store n) Wx.
+
+  Definition verus_haltGS_of (hLlft : llft_logicGS Σ)
+      (hGS : heapGS (cifOF CON) Σ)
+      (hP : prophG Σ) (hU : uniqG Σ) (n : verus_haltNames)
+    : verus_haltGS (cifOF CON) Σ :=
+    verus_haltGS_of_lv hLlft hGS hP hU n emp.
 
   (** *** Allocating one level
 
     The names come out first and the interpretation goes in afterwards, for
     the reason the rest of this port records: [bor_sem] is [⟦⟧ᶜ(der)] and
     its [Csem] mentions the very ghost state being allocated. *)
-  Lemma verus_halt_names_alloc :
+  (** The [Wx]-general form.  Nothing in the proof mentions
+    [verus_halt_Wx] - the world's two halves do not project it - so the
+    field may as well be quantified, and quantifying it is what lets the
+    *levelled* model of [typing/fn_inst.v] have its bottom level's half
+    land at the **ambient** package rather than at
+    [verus_haltGS_of … n].  The two are the same proposition either way;
+    they are not the same term, and conversion between them is not
+    cheap. *)
+  Lemma verus_halt_names_alloc_lv :
     ⊢ |==> ∃ (hLlft : llft_logicGS Σ) (n : verus_haltNames),
       llft_shared_wits ∗ ∀ (hGS : heapGS (cifOF CON) Σ)
-      (hP : prophG Σ) (hU : uniqG Σ) (Cs : Csem CON JUDG Σ)
+      (hP : prophG Σ) (hU : uniqG Σ) (Wx : iProp Σ) (Cs : Csem CON JUDG Σ)
       (Js : Jsem JUDG (iProp Σ))
-      (CS : @typingCS CON JUDG Σ _ (verus_haltGS_of hLlft hGS hP hU n) _ Cs Js),
-      @verus_halt_wsat_core_at CON _ JUDG Σ (verus_haltGS_of hLlft hGS hP hU n) _
-        Cs Js CS.
+      (CS : @typingCS CON JUDG Σ _
+        (verus_haltGS_of_lv hLlft hGS hP hU n Wx) _ Cs Js),
+      @verus_halt_wsat_core_at CON _ JUDG Σ
+        (verus_haltGS_of_lv hLlft hGS hP hU n Wx) _ Cs Js CS.
   Proof.
     iMod (frac_key_wsat_alloc (K:=llctx)) as (Hllctx) "Wllctx".
     iMod (frac_key_wsat_alloc (K:=gmultiset lft)) as (Hlfts) "Wlfts".
@@ -274,7 +293,7 @@ Section level.
     iExists Hllft,
       (VerusHaltNames Hbor Hsinv γna Hcna Hfrac Hllctx Hlfts shr γe γst).
     iFrame "Wits".
-    iIntros (hGS hP hU Cs Js CS).
+    iIntros (hGS hP hU Wx Cs Js CS).
     rewrite /verus_halt_wsat_core_at /verus_halt_wsat_core.
     iSplitR "Wcna Wna"; last first.
     { iSplitL "Wcna"; first by iApply "Wcna".
@@ -287,6 +306,22 @@ Section level.
     iSplitL "Wlfts"; first iExact "Wlfts".
     rewrite /verus_halt_store_wsat dinv_wsat_sinv. iApply "Wstore".
     iIntros (?). iApply ne_internal_ne; try exact _.
+  Qed.
+
+  (** [verus_halt_Wx = emp] is the single-level development, and
+    [verus_haltGS_of] is [verus_haltGS_of_lv … emp] by definition. *)
+  Lemma verus_halt_names_alloc :
+    ⊢ |==> ∃ (hLlft : llft_logicGS Σ) (n : verus_haltNames),
+      llft_shared_wits ∗ ∀ (hGS : heapGS (cifOF CON) Σ)
+      (hP : prophG Σ) (hU : uniqG Σ) (Cs : Csem CON JUDG Σ)
+      (Js : Jsem JUDG (iProp Σ))
+      (CS : @typingCS CON JUDG Σ _ (verus_haltGS_of hLlft hGS hP hU n) _ Cs Js),
+      @verus_halt_wsat_core_at CON _ JUDG Σ (verus_haltGS_of hLlft hGS hP hU n) _
+        Cs Js CS.
+  Proof.
+    iMod verus_halt_names_alloc_lv as (hLlft n) "[Wits W]". iModIntro.
+    iExists hLlft, n. iFrame "Wits".
+    iIntros (hGS hP hU Cs Js CS). iApply ("W" $! hGS hP hU emp%I Cs Js CS).
   Qed.
 
   (** *** Allocating a *further* level

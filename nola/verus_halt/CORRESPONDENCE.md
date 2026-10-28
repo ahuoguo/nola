@@ -180,12 +180,12 @@ Eleven files are new here:
 | `model.v` (2031) | the concrete model: `FML := cifOF CON`, `bor_sem := ⟦⟧ᶜ(der)`, the five judgments - the fifth being `eownJT`, the owning pointer's capability - and the instances of the classes above |
 | `model_inst.v` (74) | the `typeG` bundle and the remaining formula-language classes |
 | `inst.v` (549) | a concrete `CON` and `JUDG` with their semantics, the two soundness theorems at them, and `verus_halt_lvl_const`/`verus_halt_levels_alloc` - the first family of execution levels anything in the tree supplies, so that `level_ctx.v`'s apparatus is not vacuous at the concrete model |
-| `rec.v` (1877) | recursive types by `profix`: a type's data as a `prost`, the laws split into an unconditional `Ty` and a depth-indexed `TyProphAt`, **two** guarded formers proved `Productive` - `&shr{κ}` and the owning pointer, the latter with its pointee behind `eown_fml`, so it is extractable as well (`sown_tyd_take`) and the list comes apart (`own_list_tyd_cons_take`) - `ty_rec` with both laws, `xsum2_tyd`/`unit_tyd` for the body, the two worked recursive types `ty_shr_list` and `ty_own_list`, and their subtyping: `tyd_incl_at` (`type_incl` with the depth exposed), a congruence per former, and `ty_rec_incl` by depth induction |
+| `rec.v` (2095) | recursive types by `profix`: a type's data as a `prost`, the laws split into an unconditional `Ty` and a depth-indexed `TyProphAt`, **two** guarded formers proved `Productive` - `&shr{κ}` and the owning pointer, the latter with its pointee behind `eown_fml`, so it is extractable as well (`sown_tyd_take`) and the list comes apart (`own_list_tyd_cons_take`) - `ty_rec` with both laws, `xsum2_tyd`/`unit_tyd` for the body, the two worked recursive types `ty_shr_list` and `ty_own_list`, and their subtyping: `tyd_incl_at` (`type_incl` with the depth exposed), a congruence per former, and `ty_rec_incl` by depth induction.  The same induction gives the *resolution*: `tyd_resolve_at` (`resolve` with the depth fixed rather than quantified), a congruence per former, and `ty_rec_resolve` - which is upstream's `fix_resolve`, proved there by COFE limit preservation |
 | `own_rec.v` (293) | the stored owning pointer as a `type`: `sown_ptr n ty`, whose data *is* `rec.v`'s `sown_tyd n (ty_d ty)`, with `own.v`'s three rules for it (`read_sown_copy`, `read_sown_move`, `write_sown`) and the bridge saying that a guarded recursion's hole is exactly one of these |
 | `levels.v` (261) | execution levels as *ghost names*, following the thesis's Chapter 5 but without its global maximum level: `lvs_names_alloc` (names first, interpretation after), `lvs_below` (the thesis's `∗_{k<j} Winv_k`), `lv_tok`/`lvs_below_acc`/`lvs_below_alloc` (a reference at level `k` is reachable from, and allocatable at, execution level `j > k`) and `twpw_lvs_le` (its `ty-lev`) |
 | `strat.v` (1034) | the thesis's **Chapter 5 case study**, mechanized over `nola.lrust`: leveled types with `ref°ₖ`, `→ⱼ` and (5.1)'s `listₖ`, the interpretation as a level-indexed family *and* a derivability-indexed one ((5.4) and (5.5) both), the typing rules, the subtyping rules including `≤-ref` **used coinductively**, Corollary 5.3, § 5.1's closing iteration example and four closed terminating programs.  Not part of the port - it is what settles what the port's `fn` would need, and it is axiom-free |
 | `strat_bor.v` (658) | **levelled borrows**: the question `strat.v` leaves open and that neither source answers - the thesis's Chapter 5 has no borrows, `rust_halt` has no function type.  One borrowing machinery per execution level over *one* lifetime algebra, `typed_call_borrowed` (a closure stored in a borrow, retrieved and called, with `j ≤ k < i` forced), `knot_not_typable`, and a closed terminating program.  Not part of the port - it is what justifies the `lifetime/ra.v` refactor, and it is axiom-free |
-| `fn_inst.v` (167) | the **stratified model of `FnFml`**, over `level_ctx.v`'s family with `ns = [n]` at the ambient names.  `fn_lv_top = 1`, so `j = 1` is the ambient level (`fn_Wlv 1 ⊣⊢ verus_halt_wsat`, an ordinary `typed_body`) and `j = 0` the stratified one, whose body gets `verus_halt_shared ∗ send_wsat` - the lifetime algebra's tokens, kill order, minted atoms and outlives relation - and nothing else (`fn_Wlv_0`).  Its header records why `fn_lv_top` cannot be larger, and what the borrow formers would have to record for it to be |
+| `fn_inst.v` (360) | **two stratified models of `FnFml`**, over `level_ctx.v`'s family.  `fnFml_one_level` takes `ns = [n]` at the ambient names: `fn_lv_top = 1`, so `j = 1` is the ambient level (`fn_Wlv 1 ⊣⊢ verus_halt_wsat`, an ordinary `typed_body`) and `j = 0` the stratified one, whose body gets `verus_halt_shared ∗ send_wsat` - the lifetime algebra's tokens, kill order, minted atoms and outlives relation - and nothing else (`fn_Wlv_0`).  `fnFml_levels` is the family at its **full length**, which `verus_haltGS`'s new `verus_halt_Wx` conjunct is what makes possible: `fn_wsat_top` needs the ambient world to *be* the family's top, and the ambient world now has room for the levels above the ambient one.  The ambient names are level 0, so the shared half is the same term on both sides.  `fnlv_names_alloc` allocates its world, which `verus_halt_names_alloc_lv` - `verus_halt_names_alloc` with `verus_halt_Wx` quantified, as its proof always was - is what makes land at the ambient package.  Its header records what the level still owes, and it is not the family's length |
 | `level_ctx.v` (685) | the port's **execution levels**, over *one* lifetime logic: `verus_haltNames` (a level's own names - its borrows, box, shared-borrow family, invariants, store - with `llft_logicGS` shared for the whole run), `verus_haltGS_of` (the thesis's `verus_haltGS_at`), `verus_halt_names_alloc` and `verus_halt_names_alloc_more` (a further level against the state already there), the family `verus_halt_wsats`, `verus_halt_wsat_below` (`∗_{k<j} Winv_k` beside one shared copy), `ty-lev` as `twpw_verus_halt_le`, `typed_body_lv_le` (the thesis's `≤-→` for the judgment), and `verus_halt_wsat_below_acc` - the port's `bors_below_acc`, by which a body at execution level `j` reaches level `k < j`'s machinery and gets back *level `k`'s* world satisfaction |
 
 Two upstream files are missing:
@@ -228,14 +228,20 @@ port's own `resolve_just`).  The nil/cons construction and
 destructuring - `own_list_tyd_nil`, `own_list_tyd_cons_take`,
 `own_list_tyd_cons_alloc` - have no upstream counterpart.
 
-Two differences are worth stating rather than glossing.  The port's list
-is over `sown_tyd`, the **stored** owning pointer with its pointee behind
-`eown_fml`, not over `box`: that is what buys the productivity `profix`
-needs.  And `list_resolve` is **not** ported - it is the one lemma that
-goes through `fix_resolve`, which upstream proves by COFE limit
-preservation; over `profix` the loop has to be turned by induction on
-the list value instead, since `profix_unfold` is an equation and closes
-the circle rather than opening it.  It uses no function type at all.
+`list_resolve` is `ty_own_list_resolve`.  Upstream gets it from
+`fix_resolve`, by COFE limit preservation - the resolution holds of every
+approximant and so of the limit.  There is no limit over `profix`:
+`profix_unfold` is an equation and closes the circle rather than opening
+it.  What turns the loop instead is the depth, exactly as for
+`ty_rec_incl`, and what the induction needs is a statement indexed by it
+- `tyd_resolve_at`, `resolve` with `d` fixed.  The step case is
+`sown_tyd_resolve`, the only former that moves the depth.
+
+One difference is worth stating rather than glossing: the port's list is
+over `sown_tyd`, the **stored** owning pointer with its pointee behind
+`eown_fml`, not over `box`.  That is what buys the productivity `profix`
+needs, and it is why `own.v`'s `own_resolve` is not the step case.  The
+file uses no function type at all.
 
 Two example files are new here.  `typing/examples/basic.v` (163) is the
 first worked example in the tree.  `typing/examples/pcell_adequacy.v`

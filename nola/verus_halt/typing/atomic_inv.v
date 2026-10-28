@@ -366,10 +366,14 @@ Section atomic_invariants.
     { iIntros "_ _ gho $ !>". iExists x, d. by iFrame "gho". }
     iIntros "LFT UNIQ gho W".
     iDestruct (wsat_split (W':=send_wsat) with "W") as "[lfts Wc]".
+    (* [verus_halt_wsat]'s remainder now carries the levels above this one
+      ([verus_halt_Wx]); [send_change_tid] runs over the core alone. *)
+    iDestruct "Wc" as "[Wc Wx]".
     iMod (@send_change_tid _ _ _ _ ty Hsend null_tid tid x d g True ∅
       with "LFT UNIQ lfts [] [//] gho Wc")
       as "(Wc & %x' & %off & gho & %Habs & lfts & _)".
     { iIntros (κ) "%Hin". exfalso. by apply (gmultiset_not_elem_of_empty κ). }
+    iCombine "Wc Wx" as "Wc".
     iDestruct (wsat_join (W:=verus_halt_wsat) with "lfts Wc") as "$".
     iModIntro. iExists x', (d + off). by iFrame "gho".
   Qed.

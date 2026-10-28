@@ -52,8 +52,10 @@ Section alloc.
     iMod (uniq_init ⊤) as (Huniq) "[#UNIQ Wsend]"; [done|].
     iModIntro. iExists (verus_haltGS_of Hllft hGS Hproph Huniq n).
     do 2 (iSplit; [done|]). iFrame "PROPH UNIQ". iIntros (????).
-    iSplit; [done|]. iSplitR "Wsend"; [|iExact "Wsend"].
-    by iApply "W".
+    iSplit; [done|]. iSplitR "Wsend"; [by iApply "W"|].
+    (* [verus_haltGS_of] sets [verus_halt_Wx] to [emp]: this development
+      is the single-level one. *)
+    by iFrame "Wsend".
   Qed.
 End alloc.
 

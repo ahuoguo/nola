@@ -40,6 +40,17 @@ Import FunPRNotation ProeqvNotation GuardNotation ModwNotation.
 
 Implicit Type 𝔄 : syn_type.
 
+(** A predicate holding of every element of a pointer list.
+
+  [prophecy/syn_type.v]'s [ptrlist] is the shape both lists share;
+  upstream's [lforall] is this, and it is what [own_list_tyd_resolve]'s
+  predicate transformer is built from. *)
+Fixpoint ptrlist_forall {L A} (Φ : A → Prop) (x : ptrlist L A) : Prop :=
+  match x with
+  | shrnil _ => True
+  | shrcons a _ r _ => Φ a ∧ ptrlist_forall Φ r
+  end.
+
 (** ** A type's data, and the laws, abstractly
 
   This section is in the same context as [typing/shr_bor.v] - an abstract
@@ -942,6 +953,124 @@ Section tyd.
     iIntros "(Hm & Hf & Ht & _)". by iFrame "Hm Hf Ht Hp".
   Qed.
 
+  (** ** Resolving a prophecy, at a fixed depth
+
+    [typing/type.v]'s [resolve] quantifies over the depth; a recursive
+    type's resolution has to *descend* on it, because the only thing that
+    moves the depth is [sown_tyd]'s own [⌜d' < d⌝].  So this is [resolve]
+    with [d] fixed rather than quantified - a refinement of it, not a new
+    notion - and [resolve_of_tyd_resolve] below puts the quantifier back.
+
+    Unlike [tyd_incl_at] this needs no quantification over candidate
+    interpretations: [resolve] is a statement about the *ambient* one, and
+    nothing in the induction asks for more. *)
+  Definition tyd_resolve_at {𝔄} (E : elctx) (L : llctx) (T : tydata 𝔄)
+      (Φ : ~~𝔄 → proph_asn → Prop) (d : nat) : Prop :=
+    ∀ γ q F x g tid, Nverus_haltE ⊆ F →
+      llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗ Ltok γ L q -∗
+      bor_sem (tyd_ghox T x d g tid) =[verus_halt_wsat]{F}=∗
+        ⟨π, Φ x π⟩ ∗ Ltok γ L q.
+
+  (** The resolution at every *lower* depth: what a guarded former
+    consumes, and what the fixpoint's induction hypothesis supplies.  This
+    is [tyd_incl_lt]'s counterpart, and it is a plain [Prop] because
+    [tyd_resolve_at] is. *)
+  Definition tyd_resolve_lt {𝔄} (E : elctx) (L : llctx) (T : tydata 𝔄)
+      (Φ : ~~𝔄 → proph_asn → Prop) (d : nat) : Prop :=
+    ∀ d', (d' < d)%nat → tyd_resolve_at E L T Φ d'.
+
+  (** It transports along a pointwise equivalence of the ghost data, which
+    is what [ty_rec_unfold] gives.  [tyd_incl_at_mono] is the same lemma
+    for the inclusion. *)
+  Lemma tyd_resolve_at_mono {𝔄} E L (T T' : tydata 𝔄) Φ d :
+    (∀ x dd g tid, tyd_ghox T x dd g tid ≡ tyd_ghox T' x dd g tid) →
+    tyd_resolve_at E L T Φ d → tyd_resolve_at E L T' Φ d.
+  Proof.
+    move=> Hg Rslv γ q F x g tid HF. rewrite -(Hg x d g tid).
+    exact (Rslv γ q F x g tid HF).
+  Qed.
+
+  (** ...and the bridge back to [resolve] *)
+  Lemma resolve_of_tyd_resolve {𝔄} E L (ty : type 𝔄) Φ :
+    (∀ d, tyd_resolve_at E L (ty_d ty) Φ d) → resolve E L ty Φ.
+  Proof. move=> Rslv γ q F x d g tid HF. exact (Rslv d γ q F x g tid HF). Qed.
+
+  (** *** The congruences, former by former
+
+    Each is [typing/*.v]'s own resolution rule with the record replaced by
+    its data and the depth exposed.  Only [sown_tyd_resolve] is
+    interesting: it is the one that takes its argument's resolution at a
+    *lower* depth, and so the one that lets the induction turn. *)
+  Lemma unit_tyd_resolve E L d :
+    tyd_resolve_at E L unit_tyd (const (const True)) d.
+  Proof.
+    move=> γ q F x g tid HF. iIntros "_ _ _ _ tok _ $ !>". iFrame "tok".
+    by iApply proph_obs_true.
+  Qed.
+
+  Lemma tyd_resolve_at_impl {𝔄} E L (T : tydata 𝔄) Φ Φ' d :
+    tyd_resolve_at E L T Φ d → (∀ a π, Φ a π → Φ' a π) →
+    tyd_resolve_at E L T Φ' d.
+  Proof.
+    move=> Rslv Imp γ q F x g tid HF.
+    iIntros "LFT PROPH UNIQ E tok T W".
+    iMod (Rslv with "LFT PROPH UNIQ E tok T W") as "($ & Obs & $)"; [done|].
+    iModIntro. iApply proph_obs_impl; [|done]=>/= ?. apply Imp.
+  Qed.
+
+  Lemma prod_tyd_resolve {𝔄 𝔅} E L (T : tydata 𝔄) (U : tydata 𝔅) Φ Ψ d :
+    tyd_resolve_at E L T Φ d → tyd_resolve_at E L U Ψ d →
+    tyd_resolve_at E L (prod_tyd T U) (λ x π, Φ x.1 π ∧ Ψ x.2 π) d.
+  Proof.
+    move=> RT RU γ q F x g tid HF.
+    iIntros "#LFT #PROPH #UNIQ #E tok A W". rewrite /= bor_sep_sem.
+    iDestruct "A" as "[A B]".
+    iMod (RT with "LFT PROPH UNIQ E tok A W") as "(W & ObsA & tok)"; [done|].
+    iMod (RU with "LFT PROPH UNIQ E tok B W") as "($ & ObsB & $)"; [done|].
+    iModIntro. iCombine "ObsA ObsB" as "Obs".
+    iApply (proph_obs_impl with "Obs")=>/= ?. tauto.
+  Qed.
+
+  Lemma xsum2_tyd_resolve {𝔄 𝔅} E L (T : tydata 𝔄) (U : tydata 𝔅) Φ Ψ d :
+    tyd_resolve_at E L T Φ d → tyd_resolve_at E L U Ψ d →
+    tyd_resolve_at E L (xsum2_tyd T U)
+      (λ x π, match x.1 with
+              | inl a => Φ a π | inr (inl b) => Ψ b π
+              | inr (inr e) => absurd e end) d.
+  Proof.
+    move=> RT RU γ q F x g tid HF.
+    iIntros "#LFT #PROPH #UNIQ #E tok A W". rewrite /=.
+    destruct x as [[a|[b|[]]] p]=>/=.
+    - iMod (RT with "LFT PROPH UNIQ E tok A W") as "($ & $ & $)"; [done|].
+      by iModIntro.
+    - iMod (RU with "LFT PROPH UNIQ E tok A W") as "($ & $ & $)"; [done|].
+      by iModIntro.
+  Qed.
+
+  Lemma mod_tyd_resolve {𝔄 𝔅} E L (f : 𝔄 →ₛ 𝔅) (fⁱ : 𝔅 →ₛ 𝔄) `{!Isoₛ f fⁱ}
+      (T : tydata 𝔄) Φ d :
+    tyd_resolve_at E L T Φ d →
+    tyd_resolve_at E L (mod_tyd f fⁱ T) (λ x π, Φ (fⁱ ~~$ₛ x) π) d.
+  Proof. move=> Rslv γ q F x g tid HF. exact (Rslv γ q F _ g tid HF). Qed.
+
+  (** The owning pointer, and the only step that moves the depth.  The
+    pointee sits behind [eown_fml], so it is reached the way
+    [sown_tyd_take] reaches it; what comes back is at some [d' < d], which
+    is exactly what [tyd_resolve_lt] covers. *)
+  Lemma sown_tyd_resolve {𝔄} E L n (T : tydata 𝔄) Φ d :
+    tyd_resolve_lt E L T Φ d →
+    tyd_resolve_at E L (sown_tyd n T) (λ x π, Φ (snd (snd x)) π) d.
+  Proof.
+    move=> Rslv γ q F x g tid HF.
+    iIntros "#LFT #PROPH #UNIQ #E tok A W".
+    iDestruct (sown_tyd_take n T x d g tid with "A") as "A'".
+    iDestruct (bupdw_incl (W:=verus_halt_wsat) with "A'") as "A''".
+    iMod ("A''" with "W") as "[W (_ & _ & %d' & %gg & %Hd' & _ & B)]".
+    iMod (Rslv d' Hd' with "LFT PROPH UNIQ E tok B W") as "($ & $ & $)";
+      [done|].
+    by iModIntro.
+  Qed.
+
 End tyd.
 
 (** ** The [prost], and the fixpoint
@@ -1195,6 +1324,26 @@ Section rec.
     iApply (HFG with "P"). iIntros "!>" (d' Hd'). by iApply (IH d' Hd').
   Qed.
 
+  (** The resolution survives the fixpoint the same way, and for the same
+    reason.  This is upstream's [fix_resolve], which it proves by COFE
+    limit preservation - the resolution holds of every approximant and so
+    of the limit.  There is no limit here: [profix_unfold] is an equation
+    and closes the circle rather than opening it, but a guarded former uses
+    its argument strictly below the depth it is asked about, so the loop
+    turns by well-founded induction on the depth, exactly as
+    [ty_rec_TyProphAt] and [ty_rec_incl] do. *)
+  Lemma ty_rec_resolve {𝔄} (F : tyd 𝔄 → tyd 𝔄) `{!Productive F} E L Φ :
+    (∀ T d, tyd_resolve_lt E L (tod T) Φ d →
+            tyd_resolve_at E L (tod (F T)) Φ d) →
+    ∀ d, tyd_resolve_at E L (tod (ty_rec F)) Φ d.
+  Proof.
+    move=> HF d. induction (lt_wf d) as [d _ IH].
+    have [/=_ [/=HgF _]] := ty_rec_unfold F.
+    apply (tyd_resolve_at_mono E L (tod (F (ty_rec F))) (tod (ty_rec F))).
+    { move=> x dd g tid. by rewrite (HgF x dd g tid). }
+    apply HF=> d' Hd'. by apply IH.
+  Qed.
+
   (** ** Putting it together
 
     A recursive type is [μ X. G (&shr{κ} X)] for a *structural* [G]: the
@@ -1301,6 +1450,14 @@ Section rec.
       is what makes a recursive type *destructurable*: the body is a
       structural former applied to [sown_tyd], and [sown_tyd_take] moves
       the pointee out of that. *)
+    (** Resolution, with the [Productive'] instance passed rather than
+      re-inferred - the same reason [ty_rec_own_Ty] exists. *)
+    Lemma ty_rec_own_resolve E L Φ :
+      (∀ U d, tyd_resolve_lt E L (tod U) Φ d →
+              tyd_resolve_at E L (tod (G (sown_tyd n U))) Φ d) →
+      ∀ d, tyd_resolve_at E L (tod ty_rec_own) Φ d.
+    Proof. exact (ty_rec_resolve (λ T : tyd 𝔄, G (sown_tyd n T)) E L Φ). Qed.
+
     Lemma ty_rec_own_unfold : ty_rec_own ≡ G (sown_tyd n ty_rec_own).
     Proof. exact (ty_rec_unfold (λ T : tyd 𝔄, G (sown_tyd n T))). Qed.
 
@@ -1594,6 +1751,67 @@ Print Assumptions ty_rec_TyProphAt.
         ∃ d' gg, ⌜(d' < d)%nat⌝ ∗ ⌜(gg ≤ g)%nat⌝ ∗
           ty_gho (ty_own_list lfts E HT HP) r d' gg tid.
     Proof. exact (own_list_tyd_cons_take a lγ r p d g tid). Qed.
+
+    (** *** Resolving the list's prophecies
+
+      Upstream's [list_resolve], and the one lemma of
+      [typing/examples/list.v] this port was missing.  Upstream proves it
+      with [fix_resolve], by COFE limit preservation; here it is
+      [ty_rec_resolve], a well-founded induction on the depth, and the
+      body is a congruence former by former - which is what
+      [tyd_resolve_at] was introduced for.
+
+      Worth noting the list is over [sown_tyd], the *stored* owning
+      pointer, not [box]: that is what buys the productivity, and it is a
+      real difference from upstream rather than a reformulation, so
+      [typing/own.v]'s [own_resolve] is not the step case -
+      [sown_tyd_resolve] is. *)
+    Lemma own_list_gen_resolve E L Φ (U : tyd (at_loctokₛ (own_listₛ 𝔄))) d :
+      tyd_resolve_at E L (tod T) Φ d →
+      tyd_resolve_at E L (tod U)
+        (λ x π, ptrlist_forall (λ a, Φ a π) (snd (snd x))) d →
+      tyd_resolve_at E L (tod (own_list_gen U))
+        (λ x π, ptrlist_forall (λ a, Φ a π) x) d.
+    Proof.
+      move=> RT RU γ q F x g tid HF.
+      iIntros "#LFT #PROPH #UNIQ #E tok A W".
+      (* The general congruences above would compose to this, but going
+        through [mod_tyd]'s [unfoldownₛ] makes the elaborator unfold
+        [indep_interp_of_syn_type]; the two [eq_refl] lemmas say the same
+        thing directly. *)
+      destruct x as [p|a lγ r p].
+      - iModIntro. iFrame "W tok". by iApply proph_obs_true.
+      - rewrite own_list_gen_cons_ghox bor_sep_sem.
+        iDestruct "A" as "[A B]".
+        iMod (RT with "LFT PROPH UNIQ E tok A W") as "(W & ObsA & tok)";
+          [done|].
+        iMod (RU with "LFT PROPH UNIQ E tok B W") as "($ & ObsB & $)";
+          [done|].
+        iModIntro. iCombine "ObsA ObsB" as "Obs".
+        iApply (proph_obs_impl with "Obs")=> ?. exact id.
+    Qed.
+
+    Lemma own_list_tyd_resolve E L Φ :
+      (∀ d, tyd_resolve_at E L (tod T) Φ d) →
+      ∀ d, tyd_resolve_at E L (tod own_list_tyd)
+        (λ x π, ptrlist_forall (λ a, Φ a π) x) d.
+    Proof.
+      move=> RT. rewrite /own_list_tyd. apply ty_rec_own_resolve=> U d Hlt.
+      exact (own_list_gen_resolve E L Φ (sown_tyd n U) d (RT d)
+        (sown_tyd_resolve E L n (tod U) _ d Hlt)).
+    Qed.
+
+    (** ...and at the level of [type], which is what a typing rule sees.
+      This is upstream's [list_resolve] exactly. *)
+    Lemma ty_own_list_resolve lfts E0 HT HP E L Φ :
+      resolve E L (type_of_tyd lfts E0 (tod T) HT HP) Φ →
+      resolve E L (ty_own_list lfts E0 HT HP)
+        (λ x π, ptrlist_forall (λ a, Φ a π) x).
+    Proof.
+      move=> RT. apply resolve_of_tyd_resolve.
+      apply own_list_tyd_resolve=> d γ q F x g tid HF.
+      exact (RT γ q F x d g tid HF).
+    Qed.
 
     Lemma ty_own_list_nil lfts E HT HP p d g tid :
       ⊢ ty_gho (ty_own_list lfts E HT HP) (shrnil p) d g tid.

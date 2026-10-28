@@ -158,19 +158,45 @@ separate from the levels: a total `twp` has no Löb rule, so
 VerusBelt's `type_fnrec`, the rule proved by `iLöb`, is the one rule
 this port does not have.
 
+#### The family's length, and a second correction
+
+`fn_inst.v`'s `fn_lv_top` used to be 1, and this plan used to blame the
+borrow formers for it.  That was wrong, and the real reason was one
+conjunct.  `fn_wsat_top` says the family's top *is* the ambient
+`verus_halt_wsat`; `verus_halt_wsat` was one level's machinery; a family
+of length `L` has top `verus_halt_shared ∗ ∗_{k<L} Wbor_k`, and no
+frame-preserving step makes up the difference, because the lower levels
+have to exist before the body runs and nothing creates them.
+
+So `verus_haltGS` gained `verus_halt_Wx`, a conjunct of
+`verus_halt_wsat` for the levels above the ambient one.
+`verus_haltGS_of` sets it to `emp`, which is what every level package
+and the single-level development use; `verus_haltGS_of_lv` fills it;
+nothing inside `verus_halt_wsat_core` mentions it, so a level's own
+package stays a function of its names alone and the levels stay
+non-circular.  `fn_inst.v`'s `fnFml_levels` is the model at the family's
+full length, with the ambient names as level 0.
+
+The world is allocated too.  `verus_halt_names_alloc_lv` is
+`verus_halt_names_alloc` with `verus_halt_Wx` universally quantified -
+which its proof always was, since it never mentions the field - so the
+bottom level's half lands at the *ambient* package rather than at
+`verus_haltGS_of … n0`; `fnlv_names_alloc` assembles it with the further
+levels from `verus_halt_names_alloc_more`, and `fnlv_wsat_parts` says
+that beside `send_wsat` those are the whole of `verus_halt_wsat`.
+
 #### What the level still owes
 
-The execution level is now real, inhabited and threaded through the call
-rules, and it is still not load-bearing, for a reason that is not in
-`FnFml`.  The borrow formers do not record the level of the machinery
+One thing, and it is not the family's length.
+
+The borrow formers still do not record the level of the machinery
 they use: `typing/own.v`, `own_rec.v`, `uniq_bor.v` and `shr_bor.v` all
 set a slot's level to its *pointee's*, and `verus_halt_wsat_lvl` is one
 monolithic block per level.  So `knot_not_typable`'s premise is never
-discharged from anything, and `fn_inst.v`'s `fn_lv_top` is 1 rather
-than the family's length.  Recording that level is what would make the
+discharged from anything.  Recording that level is what would make the
 level-indexed family - level `k`'s `Csem` reading an arrow of level
-`j < k` at `P j`'s interpretation - buy something; that family is
-still the thing to build, but `FnFml` no longer waits on it.
+`j < k` at `P j`'s interpretation - buy something; that family is still
+the thing to build, but `FnFml` no longer waits on it.
 
 File-by-file map to upstream: `nola/verus_halt/CORRESPONDENCE.md`.
 Performance traps, five of which present as a hang - one of them for
