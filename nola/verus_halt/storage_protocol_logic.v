@@ -44,12 +44,14 @@
 
   Everything in this file is closed under the global context.
 
-  ** What is not here
+  ** What is built on this
 
-  [typing/protocol.v], the user-facing storage-protocol *types*, which is
-  blocked on something else: it needs [sp_sto] and [sp_own] inside a
-  *formula*, and an [Ecsem] cannot produce an [own] at a camera the client
-  chose.  See [storage_protocol.v]'s header. *)
+  [typing/protocol.v], the user-facing storage-protocol *types*.  Getting
+  [sp_sto] and [sp_own] inside a *formula* takes more than this file: an
+  [Ecsem] cannot produce an [own] at a camera the client chose, so a
+  protocol's state lives in a [dinv_fml] there rather than in a world
+  satisfaction threaded by hand.  See [storage_protocol.v]'s header and
+  [typing/protocol.v]'s. *)
 
 From iris.algebra Require Export cmra updates auth.
 From iris.algebra Require Import proofmode_classes.
@@ -59,7 +61,9 @@ From iris.prelude Require Import options.
 
 From nola.bi Require Export guard modw.
 From nola.iris Require Export guard.
-From nola.verus_halt Require Import inved storage_protocol own_and auth_frag.
+From nola.verus_halt Require Import inved storage_protocol own_and own_sep
+  auth_frag.
+From nola.iris Require Import point.
 
 Import GuardNotation ModwNotation.
 
@@ -476,6 +480,114 @@ Section sp_logic.
     iModIntro. iExists γ. iSplitR.
     { rewrite /sp_sto. iSplitR; [done|]. iExact "unit". }
     rewrite /sp_own /sp_wsat. iFrame "frag". iExists (p, b). by iFrame.
+  Qed.
+
+  (** ** The exchange against a *shared* share
+
+    Leaf's [sp_exchange_with_extra_guard_nondeterministic]: the exchanger
+    holds [sp_own γ p1] outright and only a *guard* on [sp_own γ q], and
+    has to combine the two with the authority before updating.
+
+    Both the guard's right-hand side and the authority come out of one
+    world satisfaction, and opening either consumes the world the other
+    needs.  [guard_open_two] gets as far as the *non-separating*
+    conjunction of the two - which is as far as Leaf's
+    [lguards_open_two_simultaneously] gets as well - and what separates
+    them again is [own_sep.v]'s [own_auth_frag_sep], the one half of
+    [guarding/own_and_own_sep.v] Iris has not upstreamed.  The rest is
+    [point_factor] ([nola/iris/point.v]), which hands back a wand for the
+    conjunct that is put back.
+
+    Later-free this needs no [▷^n] bookkeeping pass and no credits; the
+    [n] Leaf carries through the statement is gone. *)
+
+  (** The side condition [own_auth_frag_sep] asks for: the unit of
+    [InvedProtocol P] is [Nah], which is above no [Inved]. *)
+  #[local] Lemma inved_unit_not_above n (a : P) (d : InvedProtocol P) :
+    (ε : InvedProtocol P) ≡{n}≡ Inved a ⋅ d → False.
+  Proof. by destruct d. Qed.
+
+  Lemma sp_exchange_with_guard_nondeterministic
+      p1 q b1 (output_ok : P → B → Prop) γ f (G W : iProp)
+      (exchng : storage_protocol_exchange_nondeterministic (p1 ⋅ q) b1
+        (λ pq b2, ∃ p2, pq = p2 ⋅ q ∧ output_ok p2 b2))
+      (wfm : wf_prop_map f) :
+    (G &&{W}&&> sp_own γ q) -∗ (G &&{W}&&> sp_wsat γ f) -∗
+    G -∗ sp_own γ p1 -∗ f b1 -∗ W ==∗
+      (∃ p2 b2, ⌜output_ok p2 b2⌝ ∗ sp_own γ p2 ∗ f b2) ∗ G ∗ W.
+  Proof.
+    destruct wfm as [fprop [funit fop]].
+    iIntros "#gq #gw G own fb W".
+    iDestruct (guard_open_two with "gq gw G W")
+      as (U) "(U & #accQ & #accW & →WG)".
+    (* The two right-hand sides, seen under the non-separating conjunction *)
+    iAssert (sp_own γ q ∧ (sp_wsat γ f ∗ (sp_wsat γ f -∗ U)))%I
+      with "[U]" as "X".
+    { iSplit.
+      - iDestruct ("accQ" with "U") as "[$ _]".
+      - iDestruct ("accW" with "U") as "[$ $]". }
+    rewrite /sp_wsat bi.sep_exist_r bi.and_exist_l.
+    iDestruct "X" as (pb) "X".
+    (* Separate the authority out of the conjunction *)
+    (* [sp_rel] is pure, so it comes out of the conjunction whole *)
+    iAssert (⌜sp_rel pb.1 pb.2⌝ ∧ (own γ (◯ Inved q) ∧
+      (own γ (● Inved pb.1) ∗ (f pb.2 ∗ (sp_wsat γ f -∗ U)))))%I
+      with "[X]" as "[%Hrel X]".
+    { iSplit.
+      - iDestruct "X" as "[_ [(_ & $ & _) _]]".
+      - iSplit.
+        + iDestruct "X" as "[$ _]".
+        + iDestruct "X" as "[_ [($ & _ & $) $]]". }
+    (* Separate the authority out of the conjunction *)
+    iDestruct (own_auth_frag_sep γ (Inved q) (Inved pb.1)
+      (f pb.2 ∗ (sp_wsat γ f -∗ U))%I
+      (λ n d, inved_unit_not_above n q d) with "X") as "[auth Y]".
+    (* and factor the shared share out of what is left *)
+    iDestruct (point_factor (Q := own γ (◯ Inved q)) (pQ := point_prop_own)
+      (P := (own γ (◯ Inved q) ∧ (f pb.2 ∗ (sp_wsat γ f -∗ U)))%I)
+      with "[$Y]") as "[ownq →Y]".
+    { by iIntros "[$ _]". }
+    iAssert (sp_own γ (p1 ⋅ q)) with "[own ownq]" as "ownpq".
+    { rewrite sp_own_op. iFrame "own". iExact "ownq". }
+    iMod (own_sep_inv_incll_nondet γ (p1 ⋅ q) pb.1 pb.2
+      (λ pq z, ∃ p2 b2 t2, pq = p2 ⋅ q ∧ output_ok p2 b2
+        ∧ sp_rel (pq ⋅ z) t2 ∧ ✓ (pb.2 ⋅ b1) ∧ pb.2 ⋅ b1 ≡ t2 ⋅ b2)
+      with "ownpq auth") as (z pq) "([%Hbig %Hincl] & ownpq & auth)".
+    { move=> z0 Hz0. have [pq [b2 [t2 Hex]]] := exchng z0 pb.2 Hz0.
+      destruct Hex as [[p2 [-> Hoo]] [Hrel2 Hrest]].
+      exists (p2 ⋅ q), t2. split; [|done]. exists p2, b2, t2. tauto. }
+    { done. }
+    destruct Hbig as (p2 & b2 & t2 & -> & Hoo & Hpix & Hvix & Heq).
+    rewrite -own_inved_op. iDestruct "ownpq" as "[ownp2 ownq]".
+    iDestruct ("→Y" with "ownq") as "Y".
+    iDestruct "Y" as "[_ [ft →U]]".
+    (* The base values rearrange exactly as in [sp_exchange_nondeterministic] *)
+    have Hval2 : ✓ (t2 ⋅ b2).
+    { destruct (base_ra_mixin _ _ storage_mixin). by setoid_rewrite <-Heq. }
+    have Hsp : f pb.2 ∗ f b1 ⊣⊢ f t2 ∗ f b2.
+    { rewrite -(fop _ _ Hvix) (fprop _ _ Heq). exact (fop _ _ Hval2). }
+    iCombine "ft fb" as "fs". iEval (rewrite Hsp) in "fs".
+    iDestruct "fs" as "[ft fb]".
+    iDestruct ("→U" with "[auth ft]") as "U".
+    { iExists (p2 ⋅ q ⋅ z, t2). by iFrame "auth ft". }
+    iDestruct ("→WG" with "U") as "[W G]".
+    iModIntro. iFrame "G W". iExists p2, b2. by iFrame "ownp2 fb".
+  Qed.
+
+  Lemma sp_exchange_with_guard p1 p2 q b1 b2 γ f (G W : iProp)
+      (exchng : storage_protocol_exchange (p1 ⋅ q) (p2 ⋅ q) b1 b2)
+      (wfm : wf_prop_map f) :
+    (G &&{W}&&> sp_own γ q) -∗ (G &&{W}&&> sp_wsat γ f) -∗
+    G -∗ sp_own γ p1 -∗ f b1 -∗ W ==∗ sp_own γ p2 ∗ f b2 ∗ G ∗ W.
+  Proof.
+    iIntros "#gq #gw G own fb W".
+    iMod (sp_exchange_with_guard_nondeterministic p1 q b1
+      (λ p2' b2', p2' = p2 ∧ b2' = b2) γ f G W with "gq gw G own fb W")
+      as "[(%p2' & %b2' & %Hoo & ownp & fb) [G W]]".
+    { move=> z t1 Hz. have [t2 Hex] := exchng z t1 Hz.
+      exists (p2 ⋅ q), b2, t2. split; [by exists p2|tauto]. }
+    { done. }
+    destruct Hoo as [-> ->]. iModIntro. by iFrame.
   Qed.
 
   (** ** SP-Unit, SP-Mono, SP-Valid and the conjunction rule

@@ -180,17 +180,23 @@ over eight hours: `nola/verus_halt/PERF.md`.
 
 | upstream | lines | why |
 |---|---|---|
-| `guarding/storage_protocol/` | 1382 | only needed by `typing/protocol.v` |
-| `guarding/lib/rwlock.v` | 518 | client of the above |
-| `typing/protocol.v` | 1189 | needs `storage_protocol/` |
 | `typing/spawn.v` | 394 | `join` is a busy-wait spin loop - **not** a missing technique, see below |
 
-The rest of `guarding/` is here; the line counts shrink because Leaf's
-later/`iLöb`/`pers` machinery disappears.  Nothing in the tree waits on a
-missing guarding lemma, so pull in `storage_protocol/` when starting
-`protocol.v`, not before.
+The whole of `guarding/` is now here, `storage_protocol/`,
+`lib/rwlock.v` and both halves of `own_and_own_sep.v` included, and so is
+`typing/protocol.v`, all eighteen of its rules.  The line counts shrink
+because Leaf's later/`iLöb`/`pers` machinery disappears.
 
-**The fourth is not a matter of technique, and the audit settled it.**
+This plan used to predict that the chain was feasible later-free and that
+the obstacle was size rather than principle.  That was right: Leaf's 28
+`▷`s were all around `f b`, the interpretation of the protocol state held in an
+Iris invariant, which is exactly the shape `boxes.v` and `frac_guard.v`
+shed here - the content a formula, the invariant a world satisfaction.
+`inved.v` (364), `storage_protocol.v` (354), `base_storage_opt.v` (122),
+`storage_protocol_logic.v` (541), `rwlock.v` (505) and
+`typing/protocol.v` (1121).
+
+**`spawn.v` is not a matter of technique, and the audit settled it.**
 `join` is
 
 ```
@@ -206,19 +212,6 @@ never runs the spawned thread makes `join` diverge.  So this entry does
 not move without a fair-scheduling total weakest precondition, which
 neither λRust's operational semantics nor Iris's `twp` provides.  It is
 the one line in this table that is closed rather than deferred.
-
-The first three of these are **feasible later-free, and the obstacle is
-size rather than principle** - worth saying, because the fourth is not.
-`guarding/storage_protocol/protocol.v` has no `iLöb` and no `pers`
-machinery; its 28 `▷`s are all around `f b`, the interpretation of the
-protocol state held in an Iris invariant, which is exactly the shape
-`boxes.v` and `frac_guard.v` shed here by making the content a formula
-and the invariant a `sinv_wsat`.  `typing/protocol.v` has **no `▷` and
-no `iLöb` at all**.  The chain to pull in is `guarding/internal/inved.v`
-(343, no laters, pure algebra), `storage_protocol/base_storage_opt.v`
-(110, no laters), `storage_protocol/protocol.v` (1272), and then
-`typing/protocol.v` (1189) and `guarding/lib/rwlock.v` (518) - about
-3400 lines, and a job of its own rather than a step in item 2.
 
 ## Is the model concrete?  Yes, as of `af5aee0`
 
