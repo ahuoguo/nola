@@ -88,6 +88,28 @@ Section guard.
     (P &&{W'}&&> Q) ⊢ P &&{W}&&> Q.
   Proof. rewrite (wsat_incl W W' Wr). exact guard_wsat_sep. Qed.
 
+  (** A guard over a world satisfaction that is itself guarded
+
+    The later-free counterpart of opening a nested invariant.  If [W'] can be
+    had out of [W] and handed back - which is what [guard_wsat_out] gives for
+    a conjunct of [W], and what an invariant token gives for its contents -
+    then a guard taken over [W'] is a guard over [W].
+
+    Unlike [guard_wsat_incl] this asks for no [WsatIncl]: [W'] may be
+    *produced* by [W] rather than be a syntactic conjunct of it, which is
+    exactly the case of a storage protocol's world satisfaction held in an
+    invariant ([nola/verus_halt/typing/protocol.v]). *)
+  Lemma guard_wsat_trans {W W' P Q} :
+    (P &&{W}&&> W') -∗ (P &&{W'}&&> Q) -∗ P &&{W}&&> Q.
+  Proof.
+    rewrite /guard. iIntros "#gW #g !>" (T) "[P toWT]".
+    iAssert (P -∗ W' ∗ (W' -∗ W ∗ T))%I with "[toWT]" as "toW'".
+    { iIntros "P". iApply ("gW" $! T). iFrame "P". iExact "toWT". }
+    iDestruct ("g" $! (W' -∗ W ∗ T)%I with "[$P $toW']") as "[$ toW'T]".
+    iIntros "Q". iDestruct ("toW'T" with "Q") as "[W' back]".
+    by iApply "back".
+  Qed.
+
   (** A conjunct of the world satisfaction is guarded by anything
 
     This is the later-free, world-satisfaction counterpart of Leaf's
@@ -117,6 +139,20 @@ Section guard.
   Proof. iIntros "g". iApply (guard_trans with "[] g"). iApply guard_sep_l. Qed.
   Lemma guard_lhs_sep_r {W P Q R} : (P &&{W}&&> Q) ⊢ (R ∗ P) &&{W}&&> Q.
   Proof. iIntros "g". iApply (guard_trans with "[] g"). iApply guard_sep_r. Qed.
+
+  (** A persistent resource held outside joins a guard's right-hand side.
+
+    What this is for: a shared borrow's contents may mix a persistent part
+    with an exclusive one, and a *rebuilt* guard has to produce both.  The
+    persistent part is read once outside and framed back in here, rather
+    than carried through the guard - which [guard_rhs_sep_l] would lose. *)
+  Lemma guard_rhs_pers {W P Q} {R : PROP} `{!Persistent R, !Affine R} :
+    R -∗ (P &&{W}&&> Q) -∗ P &&{W}&&> (R ∗ Q).
+  Proof.
+    rewrite /guard. iIntros "#R #g !>" (T) "PT".
+    iDestruct ("g" $! T with "PT") as "[Q toWT]".
+    iSplitL "Q"; [by iFrame "R Q"|]. iIntros "[_ Q]". by iApply "toWT".
+  Qed.
 
   (** Weaken the right-hand side of a guard *)
   Lemma guard_rhs_sep_l {W P Q R} :

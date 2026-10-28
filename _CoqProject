@@ -123,6 +123,11 @@ nola/verus_halt/two_state.v
 nola/verus_halt/lifetime/ra.v
 nola/verus_halt/auth_frag.v
 nola/verus_halt/boxes.v
+nola/verus_halt/inved.v
+nola/verus_halt/storage_protocol.v
+nola/verus_halt/base_storage_opt.v
+nola/verus_halt/storage_protocol_logic.v
+nola/verus_halt/rwlock.v
 nola/verus_halt/util/basic.v
 nola/verus_halt/util/vector.v
 nola/verus_halt/util/discrete_fun.v

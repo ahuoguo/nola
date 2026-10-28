@@ -51,6 +51,19 @@ Section auth_frag.
     - by rewrite left_id.
   Qed.
 
+  (** The fragment projection is the largest fragment below an element
+
+    Leaf's [view_frag_included_frag] ([guarding/internal/auth_frag_util.v]).
+    It is what turns the common upper bound [own_and] hands back into a
+    *fragment*, which is what [sp_own_and] needs. *)
+  Lemma view_frag_included_frag z :
+    ∃ y, (∀ x, (◯ x : auth C) ≼ z → x ≼ y) ∧ (◯ y : auth C) ≼ z.
+  Proof.
+    exists (view_frag_proj z). destruct z as [za zf]. split.
+    - move=> x [[wa wf] [_ Hf]]. by exists wf.
+    - exists (View za ε). split; simpl; [by rewrite left_id|by rewrite right_id].
+  Qed.
+
   (** The key lemma *)
   Lemma auth_frag_incl `{!CmraDiscrete C} x y z :
     ● x ≼ z → ◯ y ≼ z → ✓ z → y ≼ x.

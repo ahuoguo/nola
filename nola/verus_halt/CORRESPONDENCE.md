@@ -25,9 +25,27 @@ threaded by hand rather than hidden in Iris invariants.
 | `lib/cancellable.v` (221) | `nola/verus_halt/lifetime/ra.v` | folded in |
 | `lib/lifetime.v` (884) | `nola/verus_halt/lifetime/` | see below |
 | `lib/non_atomic_map.v` (679) | `nola/verus_halt/util/non_atomic_cell_map.v` (1464) | together with `lambda_verus/util/non_atomic_cell_map.v` |
-| `factoring_props.v`, `guard_later_pers.v`, `tactics.v`, `internal/{factoring_upred,inved,misc_tactics,wsat_util}.v` | — | later/`pers` machinery, or subsumed by Nola's `modw`/`wsat` |
-| `lib/rwlock.v` (518) | — | **not ported**, client of the storage protocol |
-| `storage_protocol/base_storage_opt.v` (110), `storage_protocol/protocol.v` (1272) | — | **not ported**, needed only by `typing/protocol.v` |
+| `factoring_props.v`, `guard_later_pers.v`, `tactics.v`, `internal/{factoring_upred,misc_tactics,wsat_util}.v` | — | later/`pers` machinery, or subsumed by Nola's `modw`/`wsat` |
+| `internal/inved.v` (343) | `nola/verus_halt/inved.v` (364) | verbatim: pure camera algebra |
+| `storage_protocol/protocol.v` (1272) | `nola/verus_halt/storage_protocol.v` (354), `storage_protocol_logic.v` (473) | ported in full.  The algebra half - mixins, exchange relations, `sp_logicG` - and the logic half: `sp_wsat` (Leaf's invariant body, threaded as a world satisfaction), `sp_sto`, `sp_own`, `sp_guard`, `sp_exchange`, `sp_exchange_nondeterministic`, `sp_update`, `sp_withdraw`, `sp_deposit`, `sp_alloc`.  `sp_guard` is `sp_sto γ f ⊢ sp_own γ p &&{sp_wsat γ f}&&> f b` against Leaf's `sp_own γ p &&{↑N}&&> ▷ f b`: no mask, no later, so no `Timeless` side condition on the client.  All of it is closed under the global context |
+| `own_and_own_sep.v`'s `own_sep_auth_incll_nondet` (part of the 530) | `storage_protocol_logic.v`'s `own_auth_frag_updateP` (40) | the exchange's frame-preserving update.  Leaf proves it at the `iResUR` level; it is a `cmra_updateP`, because the frame of `● state ⋅ ◯ p1` has to be a fragment, so the leftover `z` is determined by it and `p2` may be chosen afterwards - which a `local_update` cannot do and a `cmra_updateP` can |
+| `storage_protocol/base_storage_opt.v` (110) | `nola/verus_halt/base_storage_opt.v` (122) | verbatim |
+| `lib/rwlock.v` (518) | `nola/verus_halt/rwlock.v` (505) | the worked client.  The algebra is Leaf's text; the rules are world-satisfaction updates rather than fancy updates at a mask, and `rw_borrow_back` is `sh_guard γ x &&{rw_wsat γ f}&&> f x` against Leaf's `… &&{{[γ]}}&&> ▷ f x` - so a client reading through it needs no `Timeless` side condition on `f` |
+
+Leaf's `sp_sto` keeps a protocol's state in an Iris invariant
+`ownI γ (∃ state, own γ (● Inved state.1) ∗ ⌜sp_rel …⌝ ∗ f state.2)`;
+later-free it is a world satisfaction threaded by hand, like `box_wsat`
+and `shr_wsat`.  The authority stays out of the formula language, which it
+has to: an `Ecsem` is a fixed function of selector, data and children, so
+it cannot produce an `own` at a camera the client chose, and
+`verus_haltCON` is one global signature.
+
+That fact bites one level up, at `typing/protocol.v`, whose *types* hold
+`sp_sto` and `sp_own` inside `ty_ghox`.  The port's idiom for it is
+`typing/ra.v`'s `RaFml`: ask for the formula as a class with its semantics
+pinned (`bor_sem (ra_fml γ a) ⊣⊢ own γ a`) and leave it to whoever has a
+concrete `CON`.  `RaFml` has no instance, and `ra.v` counts as ported all
+the same; `typing/protocol.v` goes the same way under an `SpFml`.
 
 Leaf's `guards_alloc`, which makes a guard persistent by allocating an Iris
 invariant, has no later-free counterpart; `nola/verus_halt/eternal.v` (78, new)
@@ -148,7 +166,7 @@ Three upstream files are missing:
 | upstream | why |
 |---|---|
 | `fixpoint.v` (494) | **superseded, and not portable as written**: it builds a recursive type as a COFE limit, so every result in it is under `Cofe (FML $oi Σ)` *and* `TypeContractive`, neither of which the `cif` model provides - a `cif` is complete as a `prost`, not an OFE.  `rec.v`'s `profix`/`Productive` construction is what replaces it.  A port of it did sit in the tree, compiling and imported by nothing; it was removed rather than left to look like coverage |
-| `protocol.v` (1189) | needs `guarding/storage_protocol/` |
+| `protocol.v` (1189) | the storage-protocol *types*.  `guarding/storage_protocol/` is now ported, so what is left is the thirteen typing rules, whose upstream proofs are mostly time-receipt bookkeeping that does not exist here and so have to be rewritten rather than transcribed |
 | `spawn.v` (394) | `join` is a busy-wait spin loop; see below |
 
 **`spawn.v` is not a matter of technique.**  `join` is
