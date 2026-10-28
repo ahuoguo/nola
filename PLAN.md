@@ -41,19 +41,31 @@ guarded former and is *proved* productive; the owning pointer is
 `ty_shr_list` and `ty_own_list` - `μ X. Σ! [(); 𝔄 * &shr{κ} X]` and
 `μ X. Σ! [(); 𝔄 * own n X]` - are worked recursive types built from them.
 
-One checkable statement fixes what is left:
+`FnFml` used to be the only class in `typing/` with no instance
+anywhere.  It has two now: `typing/fn_inst.v`'s stratified one, over
+`typing/level_ctx.v`'s family of execution levels, and
+`typing/function.v`'s `fnFml_flat`, which is upstream's own setting - no
+levels - and is available at every `verus_haltGS`.  So `fn` is
+interpreted, and `typing/soundness.v` carries VerusBelt's own theorem as
+well as the judgment-shaped pair: `type_soundness_main` and
+`type_safety_main` are about a `main` function value the runtime
+applies, which is the statement the port could not make before.
+(`TypeContractive` still has no instance, but it is superseded: `rec.v`
+uses `Productive` over `cif`'s `prost`, which is what the model actually
+has.)
 
-* **`FnFml` is the only class in `typing/` with no instance anywhere**, and
-  it is down to **one** field: `fn_fml_sem_2`.  Its other open field,
-  `fn_incl_of_all`, is closed - a lifetime inclusion is the family of
-  guards at every interpretation again, so the rule is the derived
-  `dincl_fguardx` (item 2 below).  (`TypeContractive` has no instance
-  either, but it is superseded: `rec.v` uses `Productive` over `cif`'s
-  `prost`, which is what the model actually has.)
+`typing/examples/assert.v` and `typing/examples/pcell_example.v` are
+upstream's two `fn`-using examples, ported unchanged apart from the
+arrow's execution level, and `typing/examples/pcell_adequacy.v` ends on
+upstream's own last line plus one upstream cannot state:
 
-`typing/strat.v` then mechanizes the thesis's Chapter 5 - the device that
-`fn_fml_sem_2` is missing - end to end and axiom-free, so what remains is
-a refactor with a known shape rather than a question.
+> `pcell_example_terminates : sn erased_step ([pcell_example [exit_cont]], (∅, false))`
+
+`typing/strat.v` mechanizes the thesis's Chapter 5 end to end and
+axiom-free, and `typing/strat_bor.v` the Landin's-knot argument over a
+model that *does* index its slots by level - which is what the port's
+own borrow formers still do not do, and the one place the execution
+level is not yet load-bearing.
 
 Of that refactor (item 2 below), **steps 1-5 are done** and step 6 is
 half done.  The execution levels share one lifetime logic - `@[κ]` is one
@@ -81,9 +93,10 @@ totality - and it is where all of `fn`'s soundness sits.  `ty_lev`
 records the level, `strat_bor.v` is the specification, and
 `verus_halt_wsat_below … j` is the world satisfaction it indexes.
 
-### Where that stands, after the TODO audit
+### Where that stands, after the TODO audit and the work it led to
 
-Three of its pieces are now in the tree and the fourth is named.
+All four pieces are now in the tree, `FnFml` has models, and the two
+upstream examples that use `fn` are ported and instantiated end to end.
 
 * **`verus_halt_wsat_below_acc`** (`typing/level_ctx.v`) is the
   primitive the discipline runs on, and the port's counterpart of
@@ -104,27 +117,60 @@ Three of its pieces are now in the tree and the fourth is named.
   `typing/inst.v`'s `verus_halt_lvl_const` is one and
   `verus_halt_levels_alloc` allocates as many levels of the concrete
   model as asked for, out of one `Σ`.
+* **`FnFml` is realisable, and realised.**  Two of its fields had no
+  model and the audit found both.  The formula side asked for an `⊣⊢`
+  whose introduction direction is `fn_body ⊢ ⌜⊢ fn_body⌝`, which is
+  *false*; it is now elimination at every candidate plus introduction
+  at the Coq level, which is the shape every use already has.  The
+  world side asked for `verus_halt_wsat ={∅}=∗ fn_wsat_lv j ∗ …` with
+  no side condition, which forces `fn_wsat_lv` to be constant; it is
+  now `fn_wsat_top`, one equation saying the ambient world *is* the
+  family's top, plus an accessor with the thesis's `j ≤ i`.
+  `typing/fn_inst.v` instantiates it over the family, and
+  `typing/function.v`'s `fnFml_flat` over every `verus_haltGS`.
 
-What is left is **exactly one thing**, and it is now sayable in a
-sentence: build the **level-indexed** family, in which level `k`'s
-`Csem` interprets a function type of arrow level `j < k` by reading its
-body at `P j`'s interpretation.  `P j` is already constructed when
-level `k` is being defined - that is what the level buys, and it is
-exactly the hypothesis `nola/bi/deriv.v`'s `der_const` wants, so
-`fn_fml_sem` becomes a lemma and `FnFml` falls out.  `LvlAt` already
-gives every level its own `Csem`/`Jsem` for this reason
-(`typing/level_ctx.v` says so at the head of `Section family`); nothing
-yet builds the induction.
+With `fn` interpreted, VerusBelt's own soundness theorem - about a
+`main` *function value* the runtime applies, rather than about a closed
+`typed_body` - becomes statable, and `typing/soundness.v` states it:
+`type_soundness_main` and `type_safety_main`, on top of
+`typing/function.v`'s `type_main_body`.  `typing/examples/assert.v` and
+`typing/examples/pcell_example.v` port unchanged apart from the arrow's
+level, and `typing/examples/pcell_adequacy.v` ends on upstream's own
+last line beside one upstream cannot state, `pcell_example_terminates`.
 
-**Until that family exists, `FnFml` must not be instantiated**, and the
-constant family above is not a licence to do it.  With a `Wlv` that
-ignores the level, the knot's body is provable as a tautology under the
-slot's declared type, so a diverging program would satisfy
-`verus_halt_type_soundness` - the theorem would not be false, but its
-hypothesis would be satisfiable by a program that does not terminate,
-which is worse than having no instance.  `typing/function.v`'s
-`fn_pure_candidate` realises everything *except* the one direction that
-carries this risk, and says so.
+#### A correction, because the earlier version of this section was wrong
+
+This section used to say that `FnFml` must **not** be instantiated over
+the constant family, because with a `Wlv` that ignores the level "a
+diverging program would satisfy `verus_halt_type_soundness`".  That
+cannot happen, and the reason is worth keeping written down.
+`type_soundness` is an ordinary Rocq theorem taking `⊢ typed_body … e
+tr` to `sn erased_step`, and every typing rule here is machine-checked
+against a total `twp`.  So no choice of `fn_wsat_lv` - not even the
+constant `verus_halt_wsat` - can make a divergent program typable; if
+one could, Rocq would be inconsistent.
+
+What a degenerate instance costs is **content**, not soundness.  The
+level stops constraining anything, and whatever blocks Landin's knot is
+then something else.  Here that something else is cruder and quite
+separate from the levels: a total `twp` has no Löb rule, so
+`⊢ fn_body …` has nothing to prove itself with - which is exactly why
+VerusBelt's `type_fnrec`, the rule proved by `iLöb`, is the one rule
+this port does not have.
+
+#### What the level still owes
+
+The execution level is now real, inhabited and threaded through the call
+rules, and it is still not load-bearing, for a reason that is not in
+`FnFml`.  The borrow formers do not record the level of the machinery
+they use: `typing/own.v`, `own_rec.v`, `uniq_bor.v` and `shr_bor.v` all
+set a slot's level to its *pointee's*, and `verus_halt_wsat_lvl` is one
+monolithic block per level.  So `knot_not_typable`'s premise is never
+discharged from anything, and `fn_inst.v`'s `fn_lv_top` is 1 rather
+than the family's length.  Recording that level is what would make the
+level-indexed family - level `k`'s `Csem` reading an arrow of level
+`j < k` at `P j`'s interpretation - buy something; that family is
+still the thing to build, but `FnFml` no longer waits on it.
 
 File-by-file map to upstream: `nola/verus_halt/CORRESPONDENCE.md`.
 Performance traps, five of which present as a hang - one of them for
@@ -227,9 +273,13 @@ ones are large for reasons now understood rather than guessed at.
    the bracket list, which silently shifts every branch.
 
 2. **`fn` must be stratified by an execution level** (thesis § 5).
-   `FnFml`'s `fn_fml_sem_2` has no model, so `fn` is the one type former
-   the model does not interpret - which is why `soundness.v` is stated
-   about a typing judgment, as `rust_halt`'s adequacy is.
+   This was open because `FnFml`'s `fn_fml_sem_2` had no model, so `fn`
+   was the one type former the model did not interpret - which is why
+   `soundness.v` was stated about a typing judgment, as `rust_halt`'s
+   adequacy is.  That field is gone (it asked for `fn_body ⊢ ⌜⊢
+   fn_body⌝`, which is false), `FnFml` has instances, and `soundness.v`
+   now carries VerusBelt's own `main`-shaped theorem beside the
+   judgment-shaped one.  What the level still owes is below.
 
    Its sibling `fn_incl_of_all` **is** closed, and separately from the
    levels: see "Done: a lifetime inclusion is a guard family again" below.
@@ -1155,22 +1205,38 @@ ones are large for reasons now understood rather than guessed at.
       makes it candidate-independent for free, which is exactly what
       `der_const` wants.
 
-      What it does *not* do is instantiate `FnFml` as stated - `pure_fml`
-      gives elimination and a Coq-level introduction, not the `⊣⊢`, and
-      the missing direction `fn_body ⊢ ⌜⊢ fn_body⌝` is false.
+      It does not give the `⊣⊢` the class used to ask for, because the
+      missing direction `fn_body ⊢ ⌜⊢ fn_body⌝` is false.  So the class
+      stopped asking: `fn_fml_elim` at every candidate and
+      `fn_fml_intro` at the Coq level, which is the shape every use in
+      the development already had.  `fn_pure_candidate` then supplies
+      exactly those, and `typing/fn_inst.v` and `fnFml_flat` are the two
+      instances built on it.
 
-      **Where the soundness actually sits**, which is the part worth
-      carrying forward.  With `Wlv := λ _, verus_halt_wsat` the level does no
-      work and that introduction rule is far too permissive: the knot's
-      body - read a function out of the slot holding you and call it - is
-      provable as a tautology under the slot's declared type, so a
-      diverging program would satisfy `verus_halt_type_soundness`.  Totality
-      does not rescue it: the knot's body needs no Löb step, because the
-      callee's specification arrives as a hypothesis from the context
-      rather than from an induction.  What rescues it is the level, and
+      **Where the soundness actually sits.**  This paragraph used to
+      say that with `Wlv := λ _, verus_halt_wsat` "a diverging program
+      would satisfy `verus_halt_type_soundness`", and that totality does
+      not rescue it because the knot's body needs no Löb step.  Both
+      halves are wrong and the correction is worth keeping.
+
+      `type_soundness` is an ordinary Rocq theorem taking `⊢ typed_body
+      … e tr` to `sn erased_step`, and every rule here is checked
+      against a total `twp`, so no `FnFml` whose obligations are
+      provable can make a divergent program typable - Rocq would be
+      inconsistent.  And the knot's body *does* need a Löb step: its
+      premise is `⊢ fn_body …`, a closed Coq-level entailment, and a
+      self-referential one has nothing to prove it with once `twp` has
+      dropped Löb.  VerusBelt's `type_fnrec` is precisely the rule
+      proved by `iLöb`, and precisely the rule this port does not have.
+
+      So a degenerate `Wlv` costs **content**, not soundness: the level
+      stops constraining anything and something cruder does the work.
+      The level is still what *should* do it, and
       `typing/strat_bor.v`'s `knot_not_typable` is the argument in one
       line - a borrow slot of level `k` admits a function of execution
-      level `j ≤ k`, while *opening* that slot asks for `> k`.
+      level `j ≤ k`, while *opening* that slot asks for `> k` - over a
+      model that indexes its slots by level, which this port's borrow
+      formers still do not.
 
       So what is left is **not** "carry the interpretation through the
       program logic" - that estimate, 226 occurrences of

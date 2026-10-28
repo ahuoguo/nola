@@ -612,9 +612,41 @@ Section LlftWsat.
       ∗ OsetAuth osub_name outlives ∗ llft_outlives_guards_at outlives
       ∗ llft_outlives olk.
 
+  (** The shared half's **level-independent core**.
+
+    Worth naming on its own, because its *type* is the statement that
+    matters: [llft_other_core : ∀ {Σ}, llft_logicGS Σ → iProp Σ]
+    mentions neither [LlftBorNames] nor [LlftWG] nor a [BorSem], so it
+    is literally the same proposition at every execution level's ghost
+    names - as [llft_inv_shared] already is.
+
+    [llft_other_shared] is that core beside [llft_outlives_guards_at],
+    and the guards are the **only** thing in the shared half that is a
+    function of the level: they are taken over a level's [llft_wsatG]
+    (see the note on [llft_outlives_guards_at]).  That is why
+    [typing/level_ctx.v]'s [verus_halt_shared] has to be pinned to one
+    level's package, and in turn why [typing/fn_inst.v]'s [fn_lv_top]
+    is 1 rather than the family's length. *)
+  Definition llft_other_core (ol : outlives_set) : iProp Σ :=
+    Outlives oset_name ol ∗ Delayed d_name None ∗ OsetAuth osub_name ol.
+
   Definition llft_other_shared : iProp Σ :=
     ∃ outlives, Outlives oset_name outlives ∗ Delayed d_name None
       ∗ OsetAuth osub_name outlives ∗ llft_outlives_guards_at outlives.
+
+  (** The shared half as core-plus-guards, so that the two can be
+    spoken of separately. *)
+  Lemma llft_other_shared_core_split :
+    llft_other_shared ⊣⊢
+      ∃ ol, llft_other_core ol ∗ llft_outlives_guards_at ol.
+  Proof.
+    rewrite /llft_other_shared /llft_other_core. iSplit.
+    - iIntros "(%ol & Os & De & OA & #Og)". iExists ol. iFrame "Os De OA".
+      iExact "Og".
+    - iIntros "(%ol & (Os & De & OA) & #Og)". iExists ol. iFrame "Os De OA".
+      iExact "Og".
+  Qed.
+
   Definition llft_bor_other : iProp Σ := ∃ olk, llft_outlives olk.
 
   (** [llft_bor_other] is closed - it is the level's half of the

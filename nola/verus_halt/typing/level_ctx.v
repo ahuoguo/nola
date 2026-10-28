@@ -173,6 +173,28 @@ Section wsat_at.
     verus_halt_wsat_core_at ⊣⊢ verus_halt_wsat_shared_at ∗ verus_halt_wsat_lvl_at.
   Proof. exact verus_halt_wsat_core_split. Qed.
 
+  (** *** The shared half, split at the one thing that is level-dependent
+
+    [verus_halt_wsat_shared] is [llft_inv_shared ∗ llft_other_shared],
+    and of those [llft_inv_shared] has type
+    [∀ {Σ}, llft_logicGS Σ → iProp Σ] - it mentions no level's names at
+    all.  [llft_other_shared] is [llft_other_core], which has the same
+    shape, beside [llft_outlives_guards_at], whose guards are taken over
+    *a level's* [llft_wsatG].
+
+    So the shared half's level-dependence is exactly those guards, and
+    [verus_halt_wsat_shared_core_at] is everything else. *)
+  Definition llft_outlives_guards_lvl (ol : ra.outlives_set) : iProp Σ :=
+    llft_outlives_guards_at ol.
+
+  Lemma verus_halt_wsat_shared_at_split :
+    verus_halt_wsat_shared_at ⊣⊢
+      llft_inv_shared ∗ ∃ ol, llft_other_core ol ∗ llft_outlives_guards_lvl ol.
+  Proof.
+    rewrite /verus_halt_wsat_shared_at /verus_halt_wsat_shared
+      /llft_outlives_guards_lvl. by rewrite llft_other_shared_core_split.
+  Qed.
+
   Lemma verus_halt_wsat_at_eq : verus_halt_wsat_at = verus_halt_wsat.
   Proof. done. Qed.
   Lemma verus_halt_wsat_core_at_eq : verus_halt_wsat_core_at = verus_halt_wsat_core.

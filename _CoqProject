@@ -207,3 +207,6 @@ nola/verus_halt/typing/own_rec.v
 nola/verus_halt/typing/inst.v
 nola/verus_halt/typing/fn_inst.v
 nola/verus_halt/typing/examples/basic.v
+nola/verus_halt/typing/examples/assert.v
+nola/verus_halt/typing/examples/pcell_example.v
+nola/verus_halt/typing/examples/pcell_adequacy.v

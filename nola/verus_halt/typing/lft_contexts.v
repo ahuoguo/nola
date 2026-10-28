@@ -409,6 +409,15 @@ Global Hint Resolve
      elctx_sat_nil elctx_sat_lft_incl elctx_sat_app elctx_sat_refl
   : lrust_typing.
 
+(** [lctx_lft_alive_all] is what [typing/function.v]'s call rules ask for -
+  aliveness at *every* interpretation rather than at [der] - so it needs its
+  own hints; [solve_typing] cannot get there through [lctx_lft_alive_all_now],
+  which goes the other way. *)
+Global Hint Resolve
+     lctx_lft_alive_all_static lctx_lft_alive_all_intersect
+     lctx_lft_alive_all_local
+  : lrust_typing.
+
 Global Hint Resolve elctx_sat_submseteq | 100 : lrust_typing.
 
 Global Hint Opaque elctx_sat lctx_lft_alive lctx_lft_incl : lrust_typing.

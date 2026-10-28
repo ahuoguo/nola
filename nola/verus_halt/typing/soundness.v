@@ -59,12 +59,19 @@ End alloc.
 
 (** ** Soundness
 
-  As in [nola/examples/rust_halt/adequacy.v], the statement is about a
-  *typing judgment*, not about a function value: [fn] is the one type former
-  whose interpretation the model does not yet give (it has to be stratified
-  by an execution level first - see [typing/README.md]), and nothing else
-  needs it. *)
-Definition exit_cont : val := λ: [<>], #☠.
+  Two shapes, and the difference used to matter.
+
+  [type_soundness] and [type_safety] are about a *typing judgment* for a
+  closed expression, as in [nola/examples/rust_halt/adequacy.v].  That
+  was not a preference: [fn] was the one type former whose
+  interpretation the model did not give, so [typed_val main main_type c]
+  - the hypothesis VerusBelt's own theorem takes - had no content here.
+
+  [type_soundness_main] and [type_safety_main] below are VerusBelt's own
+  shape, about a [main] *function value* that the runtime applies to a
+  continuation.  They are available now because [FnFml] is inhabited
+  ([typing/fn_inst.v]) and because [typing/function.v]'s
+  [type_main_body] turns such a [main] into a closed [typed_body]. *)
 
 Section soundness.
   Context `{!typingC CON} {JUDG Σ}
@@ -138,6 +145,56 @@ Section soundness.
   Qed.
 End soundness.
 
-(** The two theorems rest on nothing but the axiom Iris itself uses. *)
+(** ** Soundness in VerusBelt's own shape
+
+  [main] is a function value of [typing/function.v]'s [main_type] - no
+  arguments, a trivial specification - and the program is
+  [main [exit_cont]], the application the runtime performs.  This is
+  upstream's [type_soundness]/[type_soundness_closed] statement, and it
+  needs [fn] interpreted, which is why the port could not state it
+  before.
+
+  The hypothesis carries an [FnFml] alongside the interpretation,
+  because [main_type]'s arrow level is [fn_lv_top], which is a field of
+  it.  [typing/fn_inst.v] supplies one. *)
+Section soundness_main.
+  Context `{!typingC CON} {JUDG Σ}
+    `{!verus_haltGpreS (cifOF CON) Σ, !typingJ CON JUDG Σ}.
+
+  Theorem type_soundness_main (main : val) c :
+    (∀ H : verus_haltGS (cifOF CON) Σ,
+      ∃ (_ : Csem CON JUDG Σ) (_ : Jsem JUDG (iProp Σ))
+        (_ : typingCS CON JUDG Σ) (_ : typingJS CON JUDG Σ) (_ : FnFml),
+      typed_val main main_type c) →
+    sn erased_step ([main [exit_cont]%E], (∅, false)).
+  Proof.
+    move=> big.
+    apply (type_soundness (𝔅:=unitₛ) _ (λ _ _ _ _, True%type)); [done|].
+    move=> H. move: (big H)=> [Cs [Js [CS [JS [FF ty]]]]].
+    exists Cs, Js, CS, JS. exact (type_main_body _ _ ty).
+  Qed.
+
+  Theorem type_safety_main (main : val) c t σ :
+    (∀ H : verus_haltGS (cifOF CON) Σ,
+      ∃ (_ : Csem CON JUDG Σ) (_ : Jsem JUDG (iProp Σ))
+        (_ : typingCS CON JUDG Σ) (_ : typingJS CON JUDG Σ) (_ : FnFml),
+      typed_val main main_type c) →
+    rtc erased_step ([main [exit_cont]%E], (∅, false)) (t, σ) →
+    nonracing_threadpool t σ ∧
+      (∀ e', e' ∈ t → is_Some (to_val e') ∨ reducible e' σ).
+  Proof.
+    move=> big. apply (type_safety (𝔅:=unitₛ) _ (λ _ _ _ _, True%type)); [done|].
+    move=> H. move: (big H)=> [Cs [Js [CS [JS [FF ty]]]]].
+    exists Cs, Js, CS, JS. exact (type_main_body _ _ ty).
+  Qed.
+End soundness_main.
+
+(** The first two rest on nothing but the axiom Iris itself uses.  The
+  [main]-shaped pair add functional extensionality, which comes in through
+  [main_type]'s result type: [unit_ty] is a [mod_ty] over the empty product
+  ([typing/product.v]), and the isomorphism it carries is proved by [fun_ext].
+  Upstream's own [unit_ty] is the same. *)
 Print Assumptions type_soundness.
 Print Assumptions type_safety.
+Print Assumptions type_soundness_main.
+Print Assumptions type_safety_main.

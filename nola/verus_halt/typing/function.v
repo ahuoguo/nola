@@ -20,7 +20,7 @@
 
 Import EqNotations.
 From iris.proofmode Require Import proofmode.
-From nola.verus_halt.typing Require Import own programs cont.
+From nola.verus_halt.typing Require Import own programs cont product.
 From nola.verus_halt.typing Require Export type ctx.
 From nola.bi Require Import guard modw.
 Import GuardNotation ModwNotation WpwNotation.
@@ -797,6 +797,74 @@ Section typing.
     destruct b. iApply ("k" with "[$key $tok] Invctx oty Obs").
   Qed.
 
+  (** *** Calling [main]
+
+    VerusBelt's soundness theorem ([typing/soundness.v]) is about a
+    [main] *function value* that the runtime applies to a continuation,
+    not about a closed [typed_body]: the program is
+    [main [exit_cont]], the direct application, not
+    [call: main [] → exit_cont].  This port could not state it, because
+    [fn] had no interpretation and so [typed_val main main_type c] had
+    no content; [typing/soundness.v] states a judgment instead and says
+    so.
+
+    With [FnFml] inhabited the original statement is available, and this
+    is its program-logic half: a [main] of the right type runs to a
+    value.  It is [type_call_iris'] with [L], [κl] and [Il] empty and
+    with the call's own plumbing cut away - there is no caller holding a
+    fraction, no [Ltok] to share and nothing to put back - so what is
+    left is [fn_gho_1'] and one lifetime, begun before the body and
+    ended by [exit_cont]. *)
+  Definition exit_cont : val := λ: [<>], #☠.
+
+  Definition main_type :=
+    (fn(∅) →{fn_lv_top} unit_ty)%T
+      (λ _: ~~(), (λ post '-[], λ mask π, ∀ l, post (l, ()) mask π)).
+
+  Lemma type_main_body {𝔅} (main : val) c :
+    typed_val main main_type c →
+    ⊢ typed_body [] [] (InvCtx [] static AtomicClosed) ([] : cctx 𝔅) +[]
+        (main [exit_cont]%E) (λ _ _ _ _, True%type).
+  Proof.
+    move=> Hmain. rewrite /typed_body /typed_body_at.
+    iIntros (tid xl mask post iκs) "#LFT #PROPH #UNIQ #E L ii C T Obs".
+    wp_bind (of_val main).
+    iApply (twp_wand with "[L ii T]").
+    { iApply (Hmain [] [] (InvCtx [] static AtomicClosed) tid
+        (λ _ _ _, True%type) mask iκs with
+        "LFT PROPH UNIQ E L ii T []").
+      by iApply proph_obs_true. }
+    iIntros (v) "(%xl' & L & ii & T & _)".
+    destruct xl' as [x []].
+    iDestruct "T" as "[mainty _]".
+    iDestruct "mainty" as (v' d) "[%Eqv own]".
+    rewrite eval_path_of_val in Eqv. move: Eqv=> [= <-].
+    iDestruct "own" as "[gho %phys]".
+    iDestruct (fn_gho_1' _ (Nat.le_refl _) with "gho")
+      as (fb kb bl e Hclosed) "[%Hrec #body]".
+    inversion phys as [Eqv]. rewrite Hrec. wp_rec.
+    iApply fupdw_twpw_cont. iIntros "W".
+    iDestruct (llftl_begin' with "LFT") as "B".
+    iDestruct (bupdw_incl (W:=verus_halt_wsat) with "B") as "B'".
+    iMod ("B'" with "W") as "[W (%ϝ & ϝtok & %ϝne)]".
+    iModIntro. iFrame "W".
+    iDestruct (invctx_interp_call [] static AtomicClosed tid mask ϝ iκs
+      with "[] [] ii") as (iκs') "[ii' iiback]".
+    { iApply lft_incl_static. }
+    { simpl. iApply lft_incl_static. }
+    iApply ("body" $! () ϝ exit_cont -[] tid -[] mask (λ _ _ _, True%type) iκs'
+      with "LFT PROPH UNIQ [] [ϝtok] ii' [] [] []").
+    - by rewrite /elctx_interp /=.
+    - iSplitL; [|done]. iExists _. iSplit; [by rewrite/= left_id|].
+      by iFrame "ϝtok".
+    - rewrite cctx_interp_singleton /cctx_elt_interp.
+      iIntros (vl xl' mask') "_ _ _ _". inv_vec vl=> ret.
+      rewrite /exit_cont /=. wp_lam. by rewrite /cont_postcondition.
+    - done.
+    - by iApply proph_obs_true.
+    Unshelve. exact -[].
+  Qed.
+
   Lemma type_call_iris {A 𝔄l 𝔅 ℭ} x xl κl post (mask: Mask) j
       (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ)
       p ql ql' (k: expr) E efun tid γ q :
@@ -1133,6 +1201,53 @@ Section fn_pure_candidate.
     iStartProof. iApply fn_body_specialize. iApply Hb.
   Qed.
 End fn_pure_candidate.
+
+Section fn_flat.
+  Context `{!typeG FML Σ}.
+
+  (** *** The flat instance: VerusBelt's own setting
+
+    [fn_lv_top := 0] and [fn_wsat_lv := λ _, verus_halt_wsat].  Every
+    arrow is at level 0, every body gets the whole world, and the
+    execution level carries no information at all - which is exactly
+    upstream, whose [fn] has no level.
+
+    It is worth being plain about what this is and is not.  It is not
+    unsound: [typing/soundness.v]'s [type_soundness] is a Rocq theorem
+    taking [⊢ typed_body … e tr] to [sn erased_step], and these rules
+    are checked against it, so no [FnFml] whose obligations are provable
+    can make a divergent program typable.  What keeps a self-referential
+    function out here is not the level but that a total [twp] has no Löb
+    rule, so [⊢ fn_body …] has nothing to prove itself with - which is
+    why VerusBelt's [type_fnrec] is the rule this port does not have.
+
+    What it is not is *stratified*: [typing/fn_inst.v] is the instance
+    that plugs [typing/level_ctx.v]'s family in, with a level-0 body
+    getting the lifetime logic's shared half and nothing else.  This one
+    exists because it is available at **every** [verus_haltGS], which is
+    what the parametric soundness theorems quantify over. *)
+  Local Lemma flat_acsr :
+    ⊢ □ (verus_halt_wsat ={∅}=∗
+           verus_halt_wsat ∗ (verus_halt_wsat ={∅}=∗ verus_halt_wsat)).
+  Proof. iIntros "!> W !>". iFrame "W". iIntros "W !>". iFrame. Qed.
+
+  Definition fnFml_flat : FnFml := {|
+    fn_wsat_lv _ := verus_halt_wsat;
+    fn_lv_top := 0;
+    fn_wsat_top := reflexivity _;
+    fn_wsat_lv_acc j _ := flat_acsr;
+    fn_fml A 𝔄l 𝔅 ℭ j fp spec x :=
+      tfn_fml (λ _, verus_halt_wsat) j fp spec x;
+    fn_fml_elim sem H A 𝔄l 𝔅 ℭ j fp spec x :=
+      tfn_elim H (λ _, verus_halt_wsat) j fp spec x;
+    fn_fml_intro A 𝔄l 𝔅 ℭ j fp spec x :=
+      tfn_intro (λ _, verus_halt_wsat) j fp spec x;
+    fn_fml_pers sem H A 𝔄l 𝔅 ℭ j fp spec x :=
+      tfn_pers H (λ _, verus_halt_wsat) j fp spec x;
+    fn_fml_specialize sem H A B 𝔄l 𝔅 ℭ σ j fp spec x :=
+      tfn_specialize H σ (λ _, verus_halt_wsat) j fp spec x;
+  |}.
+End fn_flat.
 
 Ltac simpl_fp_E := rewrite /fp_E /ty_outlives_E /=.
 
